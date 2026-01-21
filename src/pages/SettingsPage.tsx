@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useMemo, useState } from 'react'
 import {
   Box,
+  Button,
   Chip,
   Divider,
   FormControl,
@@ -15,6 +16,7 @@ import {
   Typography,
 } from '@mui/material'
 import PaletteIcon from '@mui/icons-material/Palette'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import SettingsIcon from '@mui/icons-material/Settings'
 import PageShell from '../components/PageShell'
 import AppCard from '../components/AppCard'
@@ -34,6 +36,7 @@ import {
   toggleThemeMode,
 } from '../store/settingsSlice'
 import { useI18n } from '../i18n'
+import { buildInfo } from '../buildInfo'
 
 const PRIMARY_PRESETS = [
   { zhName: '品牌蓝', enName: 'Brand Blue', value: '#155EEF' },
@@ -49,6 +52,14 @@ const SettingsPage: React.FC = () => {
   const settings = useAppSelector((s) => s.settings)
   const auth = useAppSelector((s) => s.auth)
   const { tr } = useI18n()
+  const [changelogExpanded, setChangelogExpanded] = useState(false)
+
+  const changelogShown = useMemo(() => {
+    if (changelogExpanded) return buildInfo.changelog
+    return buildInfo.changelog.slice(0, 10)
+  }, [changelogExpanded])
+
+  const hasMoreChangelog = buildInfo.changelog.length > 10
 
   return (
     <PageShell
@@ -211,6 +222,62 @@ const SettingsPage: React.FC = () => {
           </Stack>
         </AppCard>
 
+        <AppCard
+          title={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <InfoOutlinedIcon fontSize="small" />
+              <span>{tr('版本与更新日志', 'Version & Changelog')}</span>
+            </Stack>
+          }
+        >
+          <Stack spacing={2}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650 }}>
+                {tr('当前版本', 'Current version')}
+              </Typography>
+              <Chip label={buildInfo.version} sx={{ fontWeight: 650 }} />
+              <Typography variant="body2" color="text.secondary" sx={{ ml: { sm: 'auto' } }}>
+                {tr('提交', 'Commit')}: {buildInfo.commit} · {tr('构建时间', 'Built at')}: {new Date(buildInfo.builtAt).toLocaleString()}
+              </Typography>
+            </Stack>
+
+            <Divider />
+
+            {buildInfo.changelog.length ? (
+              <Stack spacing={1.25}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650 }}>
+                  {tr('更新日志（来自 Git 提交）', 'Changelog (from Git commits)')}
+                </Typography>
+
+                <Stack spacing={1} divider={<Divider flexItem />}>
+                  {changelogShown.map((entry) => (
+                    <Box key={`${entry.hash}-${entry.date}-${entry.message}`} sx={{ display: 'flex', gap: 1, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                      <Chip label={entry.hash} size="small" variant="outlined" sx={{ fontFamily: 'monospace' }} />
+                      <Typography variant="caption" color="text.secondary">
+                        {entry.date}
+                      </Typography>
+                      <Typography variant="body2" sx={{ flex: '1 1 420px' }}>
+                        {entry.message}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Stack>
+
+                {hasMoreChangelog ? (
+                  <Box>
+                    <Button size="small" onClick={() => setChangelogExpanded((v) => !v)}>
+                      {changelogExpanded ? tr('收起', 'Collapse') : tr('展开更多', 'Show more')}
+                    </Button>
+                  </Box>
+                ) : null}
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.secondary">
+                {tr('暂无 changelog（请在 git 仓库内运行发布脚本生成）', 'No changelog yet (run release script inside a git repo)')}
+              </Typography>
+            )}
+          </Stack>
+        </AppCard>
       </Stack>
     </PageShell>
   )

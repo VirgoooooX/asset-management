@@ -23,6 +23,7 @@ import AppsIcon from '@mui/icons-material/Apps'
 import NavHubDialog from './NavHubDialog'
 import { buildNavItems, buildNavSections } from '../nav/navConfig'
 import { useI18n } from '../i18n'
+import { buildInfo } from '../buildInfo'
 
 const appBarHeight = '64px';
 
@@ -211,7 +212,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           © {new Date().getFullYear()} {tr('Jabil 内部专用', 'Internal use only')} · All Rights Reserved · By Vigoss
         </Typography>
         <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-          · {tr('版本', 'Version')} 2.0.0
+          · {tr('版本', 'Version')} {buildInfo.version}
         </Typography>
       </Box>
 
