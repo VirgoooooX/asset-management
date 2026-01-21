@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="blue-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#155EEF"/>
+      <stop offset="100%" stop-color="#528BFF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect x="32" y="32" width="448" height="448" rx="128" fill="url(#blue-gradient)" filter="url(#shadow)"/>
+  
+  <!-- Icon: Stylized Chamber/Tracker (Box with center focus) -->
+  <g transform="translate(116, 116)" fill="#FFFFFF">
+    <!-- Outer Box (Chamber) with gap -->
+    <path d="M140,0 C62.68,0 0,62.68 0,140 C0,217.32 62.68,280 140,280 C217.32,280 280,217.32 280,140" 
+          fill="none" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round"/>
+    
+    <!-- Center Dot (Tracker/Asset) -->
+    <circle cx="140" cy="140" r="48" fill="#FFFFFF"/>
+  </g>
+</svg>

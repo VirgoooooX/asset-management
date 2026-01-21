@@ -1,0 +1,337 @@
+/* src/components/ScrollingTimeline.module.css */
+
+.timelinePageContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* Ensure it takes full height from parent */
+  overflow: hidden; /* Prevent double scrollbars on the page itself */
+  background-color: var(--timeline-bg);
+}
+
+.timelineScrollContainer {
+  flex-grow: 1;
+  overflow: auto;
+  position: relative;
+  background-color: var(--timeline-bg);
+}
+
+.timelineHeaderRow {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--timeline-header-bg);
+  border-bottom: 1px solid var(--timeline-border);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  backdrop-filter: blur(16px) saturate(1.35);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+}
+
+.timelineHeaderChamberCell {
+  flex-shrink: 0;
+  position: sticky;
+  left: 0;
+  z-index: 35;
+  background: var(--timeline-sticky-bg);
+  border-right: 1px solid var(--timeline-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  box-sizing: border-box;
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+}
+
+.timelineHeaderDates {
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  height: 100%;
+}
+
+.timelineBodyRow {
+  display: flex;
+  position: relative;
+}
+
+.timelineChamberColumn {
+  flex-shrink: 0;
+  position: sticky;
+  left: 0;
+  z-index: 25;
+  background: var(--timeline-sticky-bg);
+  border-right: 1px solid var(--timeline-border);
+  box-sizing: border-box;
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+}
+
+.chamberRowName {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  font-size: 0.9em;
+  font-weight: 500;
+  border-bottom: 1px solid var(--timeline-border);
+  box-sizing: border-box;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* height is dynamic via inline style from JS */
+}
+.chamberRowName:last-child {
+  border-bottom: none;
+}
+
+.timelineDateHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid var(--timeline-border);
+  box-sizing: border-box;
+  font-size: 0.9em;
+  font-weight: bold;
+  text-align: center;
+  padding: 8px 0;
+  /* min-width and width are dynamic via inline style from JS */
+}
+.timelineDateHeader:last-child {
+  border-right: none;
+}
+
+.dateDisplay {
+  margin-bottom: 6px;
+}
+
+.shiftContainer {
+  display: flex;
+  width: 100%;
+  font-size: 0.75em;
+  font-weight: normal;
+  color: rgba(0,0,0,0.62);
+  border-top: 1px solid var(--timeline-border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.dayShift, .nightShift {
+  flex: 1;
+  text-align: center;
+  padding: 2px 0;
+}
+
+.dayShift {
+  border-right: 1px solid var(--timeline-border);
+}
+
+.nightShift {
+  /* Optional styling */
+}
+
+/* Styling for specific date types in the header */
+.todayHeader {
+  background-color: var(--timeline-today-bg) !important;
+}
+.todayHeader .dateDisplay {
+  color: var(--timeline-today-text) !important;
+  font-weight: bold;
+}
+
+.weekendHeader {
+  /* background-color: #fff0f1; */ /* Example:淡红色 for weekend headers */
+  /* color: #757575; */
+}
+.publicHolidayHeader {
+  /* background-color: #ffebee; */ /* Example:稍深淡红色 for holiday headers */
+  /* color: #d32f2f; */
+}
+.workdayOnWeekendHeader {
+ /* background-color: #f5f5f5; */
+ /* color: #777; */
+}
+
+.timelineGridContent {
+  position: relative; /* For absolute positioning of bars and row backgrounds */
+  /* width and min-height are dynamic via inline style from JS */
+  /* flex-grow: 1; /* Removed as parent .timelineScrollableWrapper handles scroll */
+  /* overflow: visible; /* Default, content can exceed bounds, parent scrolls */
+}
+
+.timelineDayBackground {
+  position: absolute;
+  top: 0;
+  border-right: 1px dashed var(--timeline-grid-line); /* Softer grid lines */
+  box-sizing: border-box;
+  z-index: 0;
+  transition: background-color 0.3s ease;
+  /* width and height are dynamic via inline style from JS */
+}
+.timelineDayBackground:last-child {
+  border-right: none;
+}
+
+/* Background colors for specific day types in the grid */
+.weekendSoftRedBackground {
+  background-color: var(--timeline-weekend-bg);
+}
+
+.publicHolidayStrongRedBackground {
+  background-color: var(--timeline-holiday-bg);
+}
+
+.workdayOnWeekendBackground {
+  background-color: var(--timeline-workday-override-bg);
+  /* background-color: #fafafa; */ /* Example:非常浅的灰色, 如果不设置则为默认白色 */
+  /* Example with pattern:
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.02),
+    rgba(0, 0, 0, 0.02) 1px,
+    transparent 1px,
+    transparent 5px
+  );
+  */
+}
+
+.timelineRowBackground {
+    position: absolute;
+    left: 0;
+    border-bottom: 1px solid var(--timeline-grid-line-soft); /* Lighter horizontal row lines */
+    box-sizing: border-box;
+    z-index: 0; /* Behind bars */
+    /* width and height are dynamic via inline style from JS */
+}
+.timelineRowBackground:last-child {
+    border-bottom: none;
+}
+
+.timelineRow {
+  position: absolute; /* Positioned by JS (top, height, width) */
+  box-sizing: border-box;
+  /* This div primarily acts as a container for absolutely positioned timelineBars */
+}
+
+.timelineBar {
+  position: absolute;
+  border-radius: 7px; /* Rounded corners */
+  box-shadow: var(--timeline-bar-shadow);
+  cursor: pointer;
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out, background-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;   /* <<< MODIFIED FOR TEXT CENTERING */
+  overflow: hidden;
+  border: 1px solid;         /* Border color set dynamically via inline style */
+  box-sizing: border-box;
+  padding: 0 8px;            /* Padding inside the bar, around the text */
+  /* height, top, left, width, backgroundColor, borderColor, color (text) are dynamic via inline style from JS */
+}
+
+.timelineBar:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--timeline-bar-shadow-hover);
+  z-index: 5;
+}
+
+.timelineBarText {
+  font-size: 0.78em;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: normal; /* Or match ITEM_BAR_HEIGHT if needed for precise vertical centering */
+  text-align: center;    /* <<< ADDED FOR TEXT CENTERING WITHIN SPAN */
+  flex-grow: 1;        /* <<< ADDED to allow text to center properly */
+  /* color is set dynamically via inline style on .timelineBar */
+  /* padding is on .timelineBar now */
+  /* margin-right might still be needed if delete button is not perfectly absolute or text is very long */
+  margin-right: 18px; /* Space for the delete button, adjust as needed */
+}
+
+.timelineBarTextPrimary {
+  color: currentColor;
+  font-weight: 650;
+}
+
+.timelineBarTextSecondary {
+  color: currentColor;
+  opacity: 0.82;
+  font-weight: 550;
+}
+
+.timelineBarTextSeparator {
+  color: currentColor;
+  opacity: 0.7;
+  font-weight: 500;
+}
+
+.timelineBarDeleteButton {
+  position: absolute;
+  right: 5px; /* Position from right edge of .timelineBar */
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,0.0);
+  color: #555; /* Default icon color */
+  border: none;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  font-size: 8px; /* Adjust if using font icon, for SVG this is less relevant */
+  line-height: 14px; /* Helps center icon if it's a character */
+  text-align: center;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease-in-out, background-color 0.15s ease-in-out;
+  z-index: 11; /* Ensure it's above the timelineBar's hover z-index */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding:0; /* Reset padding */
+  flex-shrink: 0; /* Prevent button from shrinking */
+}
+
+.timelineBar:hover .timelineBarDeleteButton,
+.timelineBar:focus-within .timelineBarDeleteButton {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.timelineBarDeleteButton:hover {
+  background: rgba(0,0,0,0.2);
+  opacity: 1;
+}
+
+.loading, .error {
+  padding: 20px;
+  text-align: center;
+  font-size: 1.2em;
+}
+
+.error {
+  color: red;
+}
+
+.noChambersMessage, .noLogsMessage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #888;
+    font-size: 1em;
+    padding: 20px;
+    text-align: center;
+    z-index: 1;
+}
+.noChambersMessage {
+    width: calc(var(--chamber-name-width) - 20px);
+    left: calc(var(--chamber-name-width) / 2);
+}
+.noLogsMessage {
+    /* Adjust top if needed, relative to .timelineGridContent */
+}
+

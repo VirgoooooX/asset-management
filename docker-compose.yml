@@ -1,0 +1,19 @@
+services:
+  chamber-tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chamber-tracker:local
+    ports:
+      - "8080:8080"
+    environment:
+      JWT_SECRET: "please-change-this-to-a-long-random-string"
+      ADMIN_SEED_PASSWORD: "首次启动创建管理员用的密码"
+      DATA_DIR: "/data"
+      PORT: "8080"
+    volumes:
+      - chamber_data:/data
+    restart: unless-stopped
+
+volumes:
+  chamber_data:
