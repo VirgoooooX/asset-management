@@ -5,9 +5,14 @@ import {
   Box,
   Button,
   Chip,
+  Dialog,
+  Divider,
+  IconButton,
   Grid,
   LinearProgress,
   Stack,
+  Tab,
+  Tabs,
   Typography,
 } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
@@ -19,6 +24,10 @@ import BadgeIcon from '@mui/icons-material/Badge'
 import AttachFileIcon from '@mui/icons-material/AttachFile'
 import BuildCircleIcon from '@mui/icons-material/BuildCircle'
 import ListAltIcon from '@mui/icons-material/ListAlt'
+import CloseIcon from '@mui/icons-material/Close'
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { alpha, useTheme } from '@mui/material/styles'
 import PageShell from '../components/PageShell'
 import TitleWithIcon from '../components/TitleWithIcon'
@@ -35,10 +44,43 @@ import { fetchTestProjects } from '../store/testProjectsSlice'
 import { getEffectiveUsageLogStatus } from '../utils/statusHelpers'
 import type { UsageLog } from '../types'
 import { useI18n } from '../i18n'
-import { deleteFile, uploadFile } from '../services/storageService'
+import { deleteFile, normalizeFileUrlForDisplay, uploadFile } from '../services/storageService'
 
 type Props = {
   mode: 'create' | 'view'
+}
+
+type ImagePreviewState = {
+  title: string
+  urls: string[]
+  index: number
+}
+
+type PendingRemoveState =
+  | { kind: 'photo' | 'nameplate'; url: string }
+  | { kind: 'attachment'; attachmentId: string; attachmentName?: string }
+
+type InfoRowProps = {
+  label: React.ReactNode
+  value: React.ReactNode
+}
+
+const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => {
+  return (
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' },
+        gap: { xs: 0.5, sm: 2 },
+        alignItems: 'baseline',
+      }}
+    >
+      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 850 }}>
+        {label}
+      </Typography>
+      <Box sx={{ minWidth: 0 }}>{value}</Box>
+    </Box>
+  )
 }
 
 const getStatusColor = (status: string): 'default' | 'success' | 'warning' | 'error' => {
@@ -80,7 +122,10 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
 
   const [editOpen, setEditOpen] = useState(mode === 'create')
   const [pendingDelete, setPendingDelete] = useState(false)
+  const [pendingRemove, setPendingRemove] = useState<PendingRemoveState | null>(null)
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
+  const [mainTab, setMainTab] = useState<'info' | 'repairs' | 'usage'>('info')
+  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [nameplateUploading, setNameplateUploading] = useState(false)
   const [attachmentsUploading, setAttachmentsUploading] = useState(false)
@@ -139,6 +184,33 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
       })
   }, [assetId, mode, repairTickets])
 
+  useEffect(() => {
+    if (!imagePreview) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setImagePreview(null)
+      if (e.key === 'ArrowLeft') {
+        setImagePreview((prev) => {
+          if (!prev) return prev
+          const len = prev.urls.length
+          if (len <= 1) return prev
+          const nextIndex = (prev.index - 1 + len) % len
+          return { ...prev, index: nextIndex }
+        })
+      }
+      if (e.key === 'ArrowRight') {
+        setImagePreview((prev) => {
+          if (!prev) return prev
+          const len = prev.urls.length
+          if (len <= 1) return prev
+          const nextIndex = (prev.index + 1) % len
+          return { ...prev, index: nextIndex }
+        })
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [imagePreview])
+
   const sanitizeFileName = (name: string) =>
     name
       .replace(/[^\w.\-() ]+/g, '_')
@@ -153,9 +225,9 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
     return `${id}-${sanitizeFileName(fileName)}`
   }
 
-  const handleUploadImages = async (kind: 'photo' | 'nameplate', files: FileList | null) => {
+  const handleUploadImages = async (kind: 'photo' | 'nameplate', files: File[]) => {
     if (!assetId) return
-    if (!files || files.length === 0) return
+    if (files.length === 0) return
     if (!isAdmin) return
 
     setUploadError(null)
@@ -163,7 +235,7 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
     if (kind === 'nameplate') setNameplateUploading(true)
 
     try {
-      const list = Array.from(files)
+      const list = files
       const urls = await Promise.all(
         list.map((file) => {
           const objectKey = createObjectKey(file.name)
@@ -220,15 +292,15 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
     return `${gb.toFixed(2)} GB`
   }
 
-  const handleUploadAttachments = async (files: FileList | null) => {
+  const handleUploadAttachments = async (files: File[]) => {
     if (!assetId) return
-    if (!files || files.length === 0) return
+    if (files.length === 0) return
     if (!isAdmin) return
 
     setUploadError(null)
     setAttachmentsUploading(true)
     try {
-      const list = Array.from(files)
+      const list = files
       const newItems = await Promise.all(
         list.map(async (file) => {
           const objectKey = createObjectKey(file.name)
@@ -301,6 +373,8 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
     mode === 'create'
       ? tr('新增设备', 'New asset')
       : asset?.name ?? (assetId ? tr(`设备 ${assetId.slice(0, 8)}`, `Asset ${assetId.slice(0, 8)}`) : tr('设备详情', 'Asset details'))
+  const previewUrl = imagePreview?.urls?.[imagePreview.index]
+  const previewCount = imagePreview?.urls?.length ?? 0
 
   return (
     <PageShell
@@ -382,125 +456,271 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
         </Alert>
       ) : null}
 
-      <Grid container spacing={2}>
-        <Grid item xs={12} lg={7}>
-          <AppCard title={tr('基础信息', 'Basic info')}>
-            {!asset && mode === 'view' ? (
-              <Typography color="text.secondary">{tr('暂无数据', 'No data')}</Typography>
-            ) : (
-              <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('设备种类', 'Category')}
-                  </Typography>
-                  <Typography sx={{ fontWeight: 850 }}>{asset?.category || tr('环境箱', 'Chamber')}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('资产号', 'Asset code')}
-                  </Typography>
-                  <Typography sx={{ fontWeight: 850 }}>{asset?.assetCode || '-'}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    SN
-                  </Typography>
-                  <Typography sx={{ fontWeight: 850 }}>{asset?.serialNumber || '-'}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('位置', 'Location')}
-                  </Typography>
-                  <Typography>{asset?.location || '-'}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('厂商 / 型号', 'Manufacturer / Model')}
-                  </Typography>
-                  <Typography>{`${asset?.manufacturer || '-'} / ${asset?.model || '-'}`}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('负责人', 'Owner')}
-                  </Typography>
-                  <Typography>{asset?.owner || '-'}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('标签', 'Tags')}
-                  </Typography>
-                  <Typography>{asset?.tags?.length ? asset.tags.join(language === 'en' ? ', ' : '，') : '-'}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('校验日期', 'Calibration date')}
-                  </Typography>
-                  <Typography>{formatDateTime(asset?.calibrationDate)}</Typography>
-                </Grid>
-                <Grid item xs={12} sm={6}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('更新时间', 'Updated')}
-                  </Typography>
-                  <Typography>{formatDateTime(asset?.updatedAt)}</Typography>
-                </Grid>
-                <Grid item xs={12}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('描述', 'Description')}
-                  </Typography>
-                  <Typography>{asset?.description || '-'}</Typography>
-                </Grid>
-              </Grid>
-            )}
-          </AppCard>
-        </Grid>
+      <AppCard sx={{ p: 0, overflow: 'hidden', mb: 2 }}>
+        <Tabs value={mainTab} onChange={(_e, v) => setMainTab(v)} variant="scrollable" allowScrollButtonsMobile sx={{ px: 1, py: 0.25 }}>
+          <Tab value="info" label={tr('设备信息', 'Info')} />
+          <Tab
+            value="repairs"
+            label={
+              <Stack direction="row" spacing={1} alignItems="center">
+                <span>{tr('维修记录', 'Repairs')}</span>
+                <Chip size="small" label={relatedRepairTickets.length} />
+              </Stack>
+            }
+          />
+          <Tab
+            value="usage"
+            label={
+              <Stack direction="row" spacing={1} alignItems="center">
+                <span>{tr('使用记录', 'Usage')}</span>
+                <Chip size="small" label={relatedUsageLogs.length} />
+              </Stack>
+            }
+          />
+        </Tabs>
+      </AppCard>
 
-        <Grid item xs={12} lg={5}>
-          <Stack spacing={2}>
-            <AppCard
-              title={<TitleWithIcon icon={<PhotoIcon />}>{tr('设备照片', 'Photos')}</TitleWithIcon>}
-              actions={
-                isAdmin && mode === 'view' && assetId ? (
-                  <Button component="label" size="small" variant="outlined" disabled={photoUploading}>
-                    {photoUploading ? tr('上传中…', 'Uploading…') : tr('上传', 'Upload')}
-                    <input
-                      hidden
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={(e) => {
-                        const files = e.target.files
-                        e.target.value = ''
-                        handleUploadImages('photo', files)
-                      }}
+      {mainTab === 'info' ? (
+        <Grid container spacing={2}>
+          <Grid item xs={12} lg={7}>
+            <AppCard title={tr('基础信息', 'Basic info')}>
+              {!asset && mode === 'view' ? (
+                <Typography color="text.secondary">{tr('暂无数据', 'No data')}</Typography>
+              ) : (
+                <Stack spacing={2.25}>
+                  <Stack spacing={1.25}>
+                    <Typography sx={{ fontWeight: 950 }}>{tr('概览', 'Overview')}</Typography>
+                    <InfoRow
+                      label={tr('位置', 'Location')}
+                      value={<Typography sx={{ fontWeight: 850 }}>{asset?.location || '-'}</Typography>}
                     />
-                  </Button>
-                ) : null
-              }
-            >
-              {asset?.photoUrls?.length ? (
-                <Grid container spacing={1}>
-                  {asset.photoUrls.slice(0, 6).map((url) => (
-                    <Grid item xs={6} key={url}>
+                    <InfoRow
+                      label={tr('负责人', 'Owner')}
+                      value={<Typography sx={{ fontWeight: 850 }}>{asset?.owner || '-'}</Typography>}
+                    />
+                    <InfoRow
+                      label={tr('标签', 'Tags')}
+                      value={
+                        asset?.tags?.length ? (
+                          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                            {asset.tags.map((t) => (
+                              <Chip key={t} size="small" label={t} sx={{ fontWeight: 850 }} />
+                            ))}
+                          </Stack>
+                        ) : (
+                          <Typography sx={{ fontWeight: 850 }}>-</Typography>
+                        )
+                      }
+                    />
+                  </Stack>
+
+                  <Divider />
+
+                  <Stack spacing={1.25}>
+                    <Typography sx={{ fontWeight: 950 }}>{tr('资产信息', 'Asset')}</Typography>
+                    <InfoRow
+                      label={tr('设备种类', 'Category')}
+                      value={<Typography sx={{ fontWeight: 850 }}>{asset?.category || tr('环境箱', 'Chamber')}</Typography>}
+                    />
+                    <InfoRow
+                      label={tr('厂商 / 型号', 'Manufacturer / Model')}
+                      value={<Typography sx={{ fontWeight: 850 }}>{`${asset?.manufacturer || '-'} / ${asset?.model || '-'}`}</Typography>}
+                    />
+                    <InfoRow label={tr('资产号', 'Asset code')} value={<Typography sx={{ fontWeight: 850 }}>{asset?.assetCode || '-'}</Typography>} />
+                    <InfoRow label="SN" value={<Typography sx={{ fontWeight: 850 }}>{asset?.serialNumber || '-'}</Typography>} />
+                  </Stack>
+
+                  <Divider />
+
+                  <Stack spacing={1.25}>
+                    <Typography sx={{ fontWeight: 950 }}>{tr('校验与时间', 'Maintenance & time')}</Typography>
+                    <InfoRow label={tr('校验日期', 'Calibration date')} value={<Typography sx={{ fontWeight: 850 }}>{formatDateTime(asset?.calibrationDate)}</Typography>} />
+                    <InfoRow label={tr('创建时间', 'Created')} value={<Typography sx={{ fontWeight: 850 }}>{formatDateTime(asset?.createdAt)}</Typography>} />
+                    <InfoRow label={tr('更新时间', 'Updated')} value={<Typography sx={{ fontWeight: 850 }}>{formatDateTime(asset?.updatedAt ?? asset?.createdAt)}</Typography>} />
+                  </Stack>
+
+                  <Divider />
+
+                  <Stack spacing={1.25}>
+                    <Typography sx={{ fontWeight: 950 }}>{tr('关联记录', 'Related')}</Typography>
+                    <InfoRow
+                      label={tr('最近一次使用', 'Latest usage')}
+                      value={
+                        relatedUsageLogs[0] ? (
+                          (() => {
+                            const log = relatedUsageLogs[0]
+                            const effectiveStatus = getEffectiveUsageLogStatus(log)
+                            const projectName = log.projectId ? projectNameById.get(log.projectId) : undefined
+                            const testProjectName = log.testProjectId ? testProjectNameById.get(log.testProjectId) : undefined
+                            const label =
+                              effectiveStatus === 'completed'
+                                ? tr('已完成', 'Completed')
+                                : effectiveStatus === 'in-progress'
+                                  ? tr('使用中', 'In use')
+                                  : effectiveStatus === 'overdue'
+                                    ? tr('逾期', 'Overdue')
+                                    : tr('未开始', 'Not started')
+                            const color =
+                              effectiveStatus === 'completed'
+                                ? 'success'
+                                : effectiveStatus === 'in-progress'
+                                  ? 'warning'
+                                  : effectiveStatus === 'overdue'
+                                    ? 'error'
+                                    : 'info'
+                            return (
+                              <Box
+                                sx={{
+                                  border: '1px solid',
+                                  borderColor: 'divider',
+                                  borderRadius: 2,
+                                  p: 1.25,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 1.5,
+                                  backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
+                                }}
+                              >
+                                <Box sx={{ minWidth: 0 }}>
+                                  <Typography sx={{ fontWeight: 850 }} noWrap>
+                                    {projectName ?? testProjectName ?? tr('未关联项目', 'Unlinked')}
+                                  </Typography>
+                                  <Typography variant="body2" color="text.secondary" noWrap>
+                                    {formatDateTime(log.startTime)} → {formatDateTime(log.endTime)}
+                                  </Typography>
+                                  <Typography variant="body2" color="text.secondary" noWrap>
+                                    {tr('使用人：', 'User: ')}
+                                    {log.user || '-'}
+                                  </Typography>
+                                </Box>
+                                <Chip size="small" label={label} color={color as any} />
+                              </Box>
+                            )
+                          })()
+                        ) : (
+                          <Typography sx={{ fontWeight: 850 }}>-</Typography>
+                        )
+                      }
+                    />
+                    <InfoRow
+                      label={tr('最近一条维修', 'Latest repair')}
+                      value={
+                        relatedRepairTickets[0] ? (
+                          (() => {
+                            const t = relatedRepairTickets[0]
+                            return (
+                              <Box
+                                sx={{
+                                  border: '1px solid',
+                                  borderColor: 'divider',
+                                  borderRadius: 2,
+                                  p: 1.25,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  gap: 1.5,
+                                  backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
+                                }}
+                              >
+                                <Box sx={{ minWidth: 0 }}>
+                                  <Typography sx={{ fontWeight: 850 }} noWrap>
+                                    {t.problemDesc || tr('维修工单', 'Repair ticket')}
+                                  </Typography>
+                                  <Typography variant="body2" color="text.secondary" noWrap>
+                                    {tr('更新时间：', 'Updated: ')}
+                                    {formatDateTime(t.updatedAt ?? t.createdAt)}
+                                  </Typography>
+                                </Box>
+                                <Chip
+                                  size="small"
+                                  label={
+                                    t.status === 'quote-pending'
+                                      ? tr('未询价', 'Quote pending')
+                                      : t.status === 'repair-pending'
+                                        ? tr('待维修', 'Repair pending')
+                                        : tr('已完成', 'Completed')
+                                  }
+                                  color={t.status === 'completed' ? 'success' : t.status === 'quote-pending' ? 'warning' : 'info'}
+                                />
+                              </Box>
+                            )
+                          })()
+                        ) : (
+                          <Typography sx={{ fontWeight: 850 }}>-</Typography>
+                        )
+                      }
+                    />
+                  </Stack>
+
+                  <Divider />
+
+                  <Stack spacing={0.75}>
+                    <Typography sx={{ fontWeight: 950 }}>{tr('描述', 'Description')}</Typography>
+                    <Typography>{asset?.description || '-'}</Typography>
+                  </Stack>
+                </Stack>
+              )}
+            </AppCard>
+          </Grid>
+
+          <Grid item xs={12} lg={5}>
+            <Stack spacing={2}>
+              <AppCard
+                title={<TitleWithIcon icon={<PhotoIcon />}>{tr('设备照片', 'Photos')}</TitleWithIcon>}
+                actions={
+                  isAdmin && mode === 'view' && assetId ? (
+                    <Button component="label" size="small" variant="outlined" disabled={photoUploading}>
+                      {photoUploading ? tr('上传中…', 'Uploading…') : tr('上传', 'Upload')}
+                      <input
+                        hidden
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => {
+                          const selectedFiles = Array.from(e.currentTarget.files ?? [])
+                          e.currentTarget.value = ''
+                          handleUploadImages('photo', selectedFiles)
+                        }}
+                      />
+                    </Button>
+                  ) : null
+                }
+              >
+                {asset?.photoUrls?.length ? (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    {asset.photoUrls.slice(0, 12).map((url, index) => (
                       <Box
+                        key={url}
                         sx={{
                           position: 'relative',
-                          width: '100%',
-                          aspectRatio: '4 / 3',
-                          borderRadius: 2,
+                          height: { xs: 88, sm: 110, md: 130 },
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 1.5,
                           border: '1px solid',
                           borderColor: 'divider',
-                          backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.8),
+                          overflow: 'hidden',
+                          cursor: 'zoom-in',
                         }}
+                        onClick={() =>
+                          setImagePreview({
+                            title: tr('设备照片', 'Photos'),
+                            urls: asset.photoUrls ?? [],
+                            index,
+                          })
+                        }
                       >
                         <Box
                           component="img"
-                          src={url}
+                          src={normalizeFileUrlForDisplay(url)}
                           alt={tr('设备照片', 'Asset photo')}
+                          loading="lazy"
                           sx={{
-                            width: '100%',
                             height: '100%',
-                            objectFit: 'cover',
-                            borderRadius: 2,
+                            width: 'auto',
+                            objectFit: 'contain',
                             display: 'block',
                           }}
                         />
@@ -509,11 +729,14 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
                             size="small"
                             color="error"
                             variant="contained"
-                            onClick={() => handleDeleteImage('photo', url)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPendingRemove({ kind: 'photo', url })
+                            }}
                             sx={{
                               position: 'absolute',
-                              top: 8,
-                              right: 8,
+                              top: 6,
+                              right: 6,
                               minWidth: 0,
                               px: 1,
                               py: 0.5,
@@ -524,70 +747,79 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
                           </Button>
                         ) : null}
                       </Box>
-                    </Grid>
-                  ))}
-                </Grid>
-              ) : (
-                <Box
-                  sx={{
-                    border: '1px dashed',
-                    borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.22 : 0.18),
-                    borderRadius: 2,
-                    p: 2.25,
-                    textAlign: 'center',
-                    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.35),
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 850 }}>{tr('暂无照片', 'No photos')}</Typography>
-                </Box>
-              )}
-            </AppCard>
+                    ))}
+                  </Box>
+                ) : (
+                  <Box
+                    sx={{
+                      border: '1px dashed',
+                      borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.22 : 0.18),
+                      borderRadius: 2,
+                      p: 2.25,
+                      textAlign: 'center',
+                      backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.35),
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 850 }}>{tr('暂无照片', 'No photos')}</Typography>
+                  </Box>
+                )}
+              </AppCard>
 
-            <AppCard
-              title={<TitleWithIcon icon={<QrCode2Icon />}>{tr('铭牌', 'Nameplate')}</TitleWithIcon>}
-              actions={
-                isAdmin && mode === 'view' && assetId ? (
-                  <Button component="label" size="small" variant="outlined" disabled={nameplateUploading}>
-                    {nameplateUploading ? tr('上传中…', 'Uploading…') : tr('上传', 'Upload')}
-                    <input
-                      hidden
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={(e) => {
-                        const files = e.target.files
-                        e.target.value = ''
-                        handleUploadImages('nameplate', files)
-                      }}
-                    />
-                  </Button>
-                ) : null
-              }
-            >
-              {asset?.nameplateUrls?.length ? (
-                <Grid container spacing={1}>
-                  {asset.nameplateUrls.slice(0, 6).map((url) => (
-                    <Grid item xs={6} key={url}>
+              <AppCard
+                title={<TitleWithIcon icon={<QrCode2Icon />}>{tr('铭牌', 'Nameplate')}</TitleWithIcon>}
+                actions={
+                  isAdmin && mode === 'view' && assetId ? (
+                    <Button component="label" size="small" variant="outlined" disabled={nameplateUploading}>
+                      {nameplateUploading ? tr('上传中…', 'Uploading…') : tr('上传', 'Upload')}
+                      <input
+                        hidden
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => {
+                          const selectedFiles = Array.from(e.currentTarget.files ?? [])
+                          e.currentTarget.value = ''
+                          handleUploadImages('nameplate', selectedFiles)
+                        }}
+                      />
+                    </Button>
+                  ) : null
+                }
+              >
+                {asset?.nameplateUrls?.length ? (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    {asset.nameplateUrls.slice(0, 12).map((url, index) => (
                       <Box
+                        key={url}
                         sx={{
                           position: 'relative',
-                          width: '100%',
-                          aspectRatio: '4 / 3',
-                          borderRadius: 2,
+                          height: { xs: 88, sm: 110, md: 130 },
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderRadius: 1.5,
                           border: '1px solid',
                           borderColor: 'divider',
-                          backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.8),
+                          overflow: 'hidden',
+                          cursor: 'zoom-in',
                         }}
+                        onClick={() =>
+                          setImagePreview({
+                            title: tr('铭牌', 'Nameplate'),
+                            urls: asset.nameplateUrls ?? [],
+                            index,
+                          })
+                        }
                       >
                         <Box
                           component="img"
-                          src={url}
+                          src={normalizeFileUrlForDisplay(url)}
                           alt={tr('铭牌', 'Nameplate')}
+                          loading="lazy"
                           sx={{
-                            width: '100%',
                             height: '100%',
-                            objectFit: 'cover',
-                            borderRadius: 2,
+                            width: 'auto',
+                            objectFit: 'contain',
                             display: 'block',
                           }}
                         />
@@ -596,11 +828,14 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
                             size="small"
                             color="error"
                             variant="contained"
-                            onClick={() => handleDeleteImage('nameplate', url)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPendingRemove({ kind: 'nameplate', url })
+                            }}
                             sx={{
                               position: 'absolute',
-                              top: 8,
-                              right: 8,
+                              top: 6,
+                              right: 6,
                               minWidth: 0,
                               px: 1,
                               py: 0.5,
@@ -611,50 +846,127 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
                           </Button>
                         ) : null}
                       </Box>
-                    </Grid>
-                  ))}
-                </Grid>
-              ) : (
-                <Box
-                  sx={{
-                    border: '1px dashed',
-                    borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.22 : 0.18),
-                    borderRadius: 2,
-                    p: 2.25,
-                    textAlign: 'center',
-                    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.35),
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 850 }}>{tr('暂无铭牌信息', 'No nameplate')}</Typography>
-                </Box>
-              )}
-            </AppCard>
+                    ))}
+                  </Box>
+                ) : (
+                  <Box
+                    sx={{
+                      border: '1px dashed',
+                      borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.22 : 0.18),
+                      borderRadius: 2,
+                      p: 2.25,
+                      textAlign: 'center',
+                      backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.35),
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 850 }}>{tr('暂无铭牌信息', 'No nameplate')}</Typography>
+                  </Box>
+                )}
+              </AppCard>
 
+              <AppCard
+                title={<TitleWithIcon icon={<AttachFileIcon />}>{tr('技术档案', 'Attachments')}</TitleWithIcon>}
+                actions={
+                  isAdmin && mode === 'view' && assetId ? (
+                    <Button component="label" size="small" variant="outlined" disabled={attachmentsUploading}>
+                      {attachmentsUploading ? tr('上传中…', 'Uploading…') : tr('上传', 'Upload')}
+                      <input
+                        hidden
+                        type="file"
+                        multiple
+                        onChange={(e) => {
+                          const selectedFiles = Array.from(e.currentTarget.files ?? [])
+                          e.currentTarget.value = ''
+                          handleUploadAttachments(selectedFiles)
+                        }}
+                      />
+                    </Button>
+                  ) : null
+                }
+              >
+                {asset?.attachments?.length ? (
+                  <Stack spacing={1}>
+                    {asset.attachments.slice(0, 8).map((a) => (
+                      <Box
+                        key={a.id}
+                        sx={{
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 2,
+                          p: 1.25,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1.25,
+                          backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
+                        }}
+                      >
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontWeight: 850 }} noWrap>
+                            {a.name || tr('未命名文件', 'Untitled')}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" noWrap>
+                            {formatBytes(a.size)} · {formatDateTime(a.uploadedAt)}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            component="a"
+                            href={normalizeFileUrlForDisplay(a.url)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {tr('下载', 'Download')}
+                          </Button>
+                          {isAdmin ? (
+                          <Button size="small" variant="outlined" color="error" onClick={() => setPendingRemove({ kind: 'attachment', attachmentId: a.id, attachmentName: a.name })}>
+                              {tr('删除', 'Delete')}
+                            </Button>
+                          ) : null}
+                        </Box>
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : (
+                  <Box
+                    sx={{
+                      border: '1px dashed',
+                      borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.22 : 0.18),
+                      borderRadius: 2,
+                      p: 2.25,
+                      textAlign: 'center',
+                      backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.35),
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 850 }}>{tr('暂无附件', 'No attachments')}</Typography>
+                  </Box>
+                )}
+              </AppCard>
+            </Stack>
+          </Grid>
+        </Grid>
+      ) : mainTab === 'repairs' ? (
+        <Grid container spacing={2}>
+          <Grid item xs={12}>
             <AppCard
-              title={<TitleWithIcon icon={<AttachFileIcon />}>{tr('技术档案', 'Attachments')}</TitleWithIcon>}
+              title={<TitleWithIcon icon={<BuildCircleIcon />}>{tr('维修记录', 'Repairs')}</TitleWithIcon>}
               actions={
-                isAdmin && mode === 'view' && assetId ? (
-                  <Button component="label" size="small" variant="outlined" disabled={attachmentsUploading}>
-                    {attachmentsUploading ? tr('上传中…', 'Uploading…') : tr('上传', 'Upload')}
-                    <input
-                      hidden
-                      type="file"
-                      multiple
-                      onChange={(e) => {
-                        const files = e.target.files
-                        e.target.value = ''
-                        handleUploadAttachments(files)
-                      }}
-                    />
-                  </Button>
-                ) : null
+                <Button size="small" variant="outlined" onClick={() => navigate('/repairs')} sx={{ whiteSpace: 'nowrap' }}>
+                  {tr('打开维修管理', 'Open repairs')}
+                </Button>
               }
             >
-              {asset?.attachments?.length ? (
-                <Stack spacing={1}>
-                  {asset.attachments.slice(0, 8).map((a) => (
+              {repairLoading ? (
+                <LinearProgress />
+              ) : relatedRepairTickets.length === 0 ? (
+                <Typography color="text.secondary">{tr('暂无维修记录', 'No repair tickets')}</Typography>
+              ) : (
+                <Stack spacing={1.25}>
+                  {relatedRepairTickets.slice(0, 12).map((t) => (
                     <Box
-                      key={a.id}
+                      key={t.id}
                       sx={{
                         border: '1px solid',
                         borderColor: 'divider',
@@ -663,175 +975,111 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        gap: 1.25,
+                        gap: 1.5,
                         backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
                       }}
                     >
                       <Box sx={{ minWidth: 0 }}>
                         <Typography sx={{ fontWeight: 850 }} noWrap>
-                          {a.name || tr('未命名文件', 'Untitled')}
+                          {t.problemDesc || tr('维修工单', 'Repair ticket')}
                         </Typography>
                         <Typography variant="body2" color="text.secondary" noWrap>
-                          {formatBytes(a.size)} · {formatDateTime(a.uploadedAt)}
+                          {tr('更新时间：', 'Updated: ')}
+                          {formatDateTime(t.updatedAt ?? t.createdAt)}
                         </Typography>
                       </Box>
-                      <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                        <Button size="small" variant="outlined" component="a" href={a.url} target="_blank" rel="noreferrer">
-                          {tr('下载', 'Download')}
-                        </Button>
-                        {isAdmin ? (
-                          <Button size="small" variant="outlined" color="error" onClick={() => handleDeleteAttachment(a.id)}>
-                            {tr('删除', 'Delete')}
-                          </Button>
-                        ) : null}
-                      </Box>
+                      <Chip
+                        size="small"
+                        label={
+                          t.status === 'quote-pending'
+                            ? tr('未询价', 'Quote pending')
+                            : t.status === 'repair-pending'
+                              ? tr('待维修', 'Repair pending')
+                              : tr('已完成', 'Completed')
+                        }
+                        color={t.status === 'completed' ? 'success' : t.status === 'quote-pending' ? 'warning' : 'info'}
+                      />
                     </Box>
                   ))}
                 </Stack>
-              ) : (
-                <Box
-                  sx={{
-                    border: '1px dashed',
-                    borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.22 : 0.18),
-                    borderRadius: 2,
-                    p: 2.25,
-                    textAlign: 'center',
-                    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.35),
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 850 }}>{tr('暂无附件', 'No attachments')}</Typography>
-                </Box>
               )}
             </AppCard>
-          </Stack>
+          </Grid>
         </Grid>
+      ) : (
+        <Grid container spacing={2}>
+          <Grid item xs={12}>
+            <AppCard title={<TitleWithIcon icon={<ListAltIcon />}>{tr('使用记录', 'Usage logs')}</TitleWithIcon>}>
+              {usageLogsLoading ? (
+                <LinearProgress />
+              ) : relatedUsageLogs.length === 0 ? (
+                <Typography color="text.secondary">{tr('暂无使用记录', 'No usage logs')}</Typography>
+              ) : (
+                <Stack spacing={1.25}>
+                  {relatedUsageLogs.slice(0, 12).map((log) => {
+                    const effectiveStatus = getEffectiveUsageLogStatus(log)
+                    const projectName = log.projectId ? projectNameById.get(log.projectId) : undefined
+                    const testProjectName = log.testProjectId ? testProjectNameById.get(log.testProjectId) : undefined
+                    const label =
+                      effectiveStatus === 'completed'
+                        ? tr('已完成', 'Completed')
+                        : effectiveStatus === 'in-progress'
+                          ? tr('使用中', 'In use')
+                          : effectiveStatus === 'overdue'
+                            ? tr('逾期', 'Overdue')
+                            : tr('未开始', 'Not started')
 
-        <Grid item xs={12} lg={6}>
-          <AppCard
-            title={<TitleWithIcon icon={<BuildCircleIcon />}>{tr('维修记录', 'Repairs')}</TitleWithIcon>}
-            actions={
-              <Button size="small" variant="outlined" onClick={() => navigate('/repairs')} sx={{ whiteSpace: 'nowrap' }}>
-                {tr('打开维修管理', 'Open repairs')}
-              </Button>
-            }
-          >
-            {repairLoading ? (
-              <LinearProgress />
-            ) : relatedRepairTickets.length === 0 ? (
-              <Typography color="text.secondary">{tr('暂无维修记录', 'No repair tickets')}</Typography>
-            ) : (
-              <Stack spacing={1.25}>
-                {relatedRepairTickets.slice(0, 8).map((t) => (
-                  <Box
-                    key={t.id}
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      p: 1.25,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 1.5,
-                      backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
-                    }}
-                  >
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 850 }} noWrap>
-                        {t.problemDesc || tr('维修工单', 'Repair ticket')}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" noWrap>
-                        {tr('更新时间：', 'Updated: ')}{formatDateTime(t.updatedAt ?? t.createdAt)}
-                      </Typography>
-                    </Box>
-                    <Chip
-                      size="small"
-                      label={
-                        t.status === 'quote-pending'
-                          ? tr('未询价', 'Quote pending')
-                          : t.status === 'repair-pending'
-                            ? tr('待维修', 'Repair pending')
-                            : tr('已完成', 'Completed')
-                      }
-                      color={t.status === 'completed' ? 'success' : t.status === 'quote-pending' ? 'warning' : 'info'}
-                    />
-                  </Box>
-                ))}
-              </Stack>
-            )}
-          </AppCard>
-        </Grid>
+                    const color =
+                      effectiveStatus === 'completed'
+                        ? 'success'
+                        : effectiveStatus === 'in-progress'
+                          ? 'warning'
+                          : effectiveStatus === 'overdue'
+                            ? 'error'
+                            : 'info'
 
-        <Grid item xs={12} lg={6}>
-          <AppCard title={<TitleWithIcon icon={<ListAltIcon />}>{tr('使用记录', 'Usage logs')}</TitleWithIcon>}>
-            {usageLogsLoading ? (
-              <LinearProgress />
-            ) : relatedUsageLogs.length === 0 ? (
-              <Typography color="text.secondary">{tr('暂无使用记录', 'No usage logs')}</Typography>
-            ) : (
-              <Stack spacing={1.25}>
-                {relatedUsageLogs.slice(0, 8).map((log) => {
-                  const effectiveStatus = getEffectiveUsageLogStatus(log)
-                  const projectName = log.projectId ? projectNameById.get(log.projectId) : undefined
-                  const testProjectName = log.testProjectId ? testProjectNameById.get(log.testProjectId) : undefined
-                  const label =
-                    effectiveStatus === 'completed'
-                      ? tr('已完成', 'Completed')
-                      : effectiveStatus === 'in-progress'
-                        ? tr('使用中', 'In use')
-                        : effectiveStatus === 'overdue'
-                          ? tr('逾期', 'Overdue')
-                          : tr('未开始', 'Not started')
-
-                  const color =
-                    effectiveStatus === 'completed'
-                      ? 'success'
-                      : effectiveStatus === 'in-progress'
-                        ? 'warning'
-                        : effectiveStatus === 'overdue'
-                          ? 'error'
-                          : 'info'
-
-                  return (
-                    <Box
-                      key={log.id}
-                      onClick={() => setSelectedLogId(log.id)}
-                      sx={{
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: 2,
-                        p: 1.25,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 1.5,
-                        '&:hover': {
-                          backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.06),
-                          borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.32 : 0.22),
-                        },
-                      }}
-                    >
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography sx={{ fontWeight: 850 }} noWrap>
-                          {projectName ?? testProjectName ?? tr('未关联项目', 'Unlinked')}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" noWrap>
-                          {formatDateTime(log.startTime)} → {formatDateTime(log.endTime)}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" noWrap>
-                          {tr('使用人：', 'User: ')}{log.user || '-'}
-                        </Typography>
+                    return (
+                      <Box
+                        key={log.id}
+                        onClick={() => setSelectedLogId(log.id)}
+                        sx={{
+                          border: '1px solid',
+                          borderColor: 'divider',
+                          borderRadius: 2,
+                          p: 1.25,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1.5,
+                          '&:hover': {
+                            backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.06),
+                            borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.32 : 0.22),
+                          },
+                        }}
+                      >
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontWeight: 850 }} noWrap>
+                            {projectName ?? testProjectName ?? tr('未关联项目', 'Unlinked')}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" noWrap>
+                            {formatDateTime(log.startTime)} → {formatDateTime(log.endTime)}
+                          </Typography>
+                          <Typography variant="body2" color="text.secondary" noWrap>
+                            {tr('使用人：', 'User: ')}
+                            {log.user || '-'}
+                          </Typography>
+                        </Box>
+                        <Chip size="small" label={label} color={color as any} />
                       </Box>
-                      <Chip size="small" label={label} color={color as any} />
-                    </Box>
-                  )
-                })}
-              </Stack>
-            )}
-          </AppCard>
+                    )
+                  })}
+                </Stack>
+              )}
+            </AppCard>
+          </Grid>
         </Grid>
-      </Grid>
+      )}
 
       <ChamberForm
         open={editOpen}
@@ -842,12 +1090,150 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
 
       <UsageLogDetails open={Boolean(selectedLogId)} onClose={() => setSelectedLogId(null)} logId={selectedLogId} />
 
+      <Dialog
+        open={Boolean(imagePreview)}
+        onClose={() => setImagePreview(null)}
+        maxWidth={false}
+        fullScreen
+        PaperProps={{ sx: { backgroundColor: 'transparent', boxShadow: 'none', m: 0, overflow: 'hidden' } }}
+        BackdropProps={{ sx: { backgroundColor: alpha('#000', theme.palette.mode === 'dark' ? 0.78 : 0.72) } }}
+      >
+        <Box
+          sx={{
+            width: '100dvw',
+            height: '100dvh',
+            p: { xs: 1.5, sm: 2.5 },
+            boxSizing: 'border-box',
+            display: 'grid',
+            gridTemplateRows: 'auto 1fr',
+            gap: 1,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, px: 1, color: '#fff' }}>
+            <Typography sx={{ fontWeight: 900 }} noWrap>
+              {imagePreview?.title || tr('图片预览', 'Preview')}
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {previewUrl ? (
+                <IconButton
+                  component="a"
+                  href={normalizeFileUrlForDisplay(previewUrl)}
+                  target="_blank"
+                  rel="noreferrer"
+                  sx={{ color: '#fff', backgroundColor: alpha('#000', 0.22), '&:hover': { backgroundColor: alpha('#000', 0.32) } }}
+                >
+                  <OpenInNewIcon fontSize="small" />
+                </IconButton>
+              ) : null}
+              <IconButton
+                onClick={() => setImagePreview(null)}
+                sx={{ color: '#fff', backgroundColor: alpha('#000', 0.22), '&:hover': { backgroundColor: alpha('#000', 0.32) } }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Box>
+
+          <Box
+            sx={{
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: 0,
+              overflow: 'hidden',
+            }}
+          >
+            {previewCount > 1 ? (
+              <IconButton
+                onClick={() =>
+                  setImagePreview((prev) => {
+                    if (!prev) return prev
+                    const len = prev.urls.length
+                    const nextIndex = (prev.index - 1 + len) % len
+                    return { ...prev, index: nextIndex }
+                  })
+                }
+                sx={{
+                  position: 'absolute',
+                  left: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#fff',
+                  backgroundColor: alpha('#000', 0.28),
+                  '&:hover': { backgroundColor: alpha('#000', 0.38) },
+                }}
+              >
+                <ChevronLeftIcon />
+              </IconButton>
+            ) : null}
+
+            {previewUrl ? (
+              <Box
+                component="img"
+                src={normalizeFileUrlForDisplay(previewUrl)}
+                alt={imagePreview?.title || tr('图片预览', 'Preview')}
+                sx={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', display: 'block' }}
+              />
+            ) : null}
+
+            {previewCount > 1 ? (
+              <IconButton
+                onClick={() =>
+                  setImagePreview((prev) => {
+                    if (!prev) return prev
+                    const len = prev.urls.length
+                    const nextIndex = (prev.index + 1) % len
+                    return { ...prev, index: nextIndex }
+                  })
+                }
+                sx={{
+                  position: 'absolute',
+                  right: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  color: '#fff',
+                  backgroundColor: alpha('#000', 0.28),
+                  '&:hover': { backgroundColor: alpha('#000', 0.38) },
+                }}
+              >
+                <ChevronRightIcon />
+              </IconButton>
+            ) : null}
+          </Box>
+        </Box>
+      </Dialog>
+
       <ConfirmDialog
         open={pendingDelete}
         title={tr('确认删除', 'Confirm deletion')}
         description={tr('您确定要删除这个设备吗？此操作无法撤销。', 'Delete this asset? This action cannot be undone.')}
         onClose={() => setPendingDelete(false)}
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingRemove)}
+        title={tr('确认删除', 'Confirm deletion')}
+        description={
+          pendingRemove?.kind === 'attachment'
+            ? tr(
+                `确认删除附件「${pendingRemove.attachmentName || tr('未命名文件', 'Untitled')}」？此操作无法撤销。`,
+                `Delete attachment "${pendingRemove.attachmentName || tr('Untitled', 'Untitled')}"? This action cannot be undone.`
+              )
+            : tr('确认删除这张图片？此操作无法撤销。', 'Delete this image? This action cannot be undone.')
+        }
+        onClose={() => setPendingRemove(null)}
+        onConfirm={async () => {
+          const cur = pendingRemove
+          setPendingRemove(null)
+          if (!cur) return
+          if (cur.kind === 'attachment') {
+            await handleDeleteAttachment(cur.attachmentId)
+            return
+          }
+          await handleDeleteImage(cur.kind, cur.url)
+        }}
       />
     </PageShell>
   )

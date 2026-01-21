@@ -19,7 +19,7 @@ const initialState: AuthState = {
 
 const getRoleFromClaims = (claims: Record<string, any>): UserRole => {
   const role = claims?.role
-  if (role === 'admin' || role === 'user') return role
+  if (role === 'admin' || role === 'manager' || role === 'user') return role
   if (claims?.admin === true) return 'admin'
   return 'user'
 }
@@ -37,6 +37,12 @@ export const bootstrapAuth = createAsyncThunk<User | null, void, { rejectValue: 
     } catch (e: any) {
       setAccessToken(null)
       if (e?.status === 401) return null
+      if (e?.status === 403) {
+        const text = e?.bodyText ? String(e.bodyText) : ''
+        if (text.includes('user_pending')) return rejectWithValue('账号待管理员审批')
+        if (text.includes('user_disabled')) return rejectWithValue('账号已被禁用')
+        return rejectWithValue('账号不可用')
+      }
       return rejectWithValue(e?.message || '初始化会话失败')
     }
   }
@@ -60,6 +66,11 @@ export const signInUser = createAsyncThunk<
   } catch (e: any) {
     const text = e?.bodyText ? String(e.bodyText) : ''
     if (e?.status === 401) return rejectWithValue('账号或密码错误')
+    if (e?.status === 403) {
+      if (text.includes('user_pending')) return rejectWithValue('账号待管理员审批')
+      if (text.includes('user_disabled')) return rejectWithValue('账号已被禁用')
+      return rejectWithValue('账号不可用')
+    }
     if (text.includes('username_taken')) return rejectWithValue('账号已被注册')
     return rejectWithValue(e?.message || '登录失败')
   }
@@ -78,20 +89,20 @@ export const signOutUser = createAsyncThunk<void, void, { rejectValue: string }>
 )
 
 export const signUpUser = createAsyncThunk<
-  User,
+  { pending: true },
   { email: string; password: string },
   { rejectValue: string }
 >('auth/signUpUser', async ({ email, password }, { rejectWithValue }) => {
   try {
-    const data = await apiFetch<{ accessToken: string; user: User }>('/api/auth/signup', {
+    const data = await apiFetch<{ pending: true }>('/api/auth/signup', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ username: email, password }),
       retryOnAuth: false
     })
-    setAccessToken(data.accessToken)
-    const role = getRoleFromClaims(data.user as any)
-    return { ...data.user, role }
+    if (!data?.pending) return rejectWithValue('注册失败')
+    setAccessToken(null)
+    return { pending: true }
   } catch (e: any) {
     const text = e?.bodyText ? String(e.bodyText) : ''
     if (text.includes('username_taken')) return rejectWithValue('账号已被注册')
@@ -154,8 +165,8 @@ const authSlice = createSlice({
         state.error = null
       })
       .addCase(signUpUser.fulfilled, (state, action) => {
-        state.user = action.payload
-        state.isAuthenticated = true
+        state.user = null
+        state.isAuthenticated = false
         state.loading = false
         state.error = null
       })

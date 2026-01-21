@@ -4,7 +4,7 @@ import path from 'node:path'
 import { config } from '../../config.js'
 import { getDb } from '../../db/db.js'
 import { requireAuth } from '../middlewares/requireAuth.js'
-import { requireAdmin } from '../middlewares/requireAdmin.js'
+import { requireManager } from '../middlewares/requireManager.js'
 import { isSubPath, normalizeSlashPath } from '../../util/pathSafe.js'
 import { ensureAssetFolder, getAssetFolderInfoById, resolveAssetFolderForRead } from '../../services/fileFolders.js'
 
@@ -12,6 +12,10 @@ export const filesRouter = Router()
 
 const rawLimit = '30mb'
 const rawBody = express.raw({ type: '*/*', limit: rawLimit })
+const devLog = (event: string, payload: Record<string, any>) => {
+  if (process.env.NODE_ENV === 'production') return
+  console.log(`[files] ${event}`, payload)
+}
 
 const extractAssetId = (incoming: string) => {
   const p = normalizeSlashPath(incoming)
@@ -63,23 +67,41 @@ const guessContentType = (filename: string) => {
 filesRouter.post(
   '/upload',
   requireAuth,
-  requireAdmin,
+  requireManager,
   rawBody,
   async (req, res) => {
+    devLog('upload:start', {
+      method: req.method,
+      url: req.originalUrl,
+      userId: req.user?.id,
+      role: req.user?.role,
+      contentType: req.headers['content-type'],
+      contentLength: req.headers['content-length'],
+      limit: rawLimit
+    })
     const incomingPath = typeof req.query.path === 'string' ? req.query.path : ''
     const parsed = extractAssetId(incomingPath)
-    if (!parsed) return res.status(400).json({ error: 'invalid_path' })
+    if (!parsed) {
+      devLog('upload:invalid_path', { incomingPath })
+      return res.status(400).json({ error: 'invalid_path' })
+    }
 
     const { categorySlug, preferredFolder } = getAssetFolderInfoById(parsed.assetId)
     const assetFolder = await ensureAssetFolder(categorySlug, preferredFolder, parsed.assetId)
     const abs = toAbsoluteFilePath(categorySlug, assetFolder, parsed.filename)
-    if (!isSubPath(config.filesDir, abs)) return res.status(400).json({ error: 'invalid_path' })
+    if (!isSubPath(config.filesDir, abs)) {
+      devLog('upload:invalid_subpath', { filesDir: config.filesDir, abs })
+      return res.status(400).json({ error: 'invalid_path' })
+    }
 
     const dir = path.dirname(abs)
     await fs.promises.mkdir(dir, { recursive: true })
 
     const buf = req.body instanceof Buffer ? req.body : Buffer.from([])
-    if (!buf.length) return res.status(400).json({ error: 'empty_file' })
+    if (!buf.length) {
+      devLog('upload:empty_file', { incomingPath, assetId: parsed.assetId, filename: parsed.filename })
+      return res.status(400).json({ error: 'empty_file' })
+    }
 
     const tmp = abs + '.tmp-' + Date.now().toString(16)
     await fs.promises.writeFile(tmp, buf)
@@ -88,6 +110,16 @@ filesRouter.post(
     const canonicalPath = toCanonicalPath(categorySlug, parsed.assetId, parsed.filename)
     const baseUrl = `${req.protocol}://${req.get('host')}`
     const url = `${baseUrl}/api/files/file?path=${encodeURIComponent(canonicalPath)}`
+    devLog('upload:ok', {
+      incomingPath,
+      assetId: parsed.assetId,
+      filename: parsed.filename,
+      categorySlug,
+      assetFolder,
+      bytes: buf.length,
+      canonicalPath,
+      url
+    })
     res.json({ url, path: canonicalPath })
   }
 )
@@ -95,30 +127,47 @@ filesRouter.post(
 filesRouter.get('/file', requireAuth, async (req, res) => {
   const p = typeof req.query.path === 'string' ? req.query.path : ''
   const parsed = resolvePathParam(p)
-  if (!parsed) return res.status(400).json({ error: 'invalid_path' })
+  if (!parsed) {
+    devLog('get:invalid_path', { p, method: req.method, url: req.originalUrl, userId: req.user?.id, role: req.user?.role })
+    return res.status(400).json({ error: 'invalid_path' })
+  }
 
   const resolvedFolder = await resolveAssetFolderForRead(parsed.categorySlug, parsed.assetFolder)
-  if (!resolvedFolder) return res.status(404).json({ error: 'not_found' })
+  if (!resolvedFolder) {
+    devLog('get:not_found_folder', {
+      p,
+      categorySlug: parsed.categorySlug,
+      assetFolder: parsed.assetFolder,
+      filename: parsed.filename
+    })
+    return res.status(404).json({ error: 'not_found' })
+  }
 
   const abs = toAbsoluteFilePath(parsed.categorySlug, resolvedFolder, parsed.filename)
-  if (!isSubPath(config.filesDir, abs)) return res.status(400).json({ error: 'invalid_path' })
+  if (!isSubPath(config.filesDir, abs)) {
+    devLog('get:invalid_subpath', { filesDir: config.filesDir, abs })
+    return res.status(400).json({ error: 'invalid_path' })
+  }
 
   try {
     await fs.promises.access(abs, fs.constants.R_OK)
   } catch {
+    devLog('get:not_found_file', { abs })
     return res.status(404).json({ error: 'not_found' })
   }
 
+  devLog('get:ok', { abs, contentType: guessContentType(parsed.filename) })
   res.setHeader('content-type', guessContentType(parsed.filename))
   res.setHeader('cache-control', 'private, max-age=3600')
   fs.createReadStream(abs).pipe(res)
 })
 
-filesRouter.delete('/delete', requireAuth, requireAdmin, async (req, res) => {
+filesRouter.delete('/delete', requireAuth, requireManager, async (req, res) => {
   const p = typeof req.query.path === 'string' ? req.query.path : ''
   if (!p) return res.json({ ok: true })
 
-  const parsedNew = resolvePathParam(p)
+  const normalized = normalizeSlashPath(p)
+  const parsedNew = normalized.startsWith('files/') ? resolvePathParam(normalized) : null
   if (parsedNew) {
     const resolvedFolder = await resolveAssetFolderForRead(parsedNew.categorySlug, parsedNew.assetFolder)
     if (!resolvedFolder) return res.json({ ok: true })

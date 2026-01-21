@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middlewares/requireAuth.js'
-import { requireAdmin } from '../middlewares/requireAdmin.js'
+import { requireManager } from '../middlewares/requireManager.js'
 import { getDb } from '../../db/db.js'
 
 export const settingsRouter = Router()
@@ -46,7 +46,7 @@ const patchSchema = z.object({
   defaultUsageLogDurationMinutes: z.number().int().min(1).max(24 * 60).optional()
 })
 
-settingsRouter.put('/', requireAuth, requireAdmin, (req, res) => {
+settingsRouter.put('/', requireAuth, requireManager, (req, res) => {
   const body = patchSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
@@ -56,4 +56,3 @@ settingsRouter.put('/', requireAuth, requireAdmin, (req, res) => {
   }
   res.json({ ok: true })
 })
-

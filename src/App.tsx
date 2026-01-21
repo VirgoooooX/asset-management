@@ -19,12 +19,17 @@ import { loadSettingsFromBackend, loadSettingsFromStorage } from './store/settin
 import { useEffect } from 'react'; // 新增
 import { useAppDispatch, useAppSelector } from './store/hooks'
 import ProfilePage from './pages/ProfilePage'
+import AdminUsersPage from './pages/AdminUsersPage'
+
+let didBootstrap = false
 
 function App() {
   const dispatch = useAppDispatch()
   const auth = useAppSelector((s) => s.auth)
 
   useEffect(() => { // 新增: 应用启动时尝试从 localStorage 加载用户信息
+    if (didBootstrap) return
+    didBootstrap = true
     dispatch(loadSettingsFromStorage())
     dispatch(bootstrapAuth())
   }, [dispatch]);
@@ -47,17 +52,21 @@ function App() {
             <Route path="/timeline" element={<TimelinePage />} />
             <Route path="/alerts" element={<AlertsPage />} />
             <Route path="/usage-logs" element={<UsageLogPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/me" element={<ProfilePage />} />
+            <Route path="/repairs" element={<RepairsPage />} />
+          </Route>
+
+          <Route element={<PrivateRoute allowedRoles={['admin', 'manager']} />}> {/* 仅管理员可访问的页面 */}
+            <Route path="/chambers" element={<ChambersPage />} />
+            <Route path="/projects" element={<ProjectsPage />} />
+            <Route path="/test-projects" element={<TestProjectsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/assets/new" element={<AssetDetailPage mode="create" />} />
             <Route path="/assets/:assetId" element={<AssetDetailPage mode="view" />} />
           </Route>
 
-          <Route element={<PrivateRoute allowedRoles={['admin']} />}> {/* 仅管理员可访问的页面 */}
-            <Route path="/chambers" element={<ChambersPage />} />
-            <Route path="/projects" element={<ProjectsPage />} />
-            <Route path="/test-projects" element={<TestProjectsPage />} />
-            <Route path="/repairs" element={<RepairsPage />} />
+          <Route element={<PrivateRoute allowedRoles={['admin']} />}>
+            <Route path="/admin/users" element={<AdminUsersPage />} />
           </Route>
           
           {/* 可以添加一个 404 Not Found 页面 */}

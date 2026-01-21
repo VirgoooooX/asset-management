@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { getDb } from '../../db/db.js'
 import { requireAuth } from '../middlewares/requireAuth.js'
-import { requireAdmin } from '../middlewares/requireAdmin.js'
+import { requireManager } from '../middlewares/requireManager.js'
 import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
 import { syncAssetFolderToPreferred } from '../../services/fileFolders.js'
@@ -85,7 +85,7 @@ assetsRouter.get('/:id', requireAuth, (req, res) => {
   res.json({ item: mapRowToAsset(row) })
 })
 
-assetsRouter.post('/', requireAuth, requireAdmin, (req, res) => {
+assetsRouter.post('/', requireAuth, requireManager, (req, res) => {
   const body = assetCreateSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
@@ -124,7 +124,7 @@ assetsRouter.post('/', requireAuth, requireAdmin, (req, res) => {
   res.json({ id })
 })
 
-assetsRouter.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
+assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
   const id = req.params.id
   const body = assetPatchSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
@@ -168,7 +168,7 @@ assetsRouter.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
   res.json({ ok: true })
 })
 
-assetsRouter.delete('/:id', requireAuth, requireAdmin, (req, res) => {
+assetsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
   const id = req.params.id
   const db = getDb()
   db.prepare('delete from assets where id = ?').run(id)

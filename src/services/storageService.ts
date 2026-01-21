@@ -1,8 +1,28 @@
 import { apiFetch } from './apiClient'
 
+const tryParseUrl = (value: string) => {
+  try {
+    if (value.startsWith('http://') || value.startsWith('https://')) return new URL(value)
+    if (typeof window !== 'undefined' && typeof window.location?.origin === 'string') {
+      return new URL(value, window.location.origin)
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+export const normalizeFileUrlForDisplay = (value: string) => {
+  const u = tryParseUrl(value)
+  if (!u) return value
+  if (u.pathname.startsWith('/api/')) return `${u.pathname}${u.search}`
+  return value
+}
+
 const normalizePathFromUrl = (value: string) => {
   try {
-    const url = new URL(value)
+    const url = tryParseUrl(value)
+    if (!url) return value
     const queryPath = url.searchParams.get('path')
     if (queryPath) return queryPath
     return url.pathname.replace(/^\/+/, '')
@@ -19,13 +39,31 @@ const normalizePathFromUrl = (value: string) => {
  */
 export const uploadFile = async (file: File, path: string): Promise<string> => {
   if (!file) throw new Error("No file provided");
-  const data = await apiFetch<{ url: string }>(`/api/files/upload?path=${encodeURIComponent(path)}`, {
-    method: 'POST',
-    headers: { 'content-type': file.type || 'application/octet-stream' },
-    body: file,
-  })
-  if (!data?.url) throw new Error('Upload succeeded but missing url')
-  return data.url
+  const dev = Boolean(((import.meta as any).env?.DEV as any) ?? false)
+  if (dev) {
+    console.debug('[uploadFile]', { name: file.name, size: file.size, type: file.type || undefined, path })
+  }
+  try {
+    const data = await apiFetch<{ url: string }>(`/api/files/upload?path=${encodeURIComponent(path)}`, {
+      method: 'POST',
+      headers: { 'content-type': file.type || 'application/octet-stream' },
+      body: file,
+    })
+    if (!data?.url) throw new Error('Upload succeeded but missing url')
+    const url = normalizeFileUrlForDisplay(data.url)
+    if (dev) console.debug('[uploadFile] ok', { url })
+    return url
+  } catch (e: any) {
+    if (dev) {
+      console.debug('[uploadFile] error', {
+        message: e?.message,
+        status: e?.status,
+        path: e?.path,
+        bodyText: e?.bodyText ? String(e.bodyText).slice(0, 300) : undefined
+      })
+    }
+    throw e
+  }
 };
 
 /**
@@ -34,7 +72,7 @@ export const uploadFile = async (file: File, path: string): Promise<string> => {
  */
 export const deleteFile = async (pathOrUrl: string): Promise<void> => {
     if (!pathOrUrl) return;
-    const path = pathOrUrl.startsWith('http') ? normalizePathFromUrl(pathOrUrl) : pathOrUrl
+    const path = normalizePathFromUrl(pathOrUrl)
     if (!path) return
     await apiFetch(`/api/files/delete?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
 }

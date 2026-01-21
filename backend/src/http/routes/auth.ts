@@ -27,6 +27,16 @@ const issueAccessToken = (user: { id: string; username: string; role: string }) 
   )
 }
 
+const setAccessCookie = (res: any, token: string) => {
+  res.cookie('access_token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: config.cookieSecure,
+    path: '/api',
+    maxAge: 15 * 60 * 1000
+  })
+}
+
 const setRefreshCookie = (res: any, token: string) => {
   res.cookie('refresh_token', token, {
     httpOnly: true,
@@ -44,11 +54,15 @@ authRouter.post('/login', async (req, res) => {
 
   const db = getDb()
   const user = db
-    .prepare('select id, username, password_hash, role from users where username = ?')
-    .get(username) as { id: string; username: string; password_hash: string; role: string } | undefined
+    .prepare('select id, username, password_hash, role, status from users where username = ?')
+    .get(username) as { id: string; username: string; password_hash: string; role: string; status?: string } | undefined
   if (!user) return res.status(401).json({ error: 'invalid_credentials' })
   const ok = await bcrypt.compare(password, user.password_hash)
   if (!ok) return res.status(401).json({ error: 'invalid_credentials' })
+  const status = typeof user.status === 'string' ? user.status : 'active'
+  if (status !== 'active') {
+    return res.status(403).json({ error: status === 'pending' ? 'user_pending' : 'user_disabled' })
+  }
 
   const refreshToken = randomToken(32)
   const refreshHash = sha256Hex(refreshToken)
@@ -61,6 +75,7 @@ authRouter.post('/login', async (req, res) => {
   setRefreshCookie(res, refreshToken)
 
   const accessToken = issueAccessToken(user)
+  setAccessCookie(res, accessToken)
   res.json({
     accessToken,
     user: { id: user.id, username: user.username, role: user.role }
@@ -79,25 +94,11 @@ authRouter.post('/signup', async (req, res) => {
   const id = randomToken(16)
   const hash = await bcrypt.hash(password, 12)
   const now = new Date().toISOString()
-  db.prepare('insert into users (id, username, password_hash, role, created_at) values (?, ?, ?, ?, ?)').run(
-    id,
-    username,
-    hash,
-    'user',
-    now
-  )
-
-  const refreshToken = randomToken(32)
-  const refreshHash = sha256Hex(refreshToken)
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
   db.prepare(
-    'insert into auth_sessions (id, user_id, refresh_token_hash, created_at, expires_at) values (?, ?, ?, ?, ?)'
-  ).run(randomToken(16), id, refreshHash, now, expiresAt)
-  setRefreshCookie(res, refreshToken)
+    'insert into users (id, username, password_hash, role, status, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, username, hash, 'user', 'pending', now, now)
 
-  const user = { id, username, role: 'user' }
-  const accessToken = issueAccessToken(user)
-  res.json({ accessToken, user })
+  res.json({ pending: true })
 })
 
 authRouter.post('/logout', (req, res) => {
@@ -107,6 +108,7 @@ authRouter.post('/logout', (req, res) => {
     db.prepare('delete from auth_sessions where refresh_token_hash = ?').run(sha256Hex(token))
   }
   res.clearCookie('refresh_token', { path: '/api' })
+  res.clearCookie('access_token', { path: '/api' })
   res.json({ ok: true })
 })
 
@@ -124,9 +126,16 @@ authRouter.post('/refresh', (req, res) => {
   }
 
   const user = db
-    .prepare('select id, username, role from users where id = ?')
-    .get(session.user_id) as { id: string; username: string; role: string } | undefined
+    .prepare('select id, username, role, status from users where id = ?')
+    .get(session.user_id) as { id: string; username: string; role: string; status?: string } | undefined
   if (!user) return res.status(401).json({ error: 'invalid_refresh_token' })
+  const status = typeof user.status === 'string' ? user.status : 'active'
+  if (status !== 'active') {
+    db.prepare('delete from auth_sessions where id = ?').run(session.id)
+    res.clearCookie('refresh_token', { path: '/api' })
+    res.clearCookie('access_token', { path: '/api' })
+    return res.status(403).json({ error: status === 'pending' ? 'user_pending' : 'user_disabled' })
+  }
 
   db.prepare('delete from auth_sessions where id = ?').run(session.id)
   const newRefreshToken = randomToken(32)
@@ -138,6 +147,7 @@ authRouter.post('/refresh', (req, res) => {
   setRefreshCookie(res, newRefreshToken)
 
   const accessToken = issueAccessToken(user)
+  setAccessCookie(res, accessToken)
   res.json({ accessToken, user })
 })
 

@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middlewares/requireAuth.js'
-import { requireAdmin } from '../middlewares/requireAdmin.js'
+import { requireManager } from '../middlewares/requireManager.js'
 import { getDb } from '../../db/db.js'
 import { randomToken } from '../../util/crypto.js'
 
@@ -40,7 +40,7 @@ testProjectsRouter.get('/:id', requireAuth, (req, res) => {
   res.json({ item: mapRow(row) })
 })
 
-testProjectsRouter.post('/', requireAuth, requireAdmin, (req, res) => {
+testProjectsRouter.post('/', requireAuth, requireManager, (req, res) => {
   const body = testProjectCreateSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
@@ -53,7 +53,7 @@ testProjectsRouter.post('/', requireAuth, requireAdmin, (req, res) => {
   res.json({ id })
 })
 
-testProjectsRouter.patch('/:id', requireAuth, requireAdmin, (req, res) => {
+testProjectsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
   const id = req.params.id
   const body = testProjectPatchSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
@@ -80,10 +80,9 @@ testProjectsRouter.patch('/:id', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true })
 })
 
-testProjectsRouter.delete('/:id', requireAuth, requireAdmin, (req, res) => {
+testProjectsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
   const id = req.params.id
   const db = getDb()
   db.prepare('delete from test_projects where id = ?').run(id)
   res.json({ ok: true })
 })
-

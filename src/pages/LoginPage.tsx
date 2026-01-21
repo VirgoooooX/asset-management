@@ -11,6 +11,7 @@ const LoginPage: React.FC = () => {
   const [password, setPassword] = useState(''); // 新增：密码状态
   const [confirmPassword, setConfirmPassword] = useState('')
   const [localError, setLocalError] = useState<string | null>(null)
+  const [localNotice, setLocalNotice] = useState<string | null>(null)
   const dispatch = useAppDispatch()
   const { tr } = useI18n()
   const navigate = useNavigate();
@@ -28,6 +29,7 @@ const LoginPage: React.FC = () => {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setLocalError(null)
+    setLocalNotice(null)
     if (mode === 'signup') {
       if (password !== confirmPassword) {
         setLocalError(tr('两次输入的密码不一致', 'Passwords do not match'))
@@ -35,7 +37,10 @@ const LoginPage: React.FC = () => {
       }
       const result = await dispatch(signUpUser({ email, password }))
       if (signUpUser.fulfilled.match(result)) {
-        navigate(from, { replace: true });
+        setLocalNotice(tr('注册申请已提交，等待管理员审批后即可登录', 'Signup request submitted. You can sign in after admin approval.'))
+        setPassword('')
+        setConfirmPassword('')
+        setMode('signin')
       }
       return
     }
@@ -96,6 +101,7 @@ const LoginPage: React.FC = () => {
             />
           ) : null}
           {localError ? <Alert severity="error" sx={{ width: '100%', mt: 1 }}>{localError}</Alert> : null}
+          {localNotice ? <Alert severity="success" sx={{ width: '100%', mt: 1 }}>{localNotice}</Alert> : null}
           {error ? <Alert severity="error" sx={{ width: '100%', mt: 1 }}>{error}</Alert> : null}
           <Button
             type="submit"
@@ -112,6 +118,7 @@ const LoginPage: React.FC = () => {
             variant="text"
             onClick={() => {
               setLocalError(null)
+              setLocalNotice(null)
               setConfirmPassword('')
               setMode((m) => (m === 'signin' ? 'signup' : 'signin'))
             }}

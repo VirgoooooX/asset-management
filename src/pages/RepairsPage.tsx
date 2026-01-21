@@ -67,7 +67,9 @@ const RepairsPage: React.FC = () => {
   const dispatch = useAppDispatch()
   const assetsState = useAppSelector((s) => s.assets)
   const ticketsState = useAppSelector((s) => s.repairTickets)
+  const role = useAppSelector((s) => s.auth.user?.role)
   const { tr, language } = useI18n()
+  const canManage = role === 'admin' || role === 'manager'
 
   const [filter, setFilter] = useState<StatusFilter>('quote-pending')
   const [createOpen, setCreateOpen] = useState(false)
@@ -314,7 +316,7 @@ const RepairsPage: React.FC = () => {
                     alignItems: 'center',
                     backgroundColor: (theme) =>
                       alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
-                    cursor: 'pointer',
+                  cursor: 'pointer',
                     transition: 'background-color 150ms ease, border-color 150ms ease',
                     '&:hover': {
                       backgroundColor: (theme) =>
@@ -345,9 +347,18 @@ const RepairsPage: React.FC = () => {
                         label={t.quoteAmount !== undefined ? `${t.quoteAmount}` : tr('已询价', 'Quoted')}
                       />
                     ) : null}
-                    <IconButton size="small" color="primary" onClick={(e) => { e.stopPropagation(); openEdit(t) }}>
-                      <EditIcon fontSize="small" />
-                    </IconButton>
+                    {canManage ? (
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openEdit(t)
+                        }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    ) : null}
                   </Stack>
                 </Box>
               )
@@ -442,6 +453,7 @@ const RepairsPage: React.FC = () => {
                   size="small"
                   multiline
                   minRows={2}
+                  disabled={!canManage}
                 />
 
                 <Divider />
@@ -453,6 +465,7 @@ const RepairsPage: React.FC = () => {
                     onChange={(e) => setEditVendorName(e.target.value)}
                     fullWidth
                     size="small"
+                    disabled={!canManage}
                   />
                   <TextField
                     label={tr('报价（可选）', 'Quote (optional)')}
@@ -461,6 +474,7 @@ const RepairsPage: React.FC = () => {
                     fullWidth
                     size="small"
                     inputProps={{ inputMode: 'decimal' }}
+                    disabled={!canManage}
                   />
                 </Stack>
 
@@ -468,7 +482,7 @@ const RepairsPage: React.FC = () => {
                   label={tr('预计回归时间（可选）', 'Expected return time (optional)')}
                   value={editExpectedReturnAt}
                   onChange={(v) => setEditExpectedReturnAt(v)}
-                  slotProps={{ textField: { fullWidth: true, size: 'small' } }}
+                  slotProps={{ textField: { fullWidth: true, size: 'small', disabled: !canManage } }}
                 />
 
                 {editing.timeline && editing.timeline.length > 0 ? (
@@ -492,39 +506,47 @@ const RepairsPage: React.FC = () => {
             )}
           </DialogContent>
           <DialogActions sx={{ justifyContent: 'space-between' }}>
-            <Button
-              color="error"
-              startIcon={<DeleteIcon />}
-              onClick={() => setConfirmDeleteOpen(true)}
-              disabled={!editing || ticketsState.loading}
-            >
-              {tr('删除', 'Delete')}
-            </Button>
+            {canManage ? (
+              <Button
+                color="error"
+                startIcon={<DeleteIcon />}
+                onClick={() => setConfirmDeleteOpen(true)}
+                disabled={!editing || ticketsState.loading}
+              >
+                {tr('删除', 'Delete')}
+              </Button>
+            ) : (
+              <Box />
+            )}
             <Stack direction="row" spacing={1} alignItems="center">
               <Button onClick={() => setEditOpen(false)}>{tr('关闭', 'Close')}</Button>
-              <Button variant="outlined" onClick={handleSubmitEdit} disabled={!editing || ticketsState.loading}>
-                {tr('保存', 'Save')}
-              </Button>
-              {editing?.status === 'quote-pending' ? (
-                <Button
-                  variant="contained"
-                  startIcon={<LocalOfferIcon />}
-                  onClick={handleMarkQuoted}
-                  disabled={!editing || !editVendorName.trim() || !editQuoteAmount || ticketsState.loading}
-                >
-                  {tr('标记已询价', 'Mark quoted')}
-                </Button>
-              ) : null}
-              {editing?.status === 'repair-pending' ? (
-                <Button
-                  variant="contained"
-                  color="success"
-                  startIcon={<CheckCircleOutlineIcon />}
-                  onClick={handleMarkCompleted}
-                  disabled={!editing || ticketsState.loading}
-                >
-                  {tr('维修完成', 'Mark completed')}
-                </Button>
+              {canManage ? (
+                <>
+                  <Button variant="outlined" onClick={handleSubmitEdit} disabled={!editing || ticketsState.loading}>
+                    {tr('保存', 'Save')}
+                  </Button>
+                  {editing?.status === 'quote-pending' ? (
+                    <Button
+                      variant="contained"
+                      startIcon={<LocalOfferIcon />}
+                      onClick={handleMarkQuoted}
+                      disabled={!editing || !editVendorName.trim() || !editQuoteAmount || ticketsState.loading}
+                    >
+                      {tr('标记已询价', 'Mark quoted')}
+                    </Button>
+                  ) : null}
+                  {editing?.status === 'repair-pending' ? (
+                    <Button
+                      variant="contained"
+                      color="success"
+                      startIcon={<CheckCircleOutlineIcon />}
+                      onClick={handleMarkCompleted}
+                      disabled={!editing || ticketsState.loading}
+                    >
+                      {tr('维修完成', 'Mark completed')}
+                    </Button>
+                  ) : null}
+                </>
               ) : null}
             </Stack>
           </DialogActions>

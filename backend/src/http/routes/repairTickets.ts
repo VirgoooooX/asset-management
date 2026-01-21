@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middlewares/requireAuth.js'
-import { requireAdmin } from '../middlewares/requireAdmin.js'
+import { requireManager } from '../middlewares/requireManager.js'
 import { getDb } from '../../db/db.js'
 import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
@@ -82,7 +82,7 @@ repairTicketsRouter.get('/:id', requireAuth, (req, res) => {
   res.json({ item: mapRow(row) })
 })
 
-repairTicketsRouter.post('/', requireAuth, requireAdmin, (req, res) => {
+repairTicketsRouter.post('/', requireAuth, (req, res) => {
   const body = createSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
@@ -127,7 +127,7 @@ repairTicketsRouter.post('/', requireAuth, requireAdmin, (req, res) => {
   res.json({ id })
 })
 
-repairTicketsRouter.patch('/:id', requireAuth, requireAdmin, (req, res) => {
+repairTicketsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
   const id = req.params.id
   const body = patchSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
@@ -153,7 +153,7 @@ repairTicketsRouter.patch('/:id', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true })
 })
 
-repairTicketsRouter.post('/:id/transition', requireAuth, requireAdmin, (req, res) => {
+repairTicketsRouter.post('/:id/transition', requireAuth, requireManager, (req, res) => {
   const id = req.params.id
   const body = transitionSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
@@ -204,7 +204,7 @@ repairTicketsRouter.post('/:id/transition', requireAuth, requireAdmin, (req, res
   res.json({ ok: true })
 })
 
-repairTicketsRouter.delete('/:id', requireAuth, requireAdmin, (req, res) => {
+repairTicketsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
   const id = req.params.id
   const db = getDb()
   const ticket = db.prepare('select id, asset_id from repair_tickets where id = ?').get(id) as
@@ -225,4 +225,3 @@ repairTicketsRouter.delete('/:id', requireAuth, requireAdmin, (req, res) => {
 
   res.json({ ok: true })
 })
-

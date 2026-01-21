@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { randomToken } from '../../util/crypto.js'
 import { getDb } from '../../db/db.js'
 import { requireAuth } from '../middlewares/requireAuth.js'
-import { requireAdmin } from '../middlewares/requireAdmin.js'
+import { requireManager } from '../middlewares/requireManager.js'
 import { recomputeChamberStatus } from '../../services/assetStatus.js'
 
 export const usageLogsRouter = Router()
@@ -83,7 +83,7 @@ usageLogsRouter.get('/:id', requireAuth, (req, res) => {
   })
 })
 
-usageLogsRouter.post('/', requireAuth, requireAdmin, (req, res) => {
+usageLogsRouter.post('/', requireAuth, (req, res) => {
   const body = usageLogCreateSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
@@ -118,7 +118,7 @@ usageLogsRouter.post('/', requireAuth, requireAdmin, (req, res) => {
   res.json({ id })
 })
 
-usageLogsRouter.patch('/:id', requireAuth, requireAdmin, (req, res) => {
+usageLogsRouter.patch('/:id', requireAuth, (req, res) => {
   const id = req.params.id
   const body = usageLogPatchSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
@@ -161,7 +161,7 @@ usageLogsRouter.patch('/:id', requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true })
 })
 
-usageLogsRouter.delete('/:id', requireAuth, requireAdmin, (req, res) => {
+usageLogsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
   const id = req.params.id
   const db = getDb()
   const existing = db.prepare('select id, chamber_id from usage_logs where id = ?').get(id) as
@@ -176,4 +176,3 @@ usageLogsRouter.delete('/:id', requireAuth, requireAdmin, (req, res) => {
 
   res.json({ ok: true })
 })
-

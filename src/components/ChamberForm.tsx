@@ -23,7 +23,7 @@ import { Asset, AssetAttachment, AssetStatus } from '../types'
 import { addAsset, updateAsset } from '../store/assetsSlice'
 import { useAppDispatch } from '../store/hooks'
 import { useI18n } from '../i18n'
-import { deleteFile, uploadFile } from '../services/storageService'
+import { deleteFile, normalizeFileUrlForDisplay, uploadFile } from '../services/storageService'
 
 interface ChamberFormProps {
   open: boolean;
@@ -135,16 +135,16 @@ const ChamberForm: React.FC<ChamberFormProps> = ({ open, onClose, chamber, onSav
     return `${id}-${sanitizeFileName(fileName)}`
   }
 
-  const handleUploadImages = async (kind: 'photo' | 'nameplate', files: FileList | null) => {
+  const handleUploadImages = async (kind: 'photo' | 'nameplate', files: File[]) => {
     if (!chamber?.id) return
-    if (!files || files.length === 0) return
+    if (files.length === 0) return
 
     setUploadError(null)
     if (kind === 'photo') setPhotoUploading(true)
     if (kind === 'nameplate') setNameplateUploading(true)
 
     try {
-      const list = Array.from(files)
+      const list = files
       const urls = await Promise.all(
         list.map((file) => {
           const objectKey = createObjectKey(file.name)
@@ -182,14 +182,14 @@ const ChamberForm: React.FC<ChamberFormProps> = ({ open, onClose, chamber, onSav
     return `${gb.toFixed(2)} GB`
   }
 
-  const handleUploadAttachments = async (files: FileList | null) => {
+  const handleUploadAttachments = async (files: File[]) => {
     if (!chamber?.id) return
-    if (!files || files.length === 0) return
+    if (files.length === 0) return
 
     setUploadError(null)
     setAttachmentsUploading(true)
     try {
-      const list = Array.from(files)
+      const list = files
       const newItems = await Promise.all(
         list.map(async (file) => {
           const objectKey = createObjectKey(file.name)
@@ -422,9 +422,9 @@ const ChamberForm: React.FC<ChamberFormProps> = ({ open, onClose, chamber, onSav
                       accept="image/*"
                       multiple
                       onChange={(e) => {
-                        const files = e.target.files
-                        e.target.value = ''
-                        handleUploadImages('photo', files)
+                        const selectedFiles = Array.from(e.currentTarget.files ?? [])
+                        e.currentTarget.value = ''
+                        handleUploadImages('photo', selectedFiles)
                       }}
                     />
                   </Button>
@@ -454,9 +454,9 @@ const ChamberForm: React.FC<ChamberFormProps> = ({ open, onClose, chamber, onSav
                       accept="image/*"
                       multiple
                       onChange={(e) => {
-                        const files = e.target.files
-                        e.target.value = ''
-                        handleUploadImages('nameplate', files)
+                        const selectedFiles = Array.from(e.currentTarget.files ?? [])
+                        e.currentTarget.value = ''
+                        handleUploadImages('nameplate', selectedFiles)
                       }}
                     />
                   </Button>
@@ -484,9 +484,9 @@ const ChamberForm: React.FC<ChamberFormProps> = ({ open, onClose, chamber, onSav
                       type="file"
                       multiple
                       onChange={(e) => {
-                        const files = e.target.files
-                        e.target.value = ''
-                        handleUploadAttachments(files)
+                        const selectedFiles = Array.from(e.currentTarget.files ?? [])
+                        e.currentTarget.value = ''
+                        handleUploadAttachments(selectedFiles)
                       }}
                     />
                   </Button>
@@ -517,7 +517,14 @@ const ChamberForm: React.FC<ChamberFormProps> = ({ open, onClose, chamber, onSav
                           </Typography>
                         </Box>
                         <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                          <Button size="small" variant="outlined" component="a" href={a.url} target="_blank" rel="noreferrer">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            component="a"
+                            href={normalizeFileUrlForDisplay(a.url)}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
                             {tr('打开', 'Open')}
                           </Button>
                           <Button size="small" variant="outlined" color="error" onClick={() => handleDeleteAttachment(a.id)}>

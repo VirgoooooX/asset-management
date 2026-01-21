@@ -63,7 +63,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   };
 
   // 根据用户角色和认证状态过滤 SpeedDial actions
-  const role = user?.role as 'admin' | 'user' | undefined
+  const role = user?.role as 'admin' | 'manager' | 'user' | undefined
   const navSections = useMemo(() => buildNavSections(tr), [tr])
   const navItems = useMemo(() => buildNavItems(tr), [tr])
   const filteredItems = isAuthenticated && role ? navItems.filter((i) => i.roles.includes(role)) : []
