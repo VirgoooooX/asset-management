@@ -13,6 +13,7 @@ function parseArgs(argv) {
     changelogCount: 30,
     bump: 'patch',
     dryRun: false,
+    platform: 'linux/amd64,linux/arm64',
   }
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -36,12 +37,18 @@ function parseArgs(argv) {
       i += 1
       continue
     }
+    if (arg === '--platform') {
+      options.platform = argv[i + 1]
+      i += 1
+      continue
+    }
     throw new Error(`未知参数: ${arg}`)
   }
 
   if (!options.image) throw new Error('参数错误: --image 不能为空')
   if (!Number.isFinite(options.changelogCount) || options.changelogCount <= 0) throw new Error('参数错误: --changelog-count 必须为正数')
   if (!['patch', 'minor', 'major'].includes(options.bump)) throw new Error('参数错误: --bump 仅支持 patch/minor/major')
+  if (!options.platform) throw new Error('参数错误: --platform 不能为空')
 
   return options
 }
@@ -130,6 +137,30 @@ async function writeBuildInfo(version, changelogCount, dryRun) {
   await writeFile(outPath, moduleContent, 'utf8')
 }
 
+async function ensureBuilder(dryRun) {
+  if (dryRun) return
+  console.log('检查 Docker Buildx 构建器...')
+  try {
+    const { stdout } = await runCapture('docker', ['buildx', 'ls'], repoRoot)
+    // 检查是否有 docker-container 驱动的构建器且已在运行或可用
+    const lines = stdout.split('\n')
+    const hasContainerDriver = lines.some((line) => line.includes('docker-container'))
+
+    if (!hasContainerDriver) {
+      console.log('未发现 docker-container 驱动的构建器，正在创建...')
+      await runStreaming('docker', ['buildx', 'create', '--name', 'chamber-builder', '--driver', 'docker-container', '--use'], repoRoot, false)
+    } else {
+      // 找到第一个 docker-container 驱动的构建器名称
+      const builderLine = lines.find((line) => line.includes('docker-container'))
+      const builderName = builderLine.trim().split(/\s+/)[0]
+      console.log(`使用现有构建器: ${builderName}`)
+      await runStreaming('docker', ['buildx', 'use', builderName], repoRoot, false)
+    }
+  } catch (err) {
+    console.warn('无法检查或切换构建器，尝试继续使用默认构建器:', err.message)
+  }
+}
+
 async function main() {
   const options = parseArgs(process.argv.slice(2))
 
@@ -138,29 +169,23 @@ async function main() {
   const version = rootPkg.version
   if (typeof version !== 'string' || !version) throw new Error('package.json 缺少 version 字段')
 
+  await ensureBuilder(options.dryRun)
   await writeBuildInfo(version, options.changelogCount, options.dryRun)
 
   const imageLatest = `${options.image}:latest`
   const imageVersion = `${options.image}:${version}`
 
-  const buildResult = await runStreaming('docker', ['build', '-t', imageLatest, '-t', imageVersion, '.'], repoRoot, options.dryRun)
+  console.log(`正在构建并推送多架构镜像: ${options.platform}`)
+  const buildResult = await runStreaming(
+    'docker',
+    ['buildx', 'build', '--platform', options.platform, '-t', imageLatest, '-t', imageVersion, '--push', '.'],
+    repoRoot,
+    options.dryRun
+  )
+
   if (buildResult.code !== 0) {
-    console.error('Docker 构建失败')
+    console.error('Docker 构建或推送失败')
     process.exit(buildResult.code)
-  }
-
-  console.log(`推送镜像: ${imageVersion}`)
-  const pushVersion = await runStreaming('docker', ['push', imageVersion], repoRoot, options.dryRun)
-  if (pushVersion.code !== 0) {
-    console.error('Docker 推送版本镜像失败')
-    process.exit(pushVersion.code)
-  }
-
-  console.log(`推送镜像: ${imageLatest}`)
-  const pushLatest = await runStreaming('docker', ['push', imageLatest], repoRoot, options.dryRun)
-  if (pushLatest.code !== 0) {
-    console.error('Docker 推送 latest 镜像失败')
-    process.exit(pushLatest.code)
   }
 
   console.log('推送成功，正在递增版本号...')
