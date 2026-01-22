@@ -89,7 +89,7 @@ const ProfilePage: React.FC = () => {
   }
 
   return (
-    <PageShell title={<TitleWithIcon icon={<PersonIcon />}>{tr('个人', 'Profile')}</TitleWithIcon>} maxWidth="md">
+    <PageShell title={<TitleWithIcon icon={<PersonIcon />}>{tr('个人', 'Profile')}</TitleWithIcon>}>
       <Stack spacing={2}>
         <AppCard title={tr('账号信息', 'Account')}>
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650 }}>
@@ -188,4 +188,3 @@ const ProfilePage: React.FC = () => {
 }
 
 export default ProfilePage
-

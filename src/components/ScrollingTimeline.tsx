@@ -437,6 +437,35 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     });
   }, [dateHeaders.length, dayWidthPx]);
 
+  useEffect(() => {
+    const container = timelineContainerRef.current
+    if (!container) return
+
+    let rafId: number | null = null
+    const schedule = () => {
+      if (rafId !== null) return
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null
+        updateVisibleDayIndexRange()
+      })
+    }
+
+    schedule()
+
+    let ro: ResizeObserver | null = null
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => schedule())
+      ro.observe(container)
+    }
+
+    window.addEventListener('resize', schedule)
+    return () => {
+      window.removeEventListener('resize', schedule)
+      if (ro) ro.disconnect()
+      if (rafId !== null) window.cancelAnimationFrame(rafId)
+    }
+  }, [updateVisibleDayIndexRange])
+
   const handleTimelineScroll = useCallback(() => {
     const container = timelineContainerRef.current;
     if (!container) return;

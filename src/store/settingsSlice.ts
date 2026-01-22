@@ -5,12 +5,16 @@ export type ThemeMode = 'light' | 'dark'
 export type DensityMode = 'comfortable' | 'compact'
 export type DashboardRangePreset = '7d' | '30d' | '90d'
 export type Language = 'zh' | 'en'
+export type SidebarMode = 'auto' | 'lockedOpen' | 'lockedCollapsed'
 
 export interface SettingsState {
   language: Language
   themeMode: ThemeMode
   density: DensityMode
   primaryColor: string
+  nav: {
+    sidebarMode: SidebarMode
+  }
   dashboard: {
     rangePreset: DashboardRangePreset
   }
@@ -28,6 +32,9 @@ const initialState: SettingsState = {
   themeMode: 'light',
   density: 'comfortable',
   primaryColor: '#155EEF',
+  nav: {
+    sidebarMode: 'auto',
+  },
   dashboard: {
     rangePreset: '30d',
   },
@@ -65,8 +72,18 @@ const settingsSlice = createSlice({
       const stored = localStorage.getItem(STORAGE_KEY)
       if (!stored) return
       try {
-        const parsed = JSON.parse(stored) as Partial<SettingsState>
-        return { ...state, ...parsed, dashboard: { ...state.dashboard, ...parsed.dashboard }, alerts: { ...state.alerts, ...parsed.alerts } }
+        const parsed = JSON.parse(stored) as any
+        if (parsed?.nav?.sidebarMode === undefined && parsed?.nav?.sidebarPinned !== undefined) {
+          parsed.nav.sidebarMode = parsed.nav.sidebarPinned ? 'lockedOpen' : 'auto'
+          delete parsed.nav.sidebarPinned
+        }
+        return {
+          ...state,
+          ...parsed,
+          nav: { ...state.nav, ...parsed.nav },
+          dashboard: { ...state.dashboard, ...parsed.dashboard },
+          alerts: { ...state.alerts, ...parsed.alerts }
+        }
       } catch {
         return state
       }
@@ -107,11 +124,20 @@ const settingsSlice = createSlice({
       state.refreshSeconds = Math.max(0, Math.floor(action.payload))
       persist(state)
     },
+    setSidebarMode(state, action: PayloadAction<SidebarMode>) {
+      state.nav.sidebarMode = action.payload
+      persist(state)
+    },
     applySettingsFromRemote(state, action: PayloadAction<Partial<SettingsState>>) {
-      const parsed = action.payload
+      const parsed = action.payload as any
+      if (parsed?.nav?.sidebarMode === undefined && parsed?.nav?.sidebarPinned !== undefined) {
+        parsed.nav.sidebarMode = parsed.nav.sidebarPinned ? 'lockedOpen' : 'auto'
+        delete parsed.nav.sidebarPinned
+      }
       const next = {
         ...state,
         ...parsed,
+        nav: { ...state.nav, ...parsed.nav },
         dashboard: { ...state.dashboard, ...parsed.dashboard },
         alerts: { ...state.alerts, ...parsed.alerts },
       }
@@ -121,10 +147,15 @@ const settingsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder.addCase(loadSettingsFromBackend.fulfilled, (state, action) => {
-      const parsed = action.payload
+      const parsed = action.payload as any
+      if (parsed?.nav?.sidebarMode === undefined && parsed?.nav?.sidebarPinned !== undefined) {
+        parsed.nav.sidebarMode = parsed.nav.sidebarPinned ? 'lockedOpen' : 'auto'
+        delete parsed.nav.sidebarPinned
+      }
       const next = {
         ...state,
         ...parsed,
+        nav: { ...state.nav, ...parsed.nav },
         dashboard: { ...state.dashboard, ...parsed.dashboard },
         alerts: { ...state.alerts, ...parsed.alerts },
       }
@@ -145,6 +176,7 @@ export const {
   setCalibrationDaysThreshold,
   setLongOccupancyHoursThreshold,
   setRefreshSeconds,
+  setSidebarMode,
   applySettingsFromRemote,
 } = settingsSlice.actions
 

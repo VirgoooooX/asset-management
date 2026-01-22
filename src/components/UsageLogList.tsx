@@ -182,7 +182,7 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
 
   return (
     <>
-      <AppCard contentSx={{ mx: -2.5, mb: -2.5 }}>
+      <AppCard contentSx={{ mt: 0 }}>
         <TableContainer component={Box} sx={{ border: 'none', boxShadow: 'none', borderRadius: 0 }}>
           <Table sx={{ minWidth: 900 }} aria-label={tr('使用记录列表', 'Usage log list')} size="small">
             <TableHead sx={{ backgroundColor: 'action.hover' }}>

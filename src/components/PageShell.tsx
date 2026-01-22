@@ -8,7 +8,7 @@ type PageShellProps = {
   children: ReactNode;
 };
 
-const PageShell: React.FC<PageShellProps> = ({ title, actions, maxWidth = 'lg', children }) => {
+const PageShell: React.FC<PageShellProps> = ({ title, actions, maxWidth = 'xl', children }) => {
   return (
     <Container maxWidth={maxWidth}>
       <Box sx={{ py: { xs: 3, sm: 4 } }}>
@@ -19,10 +19,22 @@ const PageShell: React.FC<PageShellProps> = ({ title, actions, maxWidth = 'lg', 
           spacing={2}
           sx={{ mb: 3 }}
         >
-          <Typography variant="h4" component="h1">
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 850, lineHeight: 1.15 }}>
             {title}
           </Typography>
-          {actions ? <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>{actions}</Box> : null}
+          {actions ? (
+            <Box
+              sx={{
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 1,
+                alignItems: 'center',
+                justifyContent: { xs: 'flex-start', sm: 'flex-end' },
+              }}
+            >
+              {actions}
+            </Box>
+          ) : null}
         </Stack>
         {children}
       </Box>
@@ -31,4 +43,3 @@ const PageShell: React.FC<PageShellProps> = ({ title, actions, maxWidth = 'lg', 
 };
 
 export default PageShell;
-

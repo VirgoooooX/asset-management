@@ -188,7 +188,6 @@ const AdminUsersPage: React.FC = () => {
   return (
     <PageShell
       title={<TitleWithIcon icon={<PeopleIcon />}>{tr('用户管理（admin）', 'User management (admin)')}</TitleWithIcon>}
-      maxWidth="lg"
       actions={
         <Stack direction="row" spacing={1} alignItems="center">
           <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate} disabled={loading}>
@@ -370,4 +369,3 @@ const AdminUsersPage: React.FC = () => {
 }
 
 export default AdminUsersPage
-

@@ -66,7 +66,6 @@ const SettingsPage: React.FC = () => {
       title={
         <TitleWithIcon icon={<SettingsIcon />}>{tr('设置', 'Settings')}</TitleWithIcon>
       }
-      maxWidth="lg"
     >
       <Stack spacing={2}>
         <AppCard
