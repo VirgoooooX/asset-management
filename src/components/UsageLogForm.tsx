@@ -67,7 +67,7 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
   // --- Data Fetching Effect ---
   useEffect(() => {
      if (open) {
-      dispatch(fetchAssetsByType('chamber'));
+      dispatch(fetchAssetsByType({ type: 'chamber' }));
       dispatch(fetchProjects());
       dispatch(fetchTestProjects());
     }

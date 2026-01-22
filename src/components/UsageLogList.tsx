@@ -54,7 +54,7 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
       if (chambers.length > 0) {
         dataFetchedRef.current.chambers = true;
       } else if (!loadingChambers) {
-        dispatch(fetchAssetsByType('chamber')).finally(() => {
+        dispatch(fetchAssetsByType({ type: 'chamber' })).finally(() => {
           dataFetchedRef.current.chambers = true
         })
       }
@@ -167,8 +167,8 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
             size="small"
             onClick={() => {
                 dataFetchedRef.current = { usageLogs: false, chambers: false, projects: false, testProjects: false };
-                dispatch(fetchUsageLogs());
-                dispatch(fetchAssetsByType('chamber'));
+                dispatch(fetchUsageLogs({ force: true }));
+                dispatch(fetchAssetsByType({ type: 'chamber' }));
                 dispatch(fetchProjects());
                 dispatch(fetchTestProjects());
             }}

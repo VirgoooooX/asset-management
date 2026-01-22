@@ -7,12 +7,16 @@ import type { AppDispatch, RootState } from './index';
 interface UsageLogsState {
   usageLogs: UsageLog[];
   loading: boolean;
+  refreshing: boolean;
+  lastFetchedAt: number | null;
   error: string | null;
 }
 
 const initialState: UsageLogsState = {
   usageLogs: [],
   loading: false,
+  refreshing: false,
+  lastFetchedAt: null,
   error: null,
 };
 
@@ -20,7 +24,7 @@ const initialState: UsageLogsState = {
 
 export const fetchUsageLogs = createAsyncThunk<
   UsageLog[],
-  void,
+  { force?: boolean } | undefined,
   { rejectValue: string; dispatch: AppDispatch; state: RootState }
 >(
   'usageLogs/fetchUsageLogs',
@@ -31,6 +35,16 @@ export const fetchUsageLogs = createAsyncThunk<
     } catch (error: any) {
       console.error('[Thunk] fetchUsageLogs: Caught error from service. Error message:', error.message, 'Error object:', error);
       return rejectWithValue(error.message || '获取所有使用记录失败');
+    }
+  },
+  {
+    condition: (arg, { getState }) => {
+      if (arg?.force) return true
+      const state = (getState() as RootState).usageLogs
+      if (state.loading || state.refreshing) return false
+      if (state.usageLogs.length === 0) return true
+      if (!state.lastFetchedAt) return true
+      return Date.now() - state.lastFetchedAt > 60 * 1000
     }
   }
 );
@@ -127,7 +141,7 @@ export const removeConfigFromUsageLog = createAsyncThunk<
   async ({ logId, configId }, { rejectWithValue, dispatch }) => {
     try {
       await usageLogService.removeConfigFromUsageLog(logId, configId);
-      await dispatch(fetchUsageLogs());
+      await dispatch(fetchUsageLogs({ force: true }));
     } catch (error: any) {
       return rejectWithValue(error.message || '从使用记录中移除配置失败');
     }
@@ -158,7 +172,11 @@ const usageLogsSlice = createSlice({
   extraReducers: (builder) => {
     builder
       // fetchUsageLogs cases
-      .addCase(fetchUsageLogs.pending, (state) => { state.loading = true; state.error = null; })
+      .addCase(fetchUsageLogs.pending, (state) => {
+        if (state.usageLogs.length > 0) state.refreshing = true
+        else state.loading = true
+        state.error = null
+      })
       .addCase(fetchUsageLogs.fulfilled, (state, action: PayloadAction<UsageLog[]>) => {
           state.usageLogs = action.payload.sort((a, b) => {
             // Sort by start time descending, then by creation time descending as a fallback
@@ -167,9 +185,12 @@ const usageLogsSlice = createSlice({
             return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
           });
           state.loading = false;
+          state.refreshing = false;
+          state.lastFetchedAt = Date.now();
       })
       .addCase(fetchUsageLogs.rejected, (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
           state.loading = false;
+          state.refreshing = false;
           state.error = action.payload || action.error.message || '获取使用记录失败';
           console.error('获取使用记录失败:', action.payload || action.error);
       })
@@ -184,9 +205,12 @@ const usageLogsSlice = createSlice({
             return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
           });
         state.loading = false;
+        state.refreshing = false;
+        state.lastFetchedAt = null;
       })
       .addCase(fetchUsageLogsByChamber.rejected, (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
         state.loading = false;
+        state.refreshing = false;
         state.error = action.payload || action.error.message || '获取环境箱使用记录失败';
       })
 

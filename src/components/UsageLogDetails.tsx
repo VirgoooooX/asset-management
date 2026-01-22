@@ -53,7 +53,7 @@ const UsageLogDetails: React.FC<UsageLogDetailsProps> = ({ open, onClose, logId 
       }
 
       if (chambers.length === 0 && !loadingChambersGlobal) {
-        dispatch(fetchAssetsByType('chamber'));
+        dispatch(fetchAssetsByType({ type: 'chamber' }));
       }
       if (projects.length === 0 && !loadingProjectsGlobal) {
         dispatch(fetchProjects());

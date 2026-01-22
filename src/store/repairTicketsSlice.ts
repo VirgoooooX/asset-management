@@ -1,30 +1,48 @@
 import { PayloadAction, SerializedError, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import type { RepairStatus, RepairTicket } from '../types'
 import * as repairTicketService from '../services/repairTicketService'
+import type { RootState } from './index'
 
 interface RepairTicketsState {
   tickets: RepairTicket[]
   loading: boolean
+  refreshing: boolean
+  lastFetchedAt: number | null
   error: string | null
 }
 
 const initialState: RepairTicketsState = {
   tickets: [],
   loading: false,
+  refreshing: false,
+  lastFetchedAt: null,
   error: null,
 }
 
 export const fetchRepairTickets = createAsyncThunk<
   RepairTicket[],
-  { status?: RepairStatus; assetId?: string } | undefined,
+  { status?: RepairStatus; assetId?: string; force?: boolean } | undefined,
   { rejectValue: string }
->('repairTickets/fetchRepairTickets', async (filters, { rejectWithValue }) => {
-  try {
-    return await repairTicketService.getRepairTickets(filters)
-  } catch (error: any) {
-    return rejectWithValue(error.message || '获取维修工单失败')
+>(
+  'repairTickets/fetchRepairTickets',
+  async (filters, { rejectWithValue }) => {
+    try {
+      return await repairTicketService.getRepairTickets(filters)
+    } catch (error: any) {
+      return rejectWithValue(error.message || '获取维修工单失败')
+    }
+  },
+  {
+    condition: (filters, { getState }) => {
+      if (filters?.force) return true
+      const state = (getState() as RootState).repairTickets
+      if (state.loading || state.refreshing) return false
+      if (state.tickets.length === 0) return true
+      if (!state.lastFetchedAt) return true
+      return Date.now() - state.lastFetchedAt > 60 * 1000
+    },
   }
-})
+)
 
 export const addRepairTicket = createAsyncThunk<
   RepairTicket,
@@ -99,17 +117,21 @@ const repairTicketsSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(fetchRepairTickets.pending, (state) => {
-        state.loading = true
+        if (state.tickets.length > 0) state.refreshing = true
+        else state.loading = true
         state.error = null
       })
       .addCase(fetchRepairTickets.fulfilled, (state, action: PayloadAction<RepairTicket[]>) => {
         state.tickets = action.payload
         state.loading = false
+        state.refreshing = false
+        state.lastFetchedAt = Date.now()
       })
       .addCase(
         fetchRepairTickets.rejected,
         (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
           state.loading = false
+          state.refreshing = false
           state.error = action.payload || action.error.message || '获取维修工单失败 (未知错误)'
         }
       )
@@ -180,4 +202,3 @@ const repairTicketsSlice = createSlice({
 
 export const { upsertTicket } = repairTicketsSlice.actions
 export default repairTicketsSlice.reducer
-

@@ -38,7 +38,7 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
   const { tr } = useI18n()
 
   useEffect(() => {
-    dispatch(fetchAssetsByType('chamber'));
+    dispatch(fetchAssetsByType({ type: 'chamber' }));
   }, [dispatch]);
 
   const handleDeleteClick = (id: string) => setPendingDeleteId(id);

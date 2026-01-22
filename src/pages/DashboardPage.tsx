@@ -145,7 +145,7 @@ const DashboardPage: React.FC = () => {
   }, [preset, settings.dashboard.rangePreset])
 
   useEffect(() => {
-    dispatch(fetchAssetsByType('chamber'))
+    dispatch(fetchAssetsByType({ type: 'chamber' }))
     dispatch(fetchUsageLogs())
     dispatch(fetchRepairTickets(undefined))
     dispatch(fetchProjects())
@@ -653,7 +653,7 @@ const DashboardPage: React.FC = () => {
         sx={{ mt: 2 }}
         contentSx={{ mx: -2.5, mb: -2.5 }}
       >
-        {isLoading ? (
+        {isLoading && assetsByCategory.length === 0 ? (
           <Box sx={{ p: 2.5 }}>
             <LinearProgress />
           </Box>

@@ -132,7 +132,7 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
   const [uploadError, setUploadError] = useState<string | null>(null)
 
   useEffect(() => {
-    dispatch(fetchAssetsByType('chamber'))
+    dispatch(fetchAssetsByType({ type: 'chamber' }))
     dispatch(fetchUsageLogs())
     dispatch(fetchRepairTickets(undefined))
     dispatch(fetchProjects())

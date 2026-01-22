@@ -218,7 +218,7 @@ const TimelinePage: React.FC = () => {
                             <Alert severity="error" sx={{width: '100%', maxWidth: '600px', mb: 2}}>
                                 {tr(`加载时间轴数据失败: ${error}`, `Failed to load timeline: ${error}`)}
                             </Alert>
-                            <Button variant="outlined" onClick={() => { initialFetchDoneRef.current = false; dispatch(fetchUsageLogs()); }}>
+                            <Button variant="outlined" onClick={() => { initialFetchDoneRef.current = false; dispatch(fetchUsageLogs({ force: true })); }}>
                                 {tr('重试', 'Retry')}
                             </Button>
                         </Box>

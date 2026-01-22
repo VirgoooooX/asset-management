@@ -1,28 +1,47 @@
 import { PayloadAction, SerializedError, createAsyncThunk, createSlice } from '@reduxjs/toolkit'
 import { Asset, AssetType } from '../types'
 import * as assetService from '../services/assetService'
+import type { RootState } from './index'
 
 interface AssetsState {
   assets: Asset[]
   loading: boolean
+  refreshing: boolean
+  lastFetchedAt: number | null
   error: string | null
 }
 
 const initialState: AssetsState = {
   assets: [],
   loading: false,
+  refreshing: false,
+  lastFetchedAt: null,
   error: null,
 }
 
-export const fetchAssetsByType = createAsyncThunk<Asset[], AssetType, { rejectValue: string }>(
+export const fetchAssetsByType = createAsyncThunk<
+  Asset[],
+  { type: AssetType; force?: boolean },
+  { rejectValue: string }
+>(
   'assets/fetchAssetsByType',
-  async (type, { rejectWithValue }) => {
+  async ({ type }, { rejectWithValue }) => {
     try {
       const assets = await assetService.getAssetsByType(type)
       return assets
     } catch (error: any) {
       return rejectWithValue(error.message || '获取资产列表失败')
     }
+  },
+  {
+    condition: ({ force }, { getState }) => {
+      if (force) return true
+      const state = (getState() as RootState).assets
+      if (state.loading || state.refreshing) return false
+      if (state.assets.length === 0) return true
+      if (!state.lastFetchedAt) return true
+      return Date.now() - state.lastFetchedAt > 60 * 1000
+    },
   }
 )
 
@@ -75,7 +94,8 @@ const assetsSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(fetchAssetsByType.pending, (state) => {
-        state.loading = true
+        if (state.assets.length > 0) state.refreshing = true
+        else state.loading = true
         state.error = null
       })
       .addCase(fetchAssetsByType.fulfilled, (state, action: PayloadAction<Asset[]>) => {
@@ -85,11 +105,14 @@ const assetsSlice = createSlice({
           return bTime - aTime
         })
         state.loading = false
+        state.refreshing = false
+        state.lastFetchedAt = Date.now()
       })
       .addCase(
         fetchAssetsByType.rejected,
         (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
           state.loading = false
+          state.refreshing = false
           state.error = action.payload || action.error.message || '获取资产失败 (未知错误)'
         }
       )

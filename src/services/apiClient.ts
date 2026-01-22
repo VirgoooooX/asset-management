@@ -20,16 +20,24 @@ export class ApiError extends Error {
   }
 }
 
+let refreshPromise: Promise<any | null> | null = null
+
 const refreshOnce = async () => {
-  const res = await fetch(joinUrl('/api/auth/refresh'), {
-    method: 'POST',
-    credentials: 'include'
+  if (refreshPromise) return refreshPromise
+  refreshPromise = (async () => {
+    const res = await fetch(joinUrl('/api/auth/refresh'), {
+      method: 'POST',
+      credentials: 'include'
+    })
+    if (!res.ok) return null
+    const data = (await res.json().catch(() => null)) as any
+    if (!data?.accessToken) return null
+    setAccessToken(String(data.accessToken))
+    return data
+  })().finally(() => {
+    refreshPromise = null
   })
-  if (!res.ok) return null
-  const data = (await res.json().catch(() => null)) as any
-  if (!data?.accessToken) return null
-  setAccessToken(String(data.accessToken))
-  return data
+  return refreshPromise
 }
 
 export const apiFetch = async <T>(

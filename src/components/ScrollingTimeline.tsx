@@ -652,7 +652,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
 
   useEffect(() => { /* ... (data fetching useEffect - 保持不变) ... */
     if (!chambersLoading && (!chambers || chambers.length === 0)) {
-        dispatch(fetchAssetsByType('chamber'));
+        dispatch(fetchAssetsByType({ type: 'chamber' }));
     }
     if (!projectsLoading && (!projects || projects.length === 0)) {
         dispatch(fetchProjects());

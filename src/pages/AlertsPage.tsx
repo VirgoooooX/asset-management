@@ -38,15 +38,15 @@ const AlertsPage: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<AlertType | 'all'>('all')
 
   useEffect(() => {
-    dispatch(fetchAssetsByType('chamber'))
+    dispatch(fetchAssetsByType({ type: 'chamber' }))
     dispatch(fetchUsageLogs())
   }, [dispatch])
 
   useEffect(() => {
     if (!settings.refreshSeconds || settings.refreshSeconds <= 0) return
     const id = window.setInterval(() => {
-      dispatch(fetchAssetsByType('chamber'))
-      dispatch(fetchUsageLogs())
+      dispatch(fetchAssetsByType({ type: 'chamber', force: true }))
+      dispatch(fetchUsageLogs({ force: true }))
     }, settings.refreshSeconds * 1000)
     return () => window.clearInterval(id)
   }, [dispatch, settings.refreshSeconds])
@@ -71,8 +71,8 @@ const AlertsPage: React.FC = () => {
   }, [alerts, severityFilter, typeFilter])
 
   const handleRefresh = () => {
-    dispatch(fetchAssetsByType('chamber'))
-    dispatch(fetchUsageLogs())
+    dispatch(fetchAssetsByType({ type: 'chamber', force: true }))
+    dispatch(fetchUsageLogs({ force: true }))
   }
 
   return (

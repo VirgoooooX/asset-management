@@ -4,6 +4,7 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -70,6 +71,7 @@ const RepairsPage: React.FC = () => {
   const role = useAppSelector((s) => s.auth.user?.role)
   const { tr, language } = useI18n()
   const canManage = role === 'admin' || role === 'manager'
+  const isRefreshing = ticketsState.refreshing || assetsState.refreshing
 
   const [filter, setFilter] = useState<StatusFilter>('quote-pending')
   const [createOpen, setCreateOpen] = useState(false)
@@ -87,7 +89,7 @@ const RepairsPage: React.FC = () => {
   const [editExpectedReturnAt, setEditExpectedReturnAt] = useState<Date | null>(null)
 
   useEffect(() => {
-    dispatch(fetchAssetsByType('chamber'))
+    dispatch(fetchAssetsByType({ type: 'chamber' }))
     dispatch(fetchRepairTickets(undefined))
   }, [dispatch])
 
@@ -155,8 +157,8 @@ const RepairsPage: React.FC = () => {
   }
 
   const handleRefresh = () => {
-    dispatch(fetchAssetsByType('chamber'))
-    dispatch(fetchRepairTickets(undefined))
+    dispatch(fetchAssetsByType({ type: 'chamber', force: true }))
+    dispatch(fetchRepairTickets({ force: true }))
   }
 
   const handleSubmitCreate = async () => {
@@ -242,8 +244,8 @@ const RepairsPage: React.FC = () => {
           <Chip label={language === 'en' ? `Repair pending: ${counts.repairPending}` : `待维修: ${counts.repairPending}`} variant="outlined" sx={{ fontWeight: 650 }} />
           <Chip label={language === 'en' ? `Completed: ${counts.completed}` : `已完成: ${counts.completed}`} variant="outlined" sx={{ fontWeight: 650 }} />
           <Tooltip title={tr('刷新', 'Refresh')}>
-            <IconButton onClick={handleRefresh} size="small" color="primary">
-              <RefreshIcon fontSize="small" />
+            <IconButton onClick={handleRefresh} size="small" color="primary" disabled={isRefreshing}>
+              {isRefreshing ? <CircularProgress size={16} /> : <RefreshIcon fontSize="small" />}
             </IconButton>
           </Tooltip>
           <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={openCreate}>
