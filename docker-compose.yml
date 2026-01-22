@@ -8,7 +8,9 @@ services:
       - "8080:8080"
     environment:
       JWT_SECRET: "please-change-this-to-a-long-random-string"
+      ADMIN_SEED_USER: "admin"
       ADMIN_SEED_PASSWORD: "admin123"
+      ADMIN_SEED_RESET_PASSWORD: "true"
       DATA_DIR: "/data"
       PORT: "8080"
     volumes:

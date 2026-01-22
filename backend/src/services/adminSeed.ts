@@ -5,8 +5,19 @@ import { randomToken } from '../util/crypto.js'
 
 export const ensureAdminSeed = async () => {
   const db = getDb()
-  const anyAdmin = db.prepare("select 1 as ok from users where role = 'admin' limit 1").get() as { ok: 1 } | undefined
-  if (anyAdmin?.ok === 1) return
+  const anyAdmin = db.prepare("select id, username from users where role = 'admin' limit 1").get() as
+    | { id: string; username: string }
+    | undefined
+  if (anyAdmin) {
+    if (!config.adminSeedPassword || !config.adminSeedResetPassword) return
+    const preferred = db
+      .prepare("select id, username from users where role = 'admin' and username = ? limit 1")
+      .get(config.adminSeedUser) as { id: string; username: string } | undefined
+    const target = preferred ?? anyAdmin
+    const hash = await bcrypt.hash(config.adminSeedPassword, 12)
+    db.prepare('update users set password_hash = ?, updated_at = ? where id = ?').run(hash, new Date().toISOString(), target.id)
+    return
+  }
   const exists = db.prepare('select 1 as ok from users where username = ?').get(config.adminSeedUser) as
     | { ok: 1 }
     | undefined

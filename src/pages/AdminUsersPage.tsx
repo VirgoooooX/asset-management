@@ -25,6 +25,7 @@ import AddIcon from '@mui/icons-material/Add'
 import CheckIcon from '@mui/icons-material/Check'
 import BlockIcon from '@mui/icons-material/Block'
 import LockResetIcon from '@mui/icons-material/LockReset'
+import SaveIcon from '@mui/icons-material/Save'
 import PageShell from '../components/PageShell'
 import AppCard from '../components/AppCard'
 import TitleWithIcon from '../components/TitleWithIcon'
@@ -52,6 +53,11 @@ const formatTs = (iso?: string) => {
   return t.toLocaleString()
 }
 
+const roleLabel: Record<'manager' | 'user', { zh: string; en: string }> = {
+  user: { zh: 'user（普通）', en: 'user' },
+  manager: { zh: 'manager（管理员）', en: 'manager' },
+}
+
 const AdminUsersPage: React.FC = () => {
   const { tr } = useI18n()
 
@@ -66,6 +72,7 @@ const AdminUsersPage: React.FC = () => {
   const [createRole, setCreateRole] = useState<'manager' | 'user'>('user')
 
   const [approveRoleById, setApproveRoleById] = useState<Record<string, 'manager' | 'user'>>({})
+  const [editRoleById, setEditRoleById] = useState<Record<string, 'manager' | 'user'>>({})
 
   const [resetOpen, setResetOpen] = useState(false)
   const [resetUserId, setResetUserId] = useState<string | null>(null)
@@ -159,6 +166,25 @@ const AdminUsersPage: React.FC = () => {
     }
   }
 
+  const updateUserRole = async (id: string, role: 'manager' | 'user') => {
+    setLoading(true)
+    setError(null)
+    try {
+      await apiFetch(`/api/admin/users/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ role }),
+      })
+      await fetchUsers()
+    } catch (e: any) {
+      const text = e?.bodyText ? String(e.bodyText) : ''
+      if (text.includes('cannot_change_admin_role')) setError(tr('不能修改 admin 的角色', 'Cannot change admin role'))
+      else setError(e?.message || tr('更新角色失败', 'Failed to update role'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const openResetPassword = (id: string) => {
     setResetUserId(id)
     setResetPassword('')
@@ -224,18 +250,24 @@ const AdminUsersPage: React.FC = () => {
                     borderRadius: 2,
                     p: 1.25,
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: '1fr 360px' },
-                    gap: 1,
-                    alignItems: 'center',
+                    gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) auto' },
+                    columnGap: 2,
+                    rowGap: 1,
+                    alignItems: { xs: 'stretch', md: 'center' },
                   }}
                 >
                   <Box sx={{ minWidth: 0 }}>
-                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                      <Typography sx={{ fontWeight: 800 }} noWrap>
+                    <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 800, minWidth: 0 }} noWrap>
                         {u.username}
                       </Typography>
-                      <Chip size="small" label={u.role} variant="outlined" />
-                      <Chip size="small" label={u.status} />
+                      <Chip size="small" label={u.role} variant="outlined" color={u.role === 'admin' ? 'primary' : 'default'} />
+                      <Chip
+                        size="small"
+                        label={u.status}
+                        color={u.status === 'active' ? 'success' : u.status === 'pending' ? 'warning' : 'default'}
+                        variant={u.status === 'disabled' ? 'outlined' : 'filled'}
+                      />
                     </Stack>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                       {tr('创建时间', 'Created')}: {formatTs(u.createdAt)}
@@ -243,57 +275,97 @@ const AdminUsersPage: React.FC = () => {
                     </Typography>
                   </Box>
 
-                  <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end" flexWrap="wrap">
-                    {u.status === 'pending' ? (
-                      <FormControl size="small" sx={{ minWidth: 140 }}>
-                        <InputLabel id={`approve-role-${u.id}`}>{tr('角色', 'Role')}</InputLabel>
-                        <Select
-                          labelId={`approve-role-${u.id}`}
-                          label={tr('角色', 'Role')}
-                          value={approveRoleById[u.id] ?? 'user'}
-                          onChange={(e) =>
-                            setApproveRoleById((prev) => ({ ...prev, [u.id]: e.target.value as 'manager' | 'user' }))
-                          }
-                        >
-                          <MenuItem value="user">{tr('user（普通）', 'user')}</MenuItem>
-                          <MenuItem value="manager">{tr('manager（管理员）', 'manager')}</MenuItem>
-                        </Select>
-                      </FormControl>
-                    ) : null}
-
-                    {u.status === 'pending' ? (
-                      <Button
-                        variant="contained"
-                        startIcon={<CheckIcon />}
-                        onClick={() => approveUser(u.id)}
-                        disabled={loading}
-                      >
-                        {tr('批准', 'Approve')}
-                      </Button>
-                    ) : null}
-
+                  <Stack
+                    direction="column"
+                    spacing={0.75}
+                    alignItems={{ xs: 'stretch', md: 'flex-end' }}
+                    justifyContent="center"
+                    sx={{ minWidth: { md: 360 } }}
+                  >
                     {u.role !== 'admin' ? (
-                      <Button
-                        color="error"
-                        variant="outlined"
-                        startIcon={<BlockIcon />}
-                        onClick={() => disableUser(u.id)}
-                        disabled={loading}
-                      >
-                        {tr('禁用', 'Disable')}
-                      </Button>
-                    ) : null}
+                      <Stack direction="row" spacing={1} alignItems="center" justifyContent={{ xs: 'flex-start', md: 'flex-end' }} flexWrap="wrap">
+                        {u.status === 'pending' ? (
+                          <FormControl size="small" sx={{ minWidth: 160 }}>
+                            <InputLabel id={`approve-role-${u.id}`}>{tr('权限', 'Role')}</InputLabel>
+                            <Select
+                              labelId={`approve-role-${u.id}`}
+                              label={tr('权限', 'Role')}
+                              value={approveRoleById[u.id] ?? 'user'}
+                              onChange={(e) =>
+                                setApproveRoleById((prev) => ({ ...prev, [u.id]: e.target.value as 'manager' | 'user' }))
+                              }
+                            >
+                              <MenuItem value="user">{tr(roleLabel.user.zh, roleLabel.user.en)}</MenuItem>
+                              <MenuItem value="manager">{tr(roleLabel.manager.zh, roleLabel.manager.en)}</MenuItem>
+                            </Select>
+                          </FormControl>
+                        ) : (
+                          <FormControl size="small" sx={{ minWidth: 160 }}>
+                            <InputLabel id={`edit-role-${u.id}`}>{tr('权限', 'Role')}</InputLabel>
+                            <Select
+                              labelId={`edit-role-${u.id}`}
+                              label={tr('权限', 'Role')}
+                              value={editRoleById[u.id] ?? (u.role === 'manager' ? 'manager' : 'user')}
+                              onChange={(e) =>
+                                setEditRoleById((prev) => ({ ...prev, [u.id]: e.target.value as 'manager' | 'user' }))
+                              }
+                            >
+                              <MenuItem value="user">{tr(roleLabel.user.zh, roleLabel.user.en)}</MenuItem>
+                              <MenuItem value="manager">{tr(roleLabel.manager.zh, roleLabel.manager.en)}</MenuItem>
+                            </Select>
+                          </FormControl>
+                        )}
 
-                    {u.status === 'active' && u.role !== 'admin' ? (
-                      <Button
-                        variant="outlined"
-                        startIcon={<LockResetIcon />}
-                        onClick={() => openResetPassword(u.id)}
-                        disabled={loading}
-                      >
-                        {tr('重置密码', 'Reset password')}
-                      </Button>
-                    ) : null}
+                        {u.status === 'pending' ? (
+                          <Button
+                            variant="contained"
+                            startIcon={<CheckIcon />}
+                            onClick={() => approveUser(u.id)}
+                            disabled={loading}
+                          >
+                            {tr('批准', 'Approve')}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="contained"
+                            startIcon={<SaveIcon />}
+                            onClick={() => updateUserRole(u.id, editRoleById[u.id] ?? (u.role === 'manager' ? 'manager' : 'user'))}
+                            disabled={loading || (editRoleById[u.id] ?? (u.role === 'manager' ? 'manager' : 'user')) === u.role}
+                          >
+                            {tr('更新权限', 'Update role')}
+                          </Button>
+                        )}
+                      </Stack>
+                    ) : (
+                      <Typography variant="caption" color="text.secondary" sx={{ textAlign: { xs: 'left', md: 'right' } }}>
+                        {tr('admin 账号不可修改权限', 'Admin role is immutable')}
+                      </Typography>
+                    )}
+
+                    <Stack direction="row" spacing={1} alignItems="center" justifyContent={{ xs: 'flex-start', md: 'flex-end' }} flexWrap="wrap">
+                      {u.status !== 'disabled' && u.role !== 'admin' ? (
+                        <Button
+                          color="error"
+                          variant="outlined"
+                          startIcon={<BlockIcon />}
+                          onClick={() => disableUser(u.id)}
+                          disabled={loading}
+                        >
+                          {tr('禁用', 'Disable')}
+                        </Button>
+                      ) : null}
+
+                      {u.status === 'active' && u.role !== 'admin' ? (
+                        <Button
+                          variant="outlined"
+                          startIcon={<LockResetIcon />}
+                          onClick={() => openResetPassword(u.id)}
+                          disabled={loading}
+                        >
+                          {tr('重置密码', 'Reset password')}
+                        </Button>
+                      ) : null}
+                    </Stack>
                   </Stack>
                 </Box>
               ))}

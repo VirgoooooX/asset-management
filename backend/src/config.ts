@@ -12,6 +12,7 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().optional(),
   ADMIN_SEED_USER: z.string().optional(),
   ADMIN_SEED_PASSWORD: z.string().optional(),
+  ADMIN_SEED_RESET_PASSWORD: z.string().optional(),
   COOKIE_SECURE: z.string().optional()
 })
 
@@ -27,5 +28,6 @@ export const config = {
   corsOrigin: env.CORS_ORIGIN,
   adminSeedUser: env.ADMIN_SEED_USER ?? 'admin',
   adminSeedPassword: env.ADMIN_SEED_PASSWORD,
+  adminSeedResetPassword: env.ADMIN_SEED_RESET_PASSWORD === 'true',
   cookieSecure: env.COOKIE_SECURE === 'true'
 }

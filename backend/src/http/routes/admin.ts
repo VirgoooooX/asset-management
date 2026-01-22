@@ -100,6 +100,22 @@ const resetPasswordSchema = z.object({
   newPassword: z.string().min(8)
 })
 
+const setUserRoleSchema = z.object({
+  role: z.enum(['manager', 'user'])
+})
+
+adminRouter.patch('/users/:id', requireAuth, requireAdmin, (req, res) => {
+  const body = setUserRoleSchema.safeParse(req.body)
+  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
+  const id = req.params.id
+  const db = getDb()
+  const row = db.prepare('select id, role from users where id = ?').get(id) as { id: string; role: string } | undefined
+  if (!row) return res.status(404).json({ error: 'not_found' })
+  if (row.role === 'admin') return res.status(400).json({ error: 'cannot_change_admin_role' })
+  db.prepare('update users set role = ?, updated_at = ? where id = ?').run(body.data.role, new Date().toISOString(), id)
+  res.json({ ok: true })
+})
+
 adminRouter.post('/users/:id/reset-password', requireAuth, requireAdmin, async (req, res) => {
   const body = resetPasswordSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
