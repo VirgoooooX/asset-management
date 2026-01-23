@@ -21,8 +21,6 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import ConfirmDialog from './ConfirmDialog';
 import AppCard from './AppCard';
-import TitleWithIcon from './TitleWithIcon'
-import AcUnitIcon from '@mui/icons-material/AcUnit'
 import { useI18n } from '../i18n'
 
 interface ChamberListProps {
@@ -67,7 +65,7 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
   return (
     <Box>
       <AppCard
-        title={<TitleWithIcon icon={<AcUnitIcon />}>{tr('设备列表', 'Asset list')}</TitleWithIcon>}
+        title={tr('设备列表', 'Asset list')}
         actions={
           <Button variant="contained" color="primary" onClick={onAddNew} startIcon={<AddIcon />}>
             {tr('新增设备', 'Add asset')}

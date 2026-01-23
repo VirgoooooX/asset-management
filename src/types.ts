@@ -117,4 +117,5 @@ export interface RepairTicket {
   createdAt: string
   updatedAt?: string
   timeline?: RepairTimelineEntry[]
+  attachments?: AssetAttachment[]
 }

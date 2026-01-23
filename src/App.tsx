@@ -1,5 +1,4 @@
 // src/App.tsx
-import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import DashboardPage from './pages/DashboardPage'
@@ -10,7 +9,9 @@ import TestProjectsPage from './pages/TestProjectsPage';
 import UsageLogPage from './pages/UsagelogPage';
 import AlertsPage from './pages/AlertsPage'
 import SettingsPage from './pages/SettingsPage'
-import RepairsPage from './pages/RepairsPage'
+import RepairsPage from './pages/RepairsPage';
+import AssetCalibrationsPage from './pages/AssetCalibrationsPage';
+import RepairTicketDetailPage from './pages/RepairTicketDetailPage';
 import AssetDetailPage from './pages/AssetDetailPage';
 import LoginPage from './pages/LoginPage'; // 新增
 import PrivateRoute from './components/PrivateRoute'; // 新增
@@ -54,12 +55,14 @@ function App() {
             <Route path="/usage-logs" element={<UsageLogPage />} />
             <Route path="/me" element={<ProfilePage />} />
             <Route path="/repairs" element={<RepairsPage />} />
+            <Route path="/repairs/:ticketId" element={<RepairTicketDetailPage />} />
           </Route>
 
           <Route element={<PrivateRoute allowedRoles={['admin', 'manager']} />}> {/* 仅管理员可访问的页面 */}
             <Route path="/chambers" element={<ChambersPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/test-projects" element={<TestProjectsPage />} />
+            <Route path="/calibrations" element={<AssetCalibrationsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/assets/new" element={<AssetDetailPage mode="create" />} />
             <Route path="/assets/:assetId" element={<AssetDetailPage mode="view" />} />

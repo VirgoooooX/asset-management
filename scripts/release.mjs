@@ -14,12 +14,18 @@ function parseArgs(argv) {
     bump: 'patch',
     dryRun: false,
     platform: 'linux/amd64,linux/arm64',
+    version: undefined,
   }
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--dry-run') {
       options.dryRun = true
+      continue
+    }
+    if (arg === '--version') {
+      options.version = argv[i + 1]
+      i += 1
       continue
     }
     if (arg === '--image') {
@@ -46,6 +52,11 @@ function parseArgs(argv) {
   }
 
   if (!options.image) throw new Error('参数错误: --image 不能为空')
+  if (options.version !== undefined) {
+    const version = String(options.version)
+    const semverLike = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+    if (!semverLike.test(version)) throw new Error('参数错误: --version 必须是 semver 格式，例如 1.2.3 或 1.2.3-beta.1')
+  }
   if (!Number.isFinite(options.changelogCount) || options.changelogCount <= 0) throw new Error('参数错误: --changelog-count 必须为正数')
   if (!['patch', 'minor', 'major'].includes(options.bump)) throw new Error('参数错误: --bump 仅支持 patch/minor/major')
   if (!options.platform) throw new Error('参数错误: --platform 不能为空')
@@ -165,8 +176,46 @@ async function main() {
   const options = parseArgs(process.argv.slice(2))
 
   const rootPkgPath = path.join(repoRoot, 'package.json')
-  const rootPkg = await readJson(rootPkgPath)
-  const version = rootPkg.version
+  const backendPkgPath = path.join(repoRoot, 'backend', 'package.json')
+
+  const rootPkgBefore = await readJson(rootPkgPath)
+  const versionBefore = rootPkgBefore.version
+  if (typeof versionBefore !== 'string' || !versionBefore) throw new Error('package.json 缺少 version 字段')
+
+  if (options.version !== undefined) {
+    const targetVersion = String(options.version)
+    if (versionBefore !== targetVersion) {
+      console.log(`设置发布版本号: ${targetVersion}`)
+      const setRoot = await runStreaming('npm', ['version', targetVersion, '--no-git-tag-version'], repoRoot, options.dryRun)
+      if (setRoot.code !== 0) {
+        console.error('根目录版本号设置失败')
+        process.exit(setRoot.code)
+      }
+    }
+
+    const backendPkgBefore = await readJson(backendPkgPath)
+    const backendVersionBefore = backendPkgBefore.version
+    if (typeof backendVersionBefore !== 'string' || !backendVersionBefore) throw new Error('backend/package.json 缺少 version 字段')
+    if (backendVersionBefore !== targetVersion) {
+      const setBackend = await runStreaming(
+        'npm',
+        ['--prefix', 'backend', 'version', targetVersion, '--no-git-tag-version'],
+        repoRoot,
+        options.dryRun
+      )
+      if (setBackend.code !== 0) {
+        console.error('后端目录版本号设置失败')
+        process.exit(setBackend.code)
+      }
+    }
+  }
+
+  const version =
+    options.version !== undefined
+      ? options.dryRun
+        ? String(options.version)
+        : (await readJson(rootPkgPath)).version
+      : versionBefore
   if (typeof version !== 'string' || !version) throw new Error('package.json 缺少 version 字段')
 
   await ensureBuilder(options.dryRun)
@@ -208,4 +257,3 @@ main().catch((err) => {
   process.stderr.write(`${err instanceof Error ? err.message : String(err)}\n`)
   process.exit(1)
 })
-

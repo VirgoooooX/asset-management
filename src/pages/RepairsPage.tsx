@@ -9,7 +9,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   FormControl,
   IconButton,
   InputLabel,
@@ -25,32 +24,23 @@ import {
 } from '@mui/material'
 import BuildCircleIcon from '@mui/icons-material/BuildCircle'
 import AddIcon from '@mui/icons-material/Add'
-import EditIcon from '@mui/icons-material/Edit'
-import DeleteIcon from '@mui/icons-material/Delete'
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
-import LocalOfferIcon from '@mui/icons-material/LocalOffer'
 import RefreshIcon from '@mui/icons-material/Refresh'
+import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import PageShell from '../components/PageShell'
 import AppCard from '../components/AppCard'
 import TitleWithIcon from '../components/TitleWithIcon'
-import ConfirmDialog from '../components/ConfirmDialog'
 import { alpha } from '@mui/material/styles'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchAssetsByType } from '../store/assetsSlice'
-import {
-  addRepairTicket,
-  deleteRepairTicket,
-  fetchRepairTickets,
-  transitionRepairTicketStatus,
-  updateRepairTicket,
-} from '../store/repairTicketsSlice'
+import { addRepairTicket, fetchRepairTickets } from '../store/repairTicketsSlice'
 import type { Asset, RepairStatus, RepairTicket } from '../types'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { DateTimePicker, LocalizationProvider } from '@mui/x-date-pickers'
 import { zhCN } from 'date-fns/locale'
 import { useI18n } from '../i18n'
+import { useNavigate } from 'react-router-dom'
 
-type StatusFilter = RepairStatus | 'all'
+type StatusFilter = RepairStatus | 'all' | 'open'
 
 const statusColor: Record<RepairStatus, 'warning' | 'info' | 'success'> = {
   'quote-pending': 'warning',
@@ -66,6 +56,7 @@ const calcDaysFrom = (iso: string) => {
 
 const RepairsPage: React.FC = () => {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const assetsState = useAppSelector((s) => s.assets)
   const ticketsState = useAppSelector((s) => s.repairTickets)
   const role = useAppSelector((s) => s.auth.user?.role)
@@ -73,20 +64,12 @@ const RepairsPage: React.FC = () => {
   const canManage = role === 'admin' || role === 'manager'
   const isRefreshing = ticketsState.refreshing || assetsState.refreshing
 
-  const [filter, setFilter] = useState<StatusFilter>('quote-pending')
+  const [filter, setFilter] = useState<StatusFilter>('open')
   const [createOpen, setCreateOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
-  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
   const [createAssetId, setCreateAssetId] = useState('')
   const [createProblemDesc, setCreateProblemDesc] = useState('')
   const [createExpectedReturnAt, setCreateExpectedReturnAt] = useState<Date | null>(null)
-
-  const [editing, setEditing] = useState<RepairTicket | null>(null)
-  const [editProblemDesc, setEditProblemDesc] = useState('')
-  const [editVendorName, setEditVendorName] = useState('')
-  const [editQuoteAmount, setEditQuoteAmount] = useState<string>('')
-  const [editExpectedReturnAt, setEditExpectedReturnAt] = useState<Date | null>(null)
 
   useEffect(() => {
     dispatch(fetchAssetsByType({ type: 'chamber' }))
@@ -123,6 +106,7 @@ const RepairsPage: React.FC = () => {
 
   const filteredTickets = useMemo(() => {
     if (filter === 'all') return ticketsState.tickets
+    if (filter === 'open') return ticketsState.tickets.filter((t) => t.status !== 'completed')
     return ticketsState.tickets.filter((t) => t.status === filter)
   }, [filter, ticketsState.tickets])
 
@@ -147,15 +131,6 @@ const RepairsPage: React.FC = () => {
     setCreateOpen(true)
   }
 
-  const openEdit = (ticket: RepairTicket) => {
-    setEditing(ticket)
-    setEditProblemDesc(ticket.problemDesc || '')
-    setEditVendorName(ticket.vendorName || '')
-    setEditQuoteAmount(ticket.quoteAmount !== undefined ? String(ticket.quoteAmount) : '')
-    setEditExpectedReturnAt(ticket.expectedReturnAt ? new Date(ticket.expectedReturnAt) : null)
-    setEditOpen(true)
-  }
-
   const handleRefresh = () => {
     dispatch(fetchAssetsByType({ type: 'chamber', force: true }))
     dispatch(fetchRepairTickets({ force: true }))
@@ -163,7 +138,7 @@ const RepairsPage: React.FC = () => {
 
   const handleSubmitCreate = async () => {
     if (!createAssetId || !createProblemDesc.trim()) return
-    await dispatch(
+    const action = await dispatch(
       addRepairTicket({
         assetId: createAssetId,
         problemDesc: createProblemDesc.trim(),
@@ -171,61 +146,11 @@ const RepairsPage: React.FC = () => {
       })
     )
     setCreateOpen(false)
+    if (addRepairTicket.fulfilled.match(action)) {
+      navigate(`/repairs/${encodeURIComponent(action.payload.id)}`)
+    }
   }
 
-  const handleSubmitEdit = async () => {
-    if (!editing) return
-    await dispatch(
-      updateRepairTicket({
-        id: editing.id,
-        changes: {
-          problemDesc: editProblemDesc.trim(),
-          vendorName: editVendorName.trim() || undefined,
-          quoteAmount: editQuoteAmount ? Number(editQuoteAmount) : undefined,
-          expectedReturnAt: editExpectedReturnAt ? editExpectedReturnAt.toISOString() : undefined,
-        },
-      })
-    )
-    setEditOpen(false)
-    setEditing(null)
-  }
-
-  const handleMarkQuoted = async () => {
-    if (!editing) return
-    const vendor = editVendorName.trim()
-    const quote = editQuoteAmount ? Number(editQuoteAmount) : NaN
-    if (!vendor || Number.isNaN(quote)) return
-    await dispatch(
-      transitionRepairTicketStatus({
-        id: editing.id,
-        to: 'repair-pending',
-        vendorName: vendor,
-        quoteAmount: quote,
-      })
-    )
-    setEditOpen(false)
-    setEditing(null)
-  }
-
-  const handleMarkCompleted = async () => {
-    if (!editing) return
-    await dispatch(
-      transitionRepairTicketStatus({
-        id: editing.id,
-        to: 'completed',
-      })
-    )
-    setEditOpen(false)
-    setEditing(null)
-  }
-
-  const handleConfirmDelete = async () => {
-    if (!editing) return
-    await dispatch(deleteRepairTicket(editing.id))
-    setConfirmDeleteOpen(false)
-    setEditOpen(false)
-    setEditing(null)
-  }
 
   return (
     <PageShell
@@ -266,6 +191,7 @@ const RepairsPage: React.FC = () => {
               setFilter(v)
             }}
           >
+            <ToggleButton value="open">{tr('Open', 'Open')}</ToggleButton>
             <ToggleButton value="quote-pending">{tr('未询价', 'Quote pending')}</ToggleButton>
             <ToggleButton value="repair-pending">{tr('待维修', 'Repair pending')}</ToggleButton>
             <ToggleButton value="completed">{tr('已完成', 'Completed')}</ToggleButton>
@@ -326,7 +252,7 @@ const RepairsPage: React.FC = () => {
                       borderColor: (theme) => alpha(theme.palette.primary.main, 0.25),
                     },
                   }}
-                  onClick={() => openEdit(t)}
+                  onClick={() => navigate(`/repairs/${encodeURIComponent(t.id)}`)}
                 >
                   <Box sx={{ minWidth: 0 }}>
                     <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
@@ -338,29 +264,19 @@ const RepairsPage: React.FC = () => {
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }} noWrap>
                       {t.problemDesc || '-'}
                     </Typography>
+                    {canManage && (t.vendorName || t.quoteAmount !== undefined) ? (
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }} noWrap>
+                        {t.vendorName ? `${tr('供应商', 'Vendor')}: ${t.vendorName}` : tr('供应商: -', 'Vendor: -')}
+                        {' · '}
+                        {t.quoteAmount !== undefined ? `${tr('报价', 'Quote')}: ${t.quoteAmount}` : tr('报价: -', 'Quote: -')}
+                      </Typography>
+                    ) : null}
                   </Box>
                   <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end" flexWrap="wrap">
                     <Chip size="small" variant="outlined" label={tr(`停机: ${formatDays(days)}`, `Downtime: ${formatDays(days)}`)} />
-                    {t.status !== 'quote-pending' ? (
-                      <Chip
-                        size="small"
-                        variant="outlined"
-                        icon={<LocalOfferIcon fontSize="small" />}
-                        label={t.quoteAmount !== undefined ? `${t.quoteAmount}` : tr('已询价', 'Quoted')}
-                      />
-                    ) : null}
-                    {canManage ? (
-                      <IconButton
-                        size="small"
-                        color="primary"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          openEdit(t)
-                        }}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    ) : null}
+                    <IconButton size="small" color="primary" onClick={() => navigate(`/repairs/${encodeURIComponent(t.id)}`)}>
+                      <OpenInNewIcon fontSize="small" />
+                    </IconButton>
                   </Stack>
                 </Box>
               )
@@ -418,152 +334,7 @@ const RepairsPage: React.FC = () => {
           </DialogActions>
         </Dialog>
 
-        <Dialog
-          open={editOpen}
-          onClose={() => {
-            setEditOpen(false)
-            setEditing(null)
-          }}
-          fullWidth
-          maxWidth="sm"
-        >
-          <DialogTitle>{tr('工单详情', 'Ticket details')}</DialogTitle>
-          <DialogContent dividers>
-            {!editing ? null : (
-              <Stack spacing={2} sx={{ pt: 1 }}>
-                <Stack spacing={0.25}>
-                  <Typography variant="body2" color="text.secondary">
-                    {tr('设备', 'Asset')}
-                  </Typography>
-                  <Typography sx={{ fontWeight: 800 }}>
-                    {assetById.get(editing.assetId)?.name || editing.assetId}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                  <Chip size="small" label={statusLabel[editing.status]} color={statusColor[editing.status]} />
-                  <Chip
-                    size="small"
-                    variant="outlined"
-                    label={tr(`停机: ${formatDays(calcDaysFrom(editing.createdAt))}`, `Downtime: ${formatDays(calcDaysFrom(editing.createdAt))}`)}
-                  />
-                </Stack>
-                <TextField
-                  label={tr('故障/需求描述', 'Issue / request')}
-                  value={editProblemDesc}
-                  onChange={(e) => setEditProblemDesc(e.target.value)}
-                  fullWidth
-                  size="small"
-                  multiline
-                  minRows={2}
-                  disabled={!canManage}
-                />
-
-                <Divider />
-
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                  <TextField
-                    label={tr('供应商（可选）', 'Vendor (optional)')}
-                    value={editVendorName}
-                    onChange={(e) => setEditVendorName(e.target.value)}
-                    fullWidth
-                    size="small"
-                    disabled={!canManage}
-                  />
-                  <TextField
-                    label={tr('报价（可选）', 'Quote (optional)')}
-                    value={editQuoteAmount}
-                    onChange={(e) => setEditQuoteAmount(e.target.value)}
-                    fullWidth
-                    size="small"
-                    inputProps={{ inputMode: 'decimal' }}
-                    disabled={!canManage}
-                  />
-                </Stack>
-
-                <DateTimePicker
-                  label={tr('预计回归时间（可选）', 'Expected return time (optional)')}
-                  value={editExpectedReturnAt}
-                  onChange={(v) => setEditExpectedReturnAt(v)}
-                  slotProps={{ textField: { fullWidth: true, size: 'small', disabled: !canManage } }}
-                />
-
-                {editing.timeline && editing.timeline.length > 0 ? (
-                  <Stack spacing={0.5}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650 }}>
-                      {tr('流转记录', 'Timeline')}
-                    </Typography>
-                    {editing.timeline
-                      .slice()
-                      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
-                      .slice(0, 6)
-                      .map((e, idx) => (
-                        <Typography key={`${e.at}-${idx}`} variant="caption" color="text.secondary" noWrap>
-                          {new Date(e.at).toLocaleString()} · {e.from ? statusLabel[e.from] : tr('创建', 'Created')} → {statusLabel[e.to]}
-                          {e.note ? ` · ${e.note}` : ''}
-                        </Typography>
-                      ))}
-                  </Stack>
-                ) : null}
-              </Stack>
-            )}
-          </DialogContent>
-          <DialogActions sx={{ justifyContent: 'space-between' }}>
-            {canManage ? (
-              <Button
-                color="error"
-                startIcon={<DeleteIcon />}
-                onClick={() => setConfirmDeleteOpen(true)}
-                disabled={!editing || ticketsState.loading}
-              >
-                {tr('删除', 'Delete')}
-              </Button>
-            ) : (
-              <Box />
-            )}
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Button onClick={() => setEditOpen(false)}>{tr('关闭', 'Close')}</Button>
-              {canManage ? (
-                <>
-                  <Button variant="outlined" onClick={handleSubmitEdit} disabled={!editing || ticketsState.loading}>
-                    {tr('保存', 'Save')}
-                  </Button>
-                  {editing?.status === 'quote-pending' ? (
-                    <Button
-                      variant="contained"
-                      startIcon={<LocalOfferIcon />}
-                      onClick={handleMarkQuoted}
-                      disabled={!editing || !editVendorName.trim() || !editQuoteAmount || ticketsState.loading}
-                    >
-                      {tr('标记已询价', 'Mark quoted')}
-                    </Button>
-                  ) : null}
-                  {editing?.status === 'repair-pending' ? (
-                    <Button
-                      variant="contained"
-                      color="success"
-                      startIcon={<CheckCircleOutlineIcon />}
-                      onClick={handleMarkCompleted}
-                      disabled={!editing || ticketsState.loading}
-                    >
-                      {tr('维修完成', 'Mark completed')}
-                    </Button>
-                  ) : null}
-                </>
-              ) : null}
-            </Stack>
-          </DialogActions>
-        </Dialog>
       </LocalizationProvider>
-
-      <ConfirmDialog
-        open={confirmDeleteOpen}
-        title={tr('确认删除', 'Confirm deletion')}
-        description={tr('确定要删除该维修工单吗？删除后将尝试把设备状态恢复为“可用”。', 'Delete this repair ticket? After deletion, the asset status will be restored to “available” if possible.')}
-        confirmText={tr('删除', 'Delete')}
-        confirmColor="error"
-        onClose={() => setConfirmDeleteOpen(false)}
-        onConfirm={handleConfirmDelete}
-      />
     </PageShell>
   )
 }

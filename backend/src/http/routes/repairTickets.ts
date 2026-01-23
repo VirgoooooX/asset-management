@@ -11,6 +11,16 @@ export const repairTicketsRouter = Router()
 
 const statusSchema = z.enum(['quote-pending', 'repair-pending', 'completed'])
 
+const attachmentSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  url: z.string(),
+  path: z.string(),
+  contentType: z.string().optional(),
+  size: z.number().optional(),
+  uploadedAt: z.string()
+})
+
 const createSchema = z.object({
   assetId: z.string().min(1),
   problemDesc: z.string().min(1),
@@ -21,7 +31,8 @@ const patchSchema = z.object({
   problemDesc: z.string().optional(),
   vendorName: z.string().optional().nullable(),
   quoteAmount: z.number().optional().nullable(),
-  expectedReturnAt: z.string().optional().nullable()
+  expectedReturnAt: z.string().optional().nullable(),
+  attachments: z.array(attachmentSchema).optional().nullable()
 })
 
 const transitionSchema = z.object({
@@ -43,8 +54,17 @@ const mapRow = (r: any) => ({
   completedAt: r.completed_at ?? undefined,
   createdAt: r.created_at,
   updatedAt: r.updated_at ?? undefined,
-  timeline: parseJson<any[]>(r.timeline, undefined as any)
+  timeline: parseJson<any[]>(r.timeline, undefined as any),
+  attachments: parseJson<any[]>(r.attachments, undefined as any)
 })
+
+const stripSensitive = (t: any) => {
+  delete t.vendorName
+  delete t.quoteAmount
+  delete t.quoteAt
+  delete t.attachments
+  return t
+}
 
 const computeAnyOtherOpen = (db: any, assetId: string, excludeId?: string) => {
   const rows = db.prepare('select id, status from repair_tickets where asset_id = ?').all(assetId) as {
@@ -55,6 +75,7 @@ const computeAnyOtherOpen = (db: any, assetId: string, excludeId?: string) => {
 }
 
 repairTicketsRouter.get('/', requireAuth, (req, res) => {
+  const canViewSensitive = req.user?.role === 'admin' || req.user?.role === 'manager'
   const status = typeof req.query.status === 'string' ? req.query.status : undefined
   const assetId = typeof req.query.assetId === 'string' ? req.query.assetId : undefined
   const db = getDb()
@@ -71,16 +92,17 @@ repairTicketsRouter.get('/', requireAuth, (req, res) => {
   const whereSql = clauses.length ? `where ${clauses.join(' and ')}` : ''
   const rows = db.prepare(`select * from repair_tickets ${whereSql}`).all(...params) as any[]
   const items = rows
-    .map(mapRow)
+    .map((r) => (canViewSensitive ? mapRow(r) : stripSensitive(mapRow(r))))
     .sort((a, b) => Date.parse(b.updatedAt ?? b.createdAt) - Date.parse(a.updatedAt ?? a.createdAt))
   res.json({ items })
 })
 
 repairTicketsRouter.get('/:id', requireAuth, (req, res) => {
+  const canViewSensitive = req.user?.role === 'admin' || req.user?.role === 'manager'
   const db = getDb()
   const row = db.prepare('select * from repair_tickets where id = ?').get(req.params.id) as any | undefined
   if (!row) return res.status(404).json({ error: 'not_found' })
-  res.json({ item: mapRow(row) })
+  res.json({ item: canViewSensitive ? mapRow(row) : stripSensitive(mapRow(row)) })
 })
 
 repairTicketsRouter.post('/', requireAuth, (req, res) => {
@@ -105,8 +127,8 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
     db.prepare(
       [
         'insert into repair_tickets (',
-        'id, asset_id, status, problem_desc, vendor_name, quote_amount, quote_at, expected_return_at, completed_at, created_at, updated_at, timeline',
-        ') values (?,?,?,?,?,?,?,?,?,?,?,?)'
+        'id, asset_id, status, problem_desc, vendor_name, quote_amount, quote_at, expected_return_at, completed_at, created_at, updated_at, timeline, attachments',
+        ') values (?,?,?,?,?,?,?,?,?,?,?,?,?)'
       ].join(' ')
     ).run(
       id,
@@ -120,7 +142,8 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
       null,
       now,
       now,
-      JSON.stringify(timeline)
+      JSON.stringify(timeline),
+      null
     )
     db.prepare('update assets set status = ?, updated_at = ? where id = ?').run('maintenance', now, d.assetId)
     publishAssetStatusChanged(d.assetId, 'maintenance', now)
@@ -149,6 +172,7 @@ repairTicketsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
   if (d.vendorName !== undefined) add('vendor_name = ?', d.vendorName ?? null)
   if (d.quoteAmount !== undefined) add('quote_amount = ?', d.quoteAmount ?? null)
   if (d.expectedReturnAt !== undefined) add('expected_return_at = ?', d.expectedReturnAt ?? null)
+  if (d.attachments !== undefined) add('attachments = ?', d.attachments === null ? null : JSON.stringify(d.attachments))
   add('updated_at = ?', new Date().toISOString())
 
   db.prepare(`update repair_tickets set ${updates.join(', ')} where id = ?`).run(...params, id)

@@ -10,6 +10,8 @@ export const selectChamberAssets = createSelector([selectAssetsState], (assetsSt
   assetsState.assets.filter((a) => a.type === 'chamber')
 )
 
+export const selectAllAssets = createSelector([selectAssetsState], (assetsState) => assetsState.assets)
+
 export const selectUsageLogs = createSelector([selectUsageLogsState], (usageLogsState) => usageLogsState.usageLogs)
 
 type Interval = { startMs: number; endMs: number }
@@ -60,9 +62,12 @@ export interface DashboardKpis {
     capacityMs: number
     ratio: number
   }
-  calibrationDueSoon: {
+  calibrationAttention: {
     daysThreshold: number
     count: number
+    dueCount: number
+    overdueCount: number
+    missingCount: number
     assets: Asset[]
   }
   topBusyAssets: Array<{ asset: Asset; utilizationRatio: number }>
@@ -71,13 +76,14 @@ export interface DashboardKpis {
 export const selectDashboardKpis = createSelector(
   [
     selectChamberAssets,
+    selectAllAssets,
     selectUsageLogs,
     (_state: RootState, startMs: number) => startMs,
     (_state: RootState, _startMs: number, endMs: number) => endMs,
     (_state: RootState, _startMs: number, _endMs: number, daysThreshold: number) => daysThreshold,
     (_state: RootState, _startMs: number, _endMs: number, _daysThreshold: number, nowMs: number) => nowMs,
   ],
-  (assets, usageLogs, startMs, endMs, daysThreshold, nowMs): DashboardKpis => {
+  (assets, allAssets, usageLogs, startMs, endMs, daysThreshold, nowMs): DashboardKpis => {
     const rangeMs = Math.max(0, endMs - startMs)
 
     const statusCounts: DashboardKpis['statusCounts'] = {
@@ -123,13 +129,31 @@ export const selectDashboardKpis = createSelector(
     const capacityMs = assets.length * rangeMs
     const ratio = capacityMs > 0 ? Math.min(1, occupiedMs / capacityMs) : 0
 
-    const dueSoonAssets = assets
+    let dueCount = 0
+    let overdueCount = 0
+    let missingCount = 0
+
+    const attentionAssets = allAssets
       .filter((a) => {
-        if (!a.calibrationDate) return false
+        if (!a.calibrationDate) {
+          missingCount++
+          return false
+        }
         const ms = Date.parse(a.calibrationDate)
-        if (Number.isNaN(ms)) return false
+        if (Number.isNaN(ms)) {
+          missingCount++
+          return false
+        }
         const deltaDays = (ms - nowMs) / (24 * 60 * 60 * 1000)
-        return deltaDays >= 0 && deltaDays <= daysThreshold
+        if (deltaDays < 0) {
+          overdueCount++
+          return true
+        }
+        if (deltaDays <= daysThreshold) {
+          dueCount++
+          return true
+        }
+        return false
       })
       .sort((a, b) => (Date.parse(a.calibrationDate || '') || 0) - (Date.parse(b.calibrationDate || '') || 0))
 
@@ -143,9 +167,15 @@ export const selectDashboardKpis = createSelector(
       statusCounts,
       overdueActiveCount,
       utilization: { occupiedMs, capacityMs, ratio },
-      calibrationDueSoon: { daysThreshold, count: dueSoonAssets.length, assets: dueSoonAssets.slice(0, 8) },
+      calibrationAttention: {
+        daysThreshold,
+        count: attentionAssets.length,
+        dueCount,
+        overdueCount,
+        missingCount,
+        assets: attentionAssets.slice(0, 8),
+      },
       topBusyAssets,
     }
   }
 )
-

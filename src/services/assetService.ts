@@ -1,6 +1,15 @@
 import { Asset, AssetType } from '../types'
 import { apiFetch } from './apiClient'
 
+export type AssetUpdate = Partial<Omit<Omit<Asset, 'id' | 'type' | 'createdAt'>, 'calibrationDate'>> & {
+  calibrationDate?: string | null
+}
+
+export const getAssets = async (): Promise<Asset[]> => {
+  const data = await apiFetch<{ items: Asset[] }>(`/api/assets`)
+  return Array.isArray(data.items) ? data.items : []
+}
+
 export const getAssetsByType = async (type: AssetType): Promise<Asset[]> => {
   const data = await apiFetch<{ items: Asset[] }>(`/api/assets?type=${encodeURIComponent(type)}`)
   return Array.isArray(data.items) ? data.items : []
@@ -29,7 +38,7 @@ export const createAsset = async (
 
 export const updateAsset = async (
   id: string,
-  assetUpdateData: Partial<Omit<Asset, 'id' | 'type' | 'createdAt'>>
+  assetUpdateData: AssetUpdate
 ): Promise<void> => {
   await apiFetch(`/api/assets/${encodeURIComponent(id)}`, {
     method: 'PATCH',

@@ -72,6 +72,6 @@ describe('kpiSelectors', () => {
     expect(kpis.utilization.capacityMs).toBe(2 * (endMs - startMs))
     expect(kpis.utilization.occupiedMs).toBe(3 * 60 * 60 * 1000)
     expect(kpis.utilization.ratio).toBeCloseTo(0.15)
-    expect(kpis.calibrationDueSoon.count).toBe(1)
+    expect(kpis.calibrationAttention.count).toBe(1)
   })
 })

@@ -64,7 +64,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ onEdit, onAddNew, onViewDetai
   return (
     <Box>
       <AppCard
-        title={tr('项目列表', 'Project list')}
+        title={tr('产品专案列表', 'Project list')}
         actions={
           <Button variant="contained" color="primary" onClick={onAddNew} startIcon={<AddIcon />}>
             {tr('添加项目', 'Add project')}

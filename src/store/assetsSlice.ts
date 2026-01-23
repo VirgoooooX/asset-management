@@ -75,7 +75,7 @@ export const addAsset = createAsyncThunk<
 
 export const updateAsset = createAsyncThunk<
   Asset,
-  { id: string; changes: Partial<Omit<Asset, 'id' | 'type' | 'createdAt'>> },
+  { id: string; changes: assetService.AssetUpdate },
   { rejectValue: string }
 >('assets/updateAsset', async ({ id, changes }, { rejectWithValue }) => {
   try {

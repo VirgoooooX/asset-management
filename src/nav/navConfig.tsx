@@ -8,6 +8,7 @@ import BusinessCenterIcon from '@mui/icons-material/BusinessCenter'
 import ScienceIcon from '@mui/icons-material/Science'
 import SettingsIcon from '@mui/icons-material/Settings'
 import BuildCircleIcon from '@mui/icons-material/BuildCircle'
+import FactCheckIcon from '@mui/icons-material/FactCheck'
 import PersonIcon from '@mui/icons-material/Person'
 import PeopleIcon from '@mui/icons-material/People'
 import type { SvgIconProps } from '@mui/material'
@@ -48,7 +49,7 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
   {
     id: 'dashboard',
     section: 'overview',
-    label: tr('总览', 'Overview'),
+    label: tr('设备总览', 'Overview'),
     description: tr('关键指标、使用率与校准提醒', 'KPIs, utilization, and calibration reminders'),
     path: '/dashboard',
     roles: ['admin', 'manager', 'user'],
@@ -100,6 +101,16 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
     quick: true,
   },
   {
+    id: 'calibrations',
+    section: 'ops',
+    label: tr('校验管理', 'Calibration'),
+    description: tr('统一管理所有设备的校验日期', 'Manage calibration dates for all assets'),
+    path: '/calibrations',
+    roles: ['admin', 'manager'],
+    icon: <FactCheckIcon />,
+    order: 31,
+  },
+  {
     id: 'assets',
     section: 'resources',
     label: tr('设备台账', 'Assets'),
@@ -113,7 +124,7 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
   {
     id: 'projects',
     section: 'resources',
-    label: tr('项目', 'Projects'),
+    label: tr('产品专案', 'Projects'),
     description: tr('客户项目与配置管理', 'Customer projects and configuration'),
     path: '/projects',
     roles: ['admin', 'manager'],
@@ -123,7 +134,7 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
   {
     id: 'testProjects',
     section: 'resources',
-    label: tr('测试项目', 'Test projects'),
+    label: tr('测试项目', 'Test Item'),
     description: tr('测试项目/计划管理', 'Test project / plan management'),
     path: '/test-projects',
     roles: ['admin', 'manager'],

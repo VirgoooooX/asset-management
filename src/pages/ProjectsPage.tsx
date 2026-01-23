@@ -46,7 +46,7 @@ const ProjectsPage: React.FC = () => {
   };
 
   return (
-    <PageShell title={<TitleWithIcon icon={<BusinessCenterIcon />}>{tr('项目', 'Projects')}</TitleWithIcon>}>
+    <PageShell title={<TitleWithIcon icon={<BusinessCenterIcon />}>{tr('产品专案', 'Projects')}</TitleWithIcon>}>
       <ProjectList 
         onEdit={handleEdit}
         onAddNew={handleAddNew}

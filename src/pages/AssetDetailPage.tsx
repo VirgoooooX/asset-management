@@ -107,6 +107,7 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
 
   const role = useAppSelector((s) => s.auth.user?.role)
   const isAdmin = role === 'admin'
+  const canManage = role === 'admin' || role === 'manager'
 
   const assetsLoading = useAppSelector((s) => s.assets.loading)
   const assetsError = useAppSelector((s) => s.assets.error)
@@ -967,6 +968,7 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
                   {relatedRepairTickets.slice(0, 12).map((t) => (
                     <Box
                       key={t.id}
+                      onClick={() => navigate(`/repairs/${encodeURIComponent(t.id)}`)}
                       sx={{
                         border: '1px solid',
                         borderColor: 'divider',
@@ -977,6 +979,12 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
                         justifyContent: 'space-between',
                         gap: 1.5,
                         backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
+                        cursor: 'pointer',
+                        transition: 'background-color 150ms ease, border-color 150ms ease',
+                        '&:hover': {
+                          backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.45 : 0.75),
+                          borderColor: (theme) => alpha(theme.palette.primary.main, 0.25),
+                        },
                       }}
                     >
                       <Box sx={{ minWidth: 0 }}>
@@ -987,6 +995,13 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
                           {tr('更新时间：', 'Updated: ')}
                           {formatDateTime(t.updatedAt ?? t.createdAt)}
                         </Typography>
+                        {canManage && (t.vendorName || t.quoteAmount !== undefined) ? (
+                          <Typography variant="body2" color="text.secondary" noWrap>
+                            {t.vendorName ? `${tr('供应商', 'Vendor')}: ${t.vendorName}` : tr('供应商: -', 'Vendor: -')}
+                            {' · '}
+                            {t.quoteAmount !== undefined ? `${tr('报价', 'Quote')}: ${t.quoteAmount}` : tr('报价: -', 'Quote: -')}
+                          </Typography>
+                        ) : null}
                       </Box>
                       <Chip
                         size="small"

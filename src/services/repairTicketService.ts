@@ -37,7 +37,7 @@ export const createRepairTicket = async (data: {
 
 export const updateRepairTicket = async (
   id: string,
-  changes: Partial<Pick<RepairTicket, 'problemDesc' | 'vendorName' | 'quoteAmount' | 'expectedReturnAt'>>
+  changes: Partial<Pick<RepairTicket, 'problemDesc' | 'vendorName' | 'quoteAmount' | 'expectedReturnAt' | 'attachments'>>
 ): Promise<void> => {
   await apiFetch(`/api/repair-tickets/${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -64,4 +64,3 @@ export const transitionRepairTicketStatus = async (args: {
 export const deleteRepairTicket = async (id: string): Promise<void> => {
   await apiFetch(`/api/repair-tickets/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
-

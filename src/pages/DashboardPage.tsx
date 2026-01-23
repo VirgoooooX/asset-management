@@ -496,26 +496,22 @@ const DashboardPage: React.FC = () => {
             chip: { label: tr('待处理', 'Action'), color: 'warning' as const },
           },
           {
-            title: tr(`校验提醒（≤${kpis.calibrationDueSoon.daysThreshold}天）`, `Calibration due (≤${kpis.calibrationDueSoon.daysThreshold}d)`),
+            title: tr(
+              `校验提醒（≤${kpis.calibrationAttention.daysThreshold}天为即将到期）`,
+              `Calibrations (due ≤${kpis.calibrationAttention.daysThreshold}d)`
+            ),
             tone: 'warning' as const,
-            value: String(kpis.calibrationDueSoon.count),
+            value: String(kpis.calibrationAttention.count),
             unit: tr('台', ''),
             notes: [
-              tr(`阈值：≤${kpis.calibrationDueSoon.daysThreshold}天`, `Threshold: ≤${kpis.calibrationDueSoon.daysThreshold}d`),
-              kpis.calibrationDueSoon.assets[0]?.name
-                ? tr(`最近到期：${kpis.calibrationDueSoon.assets[0].name}`, `Next due: ${kpis.calibrationDueSoon.assets[0].name}`)
-                : tr('最近到期：-', 'Next due: -'),
-              kpis.calibrationDueSoon.assets[0]?.calibrationDate
-                ? tr(
-                    `日期：${new Date(kpis.calibrationDueSoon.assets[0].calibrationDate).toLocaleString()}`,
-                    `Date: ${new Date(kpis.calibrationDueSoon.assets[0].calibrationDate).toLocaleString()}`
-                  )
-                : tr('日期：-', 'Date: -'),
+              tr(`即将到期：${kpis.calibrationAttention.dueCount}`, `Due soon: ${kpis.calibrationAttention.dueCount}`),
+              tr(`已逾期：${kpis.calibrationAttention.overdueCount}`, `Overdue: ${kpis.calibrationAttention.overdueCount}`),
+              tr(`未填写：${kpis.calibrationAttention.missingCount}`, `Missing: ${kpis.calibrationAttention.missingCount}`),
             ],
-            cta: { label: tr('查看设备', 'View assets'), onClick: () => navigate('/chambers') },
+            cta: { label: tr('打开校验管理', 'Open calibrations'), onClick: () => navigate('/calibrations') },
             chip: {
-              label: kpis.calibrationDueSoon.count > 0 ? tr('需处理', 'Needs action') : tr('正常', 'OK'),
-              color: kpis.calibrationDueSoon.count > 0 ? ('warning' as const) : ('success' as const),
+              label: kpis.calibrationAttention.count > 0 ? tr('需处理', 'Needs action') : tr('正常', 'OK'),
+              color: kpis.calibrationAttention.count > 0 ? ('warning' as const) : ('success' as const),
             },
           },
           {

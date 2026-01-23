@@ -30,11 +30,12 @@ type Props = {
 }
 
 const COLLAPSED_WIDTH = 72
-const EXPANDED_WIDTH = 256
+const EXPANDED_WIDTH = 180
 const ICON_COLUMN_WIDTH = COLLAPSED_WIDTH
+const NAV_LABEL_JUSTIFY_CHARS = 2
 const HOVER_OPEN_DELAY_MS = 650
-const ICON_SIZE = 22
-const ICON_SLOT_SIZE = 24
+const ICON_SIZE = 25
+const ICON_SLOT_SIZE = 26
 const ROW_INSET = 8
 
 const getNormalizedPathForSelection = (pathname: string) => {
@@ -223,7 +224,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
           minWidth: 0,
           pr: 2,
           opacity: effectiveExpanded ? 1 : 0,
-          maxWidth: effectiveExpanded ? 320 : 0,
+          maxWidth: effectiveExpanded ? (EXPANDED_WIDTH - ICON_COLUMN_WIDTH) : 0,
           transform: effectiveExpanded ? 'translateX(0)' : 'translateX(-6px)',
           transition: theme.transitions.create(['opacity', 'transform', 'max-width'], {
             easing: theme.transitions.easing.sharp,
@@ -232,6 +233,8 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
+          alignItems: 'center',
+          textAlign: 'center',
           overflow: 'hidden',
           pointerEvents: effectiveExpanded ? 'auto' : 'none',
         }}
@@ -242,15 +245,11 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
             fontWeight: 950,
             lineHeight: 1.05,
             letterSpacing: -0.2,
-            fontSize: { xs: '1.05rem', sm: '1.1rem' },
+            fontSize: { xs: '1.3rem', sm: '1.3rem' },
           }}
           noWrap
         >
-          {tr('实验室设备管理平台', 'Lab Asset Management')}
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2, fontWeight: 650 }} noWrap>
-          {tr('Internal use only', 'Internal use only')}
-          {role ? ` · ${role}` : ''}
+          {tr('设备管理', 'Lab Asset Management')}
         </Typography>
       </Box>
     </Box>
@@ -290,6 +289,9 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
               <Box key={section.id} component="li" sx={{ listStyle: 'none' }}>
                 {list.map((item) => {
                   const selected = isSelected(item.path)
+                  const labelChars = Array.from(item.label)
+                  const isHanOnly = /^[\u4e00-\u9fff]+$/.test(item.label)
+                  const shouldJustifyLabel = isHanOnly && labelChars.length > 1 && labelChars.length <= NAV_LABEL_JUSTIFY_CHARS
                   return (
                     <ListItemButton
                       key={item.id}
@@ -366,7 +368,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
                           minWidth: 0,
                           pr: 1.5,
                           opacity: effectiveExpanded ? 1 : 0,
-                          maxWidth: effectiveExpanded ? 360 : 0,
+                          maxWidth: effectiveExpanded ? (EXPANDED_WIDTH - ICON_COLUMN_WIDTH) : 0,
                           transform: effectiveExpanded ? 'translateX(0)' : 'translateX(-6px)',
                           transition: theme.transitions.create(['opacity', 'transform', 'max-width'], {
                             easing: theme.transitions.easing.sharp,
@@ -378,8 +380,25 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
                           textOverflow: 'ellipsis',
                         }}
                       >
-                        <Typography variant="body2" sx={{ fontWeight: 650 }} noWrap>
-                          {item.label}
+                        <Typography variant="body2" sx={{ fontWeight: 650, fontSize: '0.95rem' }} noWrap>
+                          {shouldJustifyLabel ? (
+                            <Box
+                              component="span"
+                              sx={{
+                                display: 'inline-flex',
+                                width: `${NAV_LABEL_JUSTIFY_CHARS}em`,
+                                justifyContent: 'space-between',
+                              }}
+                            >
+                              {labelChars.map((ch, idx) => (
+                                <Box component="span" key={`${ch}-${idx}`}>
+                                  {ch}
+                                </Box>
+                              ))}
+                            </Box>
+                          ) : (
+                            item.label
+                          )}
                         </Typography>
                       </Box>
                     </ListItemButton>
@@ -393,9 +412,9 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
                       variant="caption"
                       sx={{
                         position: 'absolute',
-                        left: ICON_COLUMN_WIDTH,
+                        left: '50%',
                         top: '50%',
-                        transform: effectiveExpanded ? 'translateY(-50%) translateX(0)' : 'translateY(-50%) translateX(-6px)',
+                        transform: effectiveExpanded ? 'translate(-50%, -50%)' : 'translate(-50%, -50%) translateX(-6px)',
                         px: 1,
                         bgcolor: 'background.paper',
                         color: 'text.secondary',
@@ -409,7 +428,29 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
                         pointerEvents: 'none',
                       }}
                     >
-                      {nextSection.label}
+                      {(() => {
+                        const label = nextSection.label
+                        const chars = Array.from(label)
+                        const isHanOnly = /^[\u4e00-\u9fff]+$/.test(label)
+                        const shouldJustify = isHanOnly && chars.length > 1 && chars.length <= NAV_LABEL_JUSTIFY_CHARS
+                        if (!shouldJustify) return label
+                        return (
+                          <Box
+                            component="span"
+                            sx={{
+                              display: 'inline-flex',
+                              width: `${NAV_LABEL_JUSTIFY_CHARS}em`,
+                              justifyContent: 'space-between',
+                            }}
+                          >
+                            {chars.map((ch, idx) => (
+                              <Box component="span" key={`${ch}-${idx}`}>
+                                {ch}
+                              </Box>
+                            ))}
+                          </Box>
+                        )
+                      })()}
                     </Typography>
                   </Box>
                 ) : null}
@@ -457,7 +498,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
             minWidth: 0,
             pr: 1.5,
             opacity: effectiveExpanded ? 1 : 0,
-            maxWidth: effectiveExpanded ? 360 : 0,
+            maxWidth: effectiveExpanded ? (EXPANDED_WIDTH - ICON_COLUMN_WIDTH) : 0,
             transform: effectiveExpanded ? 'translateX(0)' : 'translateX(-6px)',
             transition: theme.transitions.create(['opacity', 'transform', 'max-width'], {
               easing: theme.transitions.easing.sharp,
