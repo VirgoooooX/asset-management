@@ -45,6 +45,19 @@ export const fetchAssetsByType = createAsyncThunk<
   }
 )
 
+export const fetchAssetById = createAsyncThunk<
+  Asset | null,
+  { id: string },
+  { rejectValue: string }
+>('assets/fetchAssetById', async ({ id }, { rejectWithValue }) => {
+  try {
+    const asset = await assetService.getAssetById(id)
+    return asset
+  } catch (error: any) {
+    return rejectWithValue(error.message || '获取资产失败')
+  }
+})
+
 export const addAsset = createAsyncThunk<
   Asset,
   Omit<Asset, 'id' | 'createdAt' | 'updatedAt'>,
@@ -116,6 +129,13 @@ const assetsSlice = createSlice({
           state.error = action.payload || action.error.message || '获取资产失败 (未知错误)'
         }
       )
+      .addCase(fetchAssetById.fulfilled, (state, action: PayloadAction<Asset | null>) => {
+        const a = action.payload
+        if (!a) return
+        const index = state.assets.findIndex((x) => x.id === a.id)
+        if (index !== -1) state.assets[index] = a
+        else state.assets.unshift(a)
+      })
       .addCase(addAsset.pending, (state) => {
         state.loading = true
         state.error = null

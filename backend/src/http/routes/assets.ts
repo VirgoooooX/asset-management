@@ -7,6 +7,7 @@ import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
 import { syncAssetFolderToPreferred } from '../../services/fileFolders.js'
 import { slugifyCategory } from '../../util/slug.js'
+import { publishAssetStatusChanged } from '../../services/events.js'
 
 export const assetsRouter = Router()
 
@@ -130,10 +131,13 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
   const db = getDb()
-  const before = db.prepare('select category from assets where id = ?').get(id) as { category?: string } | undefined
+  const before = db.prepare('select category, status from assets where id = ?').get(id) as
+    | { category?: string; status?: string }
+    | undefined
   if (!before) return res.status(404).json({ error: 'not_found' })
   const beforeCategory = typeof before?.category === 'string' ? before.category : ''
   const beforeCategorySlug = slugifyCategory(beforeCategory)
+  const beforeStatus = typeof before?.status === 'string' ? before.status : undefined
 
   const updates: string[] = []
   const params: any[] = []
@@ -159,9 +163,13 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
   if (d.attachments !== undefined) add('attachments = ?', d.attachments ? JSON.stringify(d.attachments) : null)
   if (d.calibrationDate !== undefined) add('calibration_date = ?', d.calibrationDate ?? null)
 
-  add('updated_at = ?', new Date().toISOString())
+  const now = new Date().toISOString()
+  add('updated_at = ?', now)
 
   db.prepare(`update assets set ${updates.join(', ')} where id = ?`).run(...params, id)
+  if (d.status !== undefined && beforeStatus && d.status !== beforeStatus) {
+    publishAssetStatusChanged(id, d.status, now)
+  }
   if (d.name !== undefined || d.category !== undefined) {
     await syncAssetFolderToPreferred(id, beforeCategorySlug).catch(() => undefined)
   }

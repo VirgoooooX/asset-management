@@ -5,6 +5,7 @@ import { requireManager } from '../middlewares/requireManager.js'
 import { getDb } from '../../db/db.js'
 import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
+import { publishAssetStatusChanged } from '../../services/events.js'
 
 export const repairTicketsRouter = Router()
 
@@ -122,6 +123,7 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
       JSON.stringify(timeline)
     )
     db.prepare('update assets set status = ?, updated_at = ? where id = ?').run('maintenance', now, d.assetId)
+    publishAssetStatusChanged(d.assetId, 'maintenance', now)
   })()
 
   res.json({ id })
@@ -199,6 +201,7 @@ repairTicketsRouter.post('/:id/transition', requireAuth, requireManager, (req, r
     const anyOtherOpen = d.to === 'completed' ? computeAnyOtherOpen(db, current.asset_id, id) : true
     const nextAssetStatus = d.to === 'completed' ? (anyOtherOpen ? 'maintenance' : 'available') : 'maintenance'
     db.prepare('update assets set status = ?, updated_at = ? where id = ?').run(nextAssetStatus, now, current.asset_id)
+    publishAssetStatusChanged(current.asset_id, nextAssetStatus, now)
   })()
 
   res.json({ ok: true })
@@ -216,11 +219,13 @@ repairTicketsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
     db.prepare('delete from repair_tickets where id = ?').run(id)
     const hasOtherOpen = computeAnyOtherOpen(db, ticket.asset_id)
     const status = hasOtherOpen ? 'maintenance' : 'available'
+    const now = new Date().toISOString()
     db.prepare('update assets set status = ?, updated_at = ? where id = ?').run(
       status,
-      new Date().toISOString(),
+      now,
       ticket.asset_id
     )
+    publishAssetStatusChanged(ticket.asset_id, status, now)
   })()
 
   res.json({ ok: true })

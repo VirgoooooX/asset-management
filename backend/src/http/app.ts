@@ -18,6 +18,7 @@ import { testProjectsRouter } from './routes/testProjects.js'
 import { repairTicketsRouter } from './routes/repairTickets.js'
 import { settingsRouter } from './routes/settings.js'
 import { usersMeRouter } from './routes/usersMe.js'
+import { eventsRouter } from './routes/events.js'
 
 export const createApp = async () => {
   fs.mkdirSync(config.dataDir, { recursive: true })
@@ -53,6 +54,7 @@ export const createApp = async () => {
   app.use('/api/repair-tickets', repairTicketsRouter)
   app.use('/api/settings', settingsRouter)
   app.use('/api/users/me', usersMeRouter)
+  app.use('/api/events', eventsRouter)
 
   if (config.frontendDistDir) {
     const indexHtml = path.join(config.frontendDistDir, 'index.html')
