@@ -22,7 +22,7 @@ export const recomputeChamberStatus = (db: Database, chamberId: string) => {
 
   const rows = db
     .prepare(
-      "select status, start_time, end_time from usage_logs where chamber_id = ? and status in ('in-progress','not-started') order by created_at desc limit 100"
+      "select status, start_time, end_time from usage_logs where chamber_id = ? and status <> 'completed' order by created_at desc limit 100"
     )
     .all(chamberId) as { status: string; start_time: string; end_time: string | null }[]
 

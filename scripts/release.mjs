@@ -19,13 +19,17 @@ function parseArgs(argv) {
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
-    if (arg === '--dry-run') {
+    if (arg === '--release-dry-run' || arg === '--dry-run') {
       options.dryRun = true
       continue
     }
-    if (arg === '--version') {
+    if (arg === '--release-version' || arg === '--version') {
       options.version = argv[i + 1]
       i += 1
+      continue
+    }
+    if (!arg.startsWith('-') && options.version === undefined) {
+      options.version = arg
       continue
     }
     if (arg === '--image') {
@@ -55,7 +59,7 @@ function parseArgs(argv) {
   if (options.version !== undefined) {
     const version = String(options.version)
     const semverLike = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
-    if (!semverLike.test(version)) throw new Error('参数错误: --version 必须是 semver 格式，例如 1.2.3 或 1.2.3-beta.1')
+    if (!semverLike.test(version)) throw new Error('参数错误: --release-version 必须是 semver 格式，例如 1.2.3 或 1.2.3-beta.1')
   }
   if (!Number.isFinite(options.changelogCount) || options.changelogCount <= 0) throw new Error('参数错误: --changelog-count 必须为正数')
   if (!['patch', 'minor', 'major'].includes(options.bump)) throw new Error('参数错误: --bump 仅支持 patch/minor/major')
