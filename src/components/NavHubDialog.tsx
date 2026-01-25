@@ -95,7 +95,7 @@ const NavHubDialog: React.FC<Props> = ({ open, onClose, sections, items, role, o
             <TextField
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={tr('搜索：总览 / 告警 / 使用记录 / 设备台账...', 'Search: overview / alerts / logs / assets...')}
+              placeholder={tr('搜索：总览 / 异常监控 / 使用记录 / 设备列表...', 'Search: overview / exceptions / logs / assets...')}
               fullWidth
               autoFocus
               InputProps={{

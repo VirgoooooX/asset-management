@@ -11,7 +11,7 @@ const ChambersPage: React.FC = () => {
   const { tr } = useI18n()
 
   return (
-    <PageShell title={<TitleWithIcon icon={<AcUnitIcon />}>{tr('设备台账', 'Assets')}</TitleWithIcon>}>
+    <PageShell title={<TitleWithIcon icon={<AcUnitIcon />}>{tr('设备列表', 'Assets')}</TitleWithIcon>}>
       <ChamberList 
         onView={(id) => navigate(`/assets/${id}`)}
         onEdit={(id) => navigate(`/assets/${id}?edit=1`)}

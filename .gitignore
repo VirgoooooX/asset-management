@@ -30,3 +30,4 @@ backend/data/
 data/
 *.sqlite
 nul
+AGENTS.md

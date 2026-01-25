@@ -15,7 +15,7 @@ import {
 } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { getEffectiveUsageLogStatus } from '../utils/statusHelpers';
-import { Box, Typography, Tooltip, CircularProgress, Alert } from '@mui/material';
+import { Box, Typography, Tooltip, CircularProgress, Alert, Menu, MenuItem } from '@mui/material';
 import { useNavigate } from 'react-router-dom'
 
 export const CUSTOM_DAY_START_HOUR = 7;
@@ -58,10 +58,10 @@ const ITEM_BAR_TOTAL_HEIGHT = ITEM_BAR_HEIGHT + ITEM_BAR_VERTICAL_MARGIN;
 export interface TimelineUsageLogDisplayData extends Omit<UsageLog, 'id' | 'selectedConfigIds'> {
   displayId: string;
   originalLogId: string;
-  configId?: string;
   projectName?: string;
   testProjectName?: string;
-  configName?: string;
+  configIds: string[];
+  configNames: string[];
   effectiveStatus: UsageLog['status'];
 }
 
@@ -236,7 +236,9 @@ export const getTimelineDisplayData = ( /* ... (保持不变) ... */
         const { id: originalLogIdFromLog, selectedConfigIds: logSelectedConfigIds, ...restOfLogBase } = log;
         const restOfLog = restOfLogBase as Omit<UsageLog, 'id' | 'selectedConfigIds'>;
 
-        if (logSelectedConfigIds && logSelectedConfigIds.length > 0) {
+        const configIds = logSelectedConfigIds ? logSelectedConfigIds.slice() : [];
+        let configNames: string[] = [];
+        if (configIds.length > 0) {
             let configById: Map<string, { name: string }> | undefined;
             if (project) {
                 configById = projectConfigByIdCache.get(project.id);
@@ -246,51 +248,29 @@ export const getTimelineDisplayData = ( /* ... (保持不变) ... */
                     projectConfigByIdCache.set(project.id, configById);
                 }
             }
-
-            logSelectedConfigIds.forEach(configId => {
-                const config = configById?.get(configId);
-                displayDataList.push({
-                    ...restOfLog,
-                    chamberId: log.chamberId,
-                    user: log.user,
-                    startTime: log.startTime,
-                    endTime: log.endTime,
-                    status: log.status,
-                    notes: log.notes,
-                    projectId: log.projectId,
-                    testProjectId: log.testProjectId,
-                    createdAt: log.createdAt,
-                    selectedWaterfall: log.selectedWaterfall,
-                    displayId: `${originalLogIdFromLog}-${configId}`,
-                    originalLogId: originalLogIdFromLog,
-                    configId: configId,
-                    projectName: project?.name,
-                    testProjectName: testProject?.name,
-                    configName: config?.name || '未知配置',
-                    effectiveStatus: effectiveStatus,
-                });
-            });
-        } else {
-            displayDataList.push({
-                ...restOfLog,
-                chamberId: log.chamberId,
-                user: log.user,
-                startTime: log.startTime,
-                endTime: log.endTime,
-                status: log.status,
-                notes: log.notes,
-                projectId: log.projectId,
-                testProjectId: log.testProjectId,
-                createdAt: log.createdAt,
-                selectedWaterfall: log.selectedWaterfall,
-                displayId: originalLogIdFromLog,
-                originalLogId: originalLogIdFromLog,
-                projectName: project?.name,
-                testProjectName: testProject?.name,
-                configName: '无特定配置',
-                effectiveStatus: effectiveStatus,
-            });
+            configNames = configIds.map((configId) => configById?.get(configId)?.name || configId);
         }
+
+        displayDataList.push({
+            ...restOfLog,
+            chamberId: log.chamberId,
+            user: log.user,
+            startTime: log.startTime,
+            endTime: log.endTime,
+            status: log.status,
+            notes: log.notes,
+            projectId: log.projectId,
+            testProjectId: log.testProjectId,
+            createdAt: log.createdAt,
+            selectedWaterfall: log.selectedWaterfall,
+            displayId: originalLogIdFromLog,
+            originalLogId: originalLogIdFromLog,
+            projectName: project?.name,
+            testProjectName: testProject?.name,
+            configIds,
+            configNames,
+            effectiveStatus: effectiveStatus,
+        });
     });
     return displayDataList;
 };
@@ -393,6 +373,12 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   const [rangeStart, setRangeStart] = useState(() => addMonths(initialTimelineBaseDate, -1));
   const [rangeEnd, setRangeEnd] = useState(() => addMonths(initialTimelineBaseDate, 1));
 
+  const [configDeleteMenu, setConfigDeleteMenu] = useState<{
+    anchorEl: HTMLElement;
+    logId: string;
+    items: Array<{ id: string; name: string }>;
+  } | null>(null);
+
   const [processedHolidays, setProcessedHolidays] = useState<Map<string, HolidayDetail>>(new Map());
   const [holidaysLoading, setHolidaysLoading] = useState(true);
   const [holidaysError, setHolidaysError] = useState<string | null>(null);
@@ -436,6 +422,8 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
       return { startIndex, endIndexExclusive };
     });
   }, [dateHeaders.length, dayWidthPx]);
+
+  const closeConfigDeleteMenu = useCallback(() => setConfigDeleteMenu(null), []);
 
   useEffect(() => {
     const container = timelineContainerRef.current
@@ -756,8 +744,8 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
       const containerWidth = container.offsetWidth;
       const visibleGridWidth = Math.max(0, containerWidth - CHAMBER_NAME_WIDTH_PX);
       const cellsThatFit = Math.floor(visibleGridWidth / dayWidthPx);
-      const desiredTodayCellOffset = cellsThatFit > 2 ? 1 : (cellsThatFit > 1 ? 0 : 0); 
-      targetScrollPosition = CHAMBER_NAME_WIDTH_PX + (todayIndex - desiredTodayCellOffset) * dayWidthPx;
+      const desiredTodayCellOffset = cellsThatFit > 3 ? 2 : (cellsThatFit > 2 ? 1 : 0);
+      targetScrollPosition = (todayIndex - desiredTodayCellOffset) * dayWidthPx;
       targetScrollPosition = Math.max(0, targetScrollPosition);
       const maxScroll = (CHAMBER_NAME_WIDTH_PX + totalTimelineWidth) - containerWidth;
       targetScrollPosition = Math.min(targetScrollPosition, maxScroll > 0 ? maxScroll : 0);
@@ -957,11 +945,13 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                     if (left + width < visibleLeftPx || left > visibleRightPx) return null;
 
                     const styling = getBarStylingByEffectiveStatus(theme, logDisplayItem.effectiveStatus);
+                    const configNames = logDisplayItem.configNames ?? [];
+                    const hasConfigs = configNames.length > 0;
+                    const isMultiConfig = configNames.length > 1;
+                    const configText = hasConfigs ? configNames.join(', ') : '';
                     const barTextParts: string[] = [];
                     if (logDisplayItem.projectName) barTextParts.push(logDisplayItem.projectName);
-                    if (logDisplayItem.configName && logDisplayItem.configName !== '无特定配置' && logDisplayItem.configName !== '未知配置') {
-                      barTextParts.push(logDisplayItem.configName);
-                    }
+                    if (hasConfigs) barTextParts.push(configText);
                     if (originalLog.selectedWaterfall) {
                       barTextParts.push(`WF:${originalLog.selectedWaterfall}`);
                     }
@@ -971,9 +961,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                     const barText = barTextParts.length > 0 ? barTextParts.join(' - ') : (originalLog.user || '使用记录');
                     const barSegments: Array<{ text: string; tone: 'primary' | 'secondary' }> = [];
                     if (logDisplayItem.projectName) barSegments.push({ text: logDisplayItem.projectName, tone: 'primary' });
-                    if (logDisplayItem.configName && logDisplayItem.configName !== '无特定配置' && logDisplayItem.configName !== '未知配置') {
-                      barSegments.push({ text: logDisplayItem.configName, tone: 'primary' });
-                    }
+                    if (hasConfigs) barSegments.push({ text: configText, tone: 'primary' });
                     if (originalLog.selectedWaterfall) barSegments.push({ text: `WF:${originalLog.selectedWaterfall}`, tone: 'secondary' });
                     if (logDisplayItem.testProjectName) barSegments.push({ text: logDisplayItem.testProjectName, tone: 'secondary' });
                     const barTopPosition = baseTrackOffset + logDisplayItem.trackIndex * ITEM_BAR_TOTAL_HEIGHT;
@@ -989,6 +977,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                               开始: {format(parseISO(originalLog.startTime), 'yyyy-MM-dd HH:mm', { locale: zhCN })}<br />
                               结束: {originalLog.endTime ? format(parseISO(originalLog.endTime), 'yyyy-MM-dd HH:mm', { locale: zhCN }) : (logDisplayItem.effectiveStatus === 'in-progress' || logDisplayItem.effectiveStatus === 'overdue' ? '进行中/已超时' : '未设定')}<br />
                               状态: {logDisplayItem.effectiveStatus}
+                              {hasConfigs ? <><br />Configs: {configText}</> : null}
                               {originalLog.notes && <><br />备注: {originalLog.notes.substring(0, 100)}{originalLog.notes.length > 100 && '...'}</>}
                             </Typography>
                           </React.Fragment>
@@ -1013,6 +1002,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                           }}
                         >
                           <span className={styles.timelineBarText}>
+                            {isMultiConfig ? <span className={styles.timelineBarBadge}>CFG×{configNames.length}</span> : null}
                             {barSegments.length > 0
                               ? barSegments.map((seg, idx) => (
                                   <React.Fragment key={`${logDisplayItem.displayId}-seg-${idx}`}>
@@ -1024,20 +1014,26 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                                 ))
                               : (originalLog.user || '使用记录')}
                           </span>
-                          {onDeleteUsageLog && (
+                          {onDeleteUsageLog && logDisplayItem.configIds.length > 0 ? (
                             <button
                               className={styles.timelineBarDeleteButton}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (onDeleteUsageLog && logDisplayItem.configId) {
-                                  onDeleteUsageLog(logDisplayItem.originalLogId, logDisplayItem.configId);
+                                const items = logDisplayItem.configIds.map((id, idx) => ({
+                                  id,
+                                  name: logDisplayItem.configNames[idx] || id,
+                                }));
+                                if (items.length === 1) {
+                                  onDeleteUsageLog(logDisplayItem.originalLogId, items[0].id);
+                                  return;
                                 }
+                                setConfigDeleteMenu({ anchorEl: e.currentTarget, logId: logDisplayItem.originalLogId, items });
                               }}
-                              title="删除此记录"
+                              title={isMultiConfig ? '删除某个配置' : '删除此配置'}
                             >
                               <DeleteIconSvg />
                             </button>
-                          )}
+                          ) : null}
                         </div>
                       </Tooltip>
                     );
@@ -1045,6 +1041,26 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                 </div>
               );
             })}
+
+            <Menu
+              open={Boolean(configDeleteMenu)}
+              anchorEl={configDeleteMenu?.anchorEl ?? null}
+              onClose={closeConfigDeleteMenu}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+            >
+              {(configDeleteMenu?.items ?? []).map((it) => (
+                <MenuItem
+                  key={it.id}
+                  onClick={() => {
+                    onDeleteUsageLog?.(configDeleteMenu?.logId || '', it.id);
+                    closeConfigDeleteMenu();
+                  }}
+                >
+                  {it.name}
+                </MenuItem>
+              ))}
+            </Menu>
 
             {(!propsUsageLogs || propsUsageLogs.length === 0) && chambers && chambers.length > 0 && !shouldBlockOnPrimaryLoading && !holidaysLoading && (
               <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>

@@ -151,7 +151,7 @@ const TimelinePage: React.FC = () => {
                             lineHeight: 1.15,
                         }}
                     >
-                        <TitleWithIcon icon={<TimelineIcon />}>{tr('使用时间线', 'Usage timeline')}</TitleWithIcon>
+                        <TitleWithIcon icon={<TimelineIcon />}>{tr('占用排程', 'Occupancy Schedule')}</TitleWithIcon>
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
                         <Button variant="outlined" size="small" onClick={() => setScrollToTodaySignal((n) => n + 1)} sx={{ whiteSpace: 'nowrap' }}>

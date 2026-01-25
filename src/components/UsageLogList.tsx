@@ -184,7 +184,7 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
     <>
       <AppCard contentSx={{ mt: 0 }}>
         <TableContainer component={Box} sx={{ border: 'none', boxShadow: 'none', borderRadius: 0 }}>
-          <Table sx={{ minWidth: 900 }} aria-label={tr('使用记录列表', 'Usage log list')} size="small">
+          <Table aria-label={tr('使用记录列表', 'Usage log list')} size="small">
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
               <TableRow>
                 <TableCell sx={{ fontWeight: 600 }}>{tr('环境箱', 'Asset')}</TableCell>
@@ -228,10 +228,13 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
                       <TableCell>
                         {(() => {
                           if (log.selectedConfigIds && log.selectedConfigIds.length > 0) {
+                            const maxShow = 4
+                            const displayIds = log.selectedConfigIds.slice(0, maxShow)
+                            const remaining = Math.max(0, log.selectedConfigIds.length - displayIds.length)
                             if (linkedProject && linkedProject.configs) {
                               return (
-                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '200px', maxHeight: '70px', overflowY: 'auto' }}>
-                                  {log.selectedConfigIds.map((configId) => {
+                                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: 220 }}>
+                                  {displayIds.map((configId) => {
                                     const config = configMap?.get(configId);
                                     return (
                                       <Tooltip key={configId} title={config?.remark || config?.name || `Config ID: ${configId}`}>
@@ -239,6 +242,7 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
                                       </Tooltip>
                                     );
                                   })}
+                                  {remaining > 0 ? <Chip label={`+${remaining}`} size="small" variant="outlined" /> : null}
                                 </Box>
                               );
                             }
@@ -246,12 +250,13 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
                               return tr('加载中...', 'Loading...');
                             }
                             return (
-                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: '200px', maxHeight: '70px', overflowY: 'auto' }}>
-                                {log.selectedConfigIds.map((configId) => (
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, maxWidth: 220 }}>
+                                {displayIds.map((configId) => (
                                   <Tooltip key={configId} title={`Config ID: ${configId}`}>
                                     <Chip label={`ID: ${configId.substring(0, 6)}`} size="small" variant="outlined" />
                                   </Tooltip>
                                 ))}
+                                {remaining > 0 ? <Chip label={`+${remaining}`} size="small" variant="outlined" /> : null}
                               </Box>
                             );
                           }

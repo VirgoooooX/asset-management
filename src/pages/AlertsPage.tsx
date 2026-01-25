@@ -78,7 +78,7 @@ const AlertsPage: React.FC = () => {
   return (
     <PageShell
       title={
-        <TitleWithIcon icon={<NotificationsActiveIcon />}>{tr('告警中心', 'Alerts')}</TitleWithIcon>
+        <TitleWithIcon icon={<NotificationsActiveIcon />}>{tr('异常监控', 'Exceptions')}</TitleWithIcon>
       }
       maxWidth="xl"
       actions={
@@ -109,7 +109,7 @@ const AlertsPage: React.FC = () => {
         title={
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography component="span" sx={{ fontWeight: 750 }}>
-              {tr('当前告警', 'Current alerts')}
+              {tr('当前异常', 'Current exceptions')}
             </Typography>
             <Chip size="small" label={settings.language === 'en' ? `${filtered.length}` : `${filtered.length} 条`} sx={{ fontWeight: 650 }} />
           </Stack>
@@ -131,7 +131,7 @@ const AlertsPage: React.FC = () => {
               {filtered.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} align="center">
-                    <Typography color="text.secondary">{tr('暂无告警', 'No alerts')}</Typography>
+                    <Typography color="text.secondary">{tr('暂无异常', 'No exceptions')}</Typography>
                   </TableCell>
                 </TableRow>
               ) : (

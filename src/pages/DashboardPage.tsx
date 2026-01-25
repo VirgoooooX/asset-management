@@ -24,7 +24,7 @@ import SpeedIcon from '@mui/icons-material/Speed'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { LocalizationProvider, DateTimePicker } from '@mui/x-date-pickers'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
-import { startOfDay, subDays } from 'date-fns'
+import { startOfDay, subDays, differenceInDays } from 'date-fns'
 import AppCard from '../components/AppCard'
 import PageShell from '../components/PageShell'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
@@ -47,6 +47,14 @@ type RangePreset = '7d' | '30d' | '90d' | 'custom'
 const TOP_ROW_HEIGHT = 180
 
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`
+
+const formatDuration = (ms: number) => {
+  if (ms < 0) return '0m'
+  const totalMinutes = Math.floor(ms / 60000)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours}h ${minutes}m`
+}
 
 const formatDateTime = (value?: string) => {
   if (!value) return '-'
@@ -639,10 +647,10 @@ const DashboardPage: React.FC = () => {
         actions={
           <Stack direction="row" spacing={1}>
             <Button size="small" variant="outlined" onClick={() => navigate('/chambers')} sx={{ whiteSpace: 'nowrap' }}>
-              {tr('设备台账', 'Assets')}
+              {tr('设备列表', 'Assets')}
             </Button>
             <Button size="small" variant="outlined" onClick={() => navigate('/timeline')} sx={{ whiteSpace: 'nowrap' }}>
-              {tr('时间线', 'Timeline')}
+              {tr('占用排程', 'Occupancy Schedule')}
             </Button>
           </Stack>
         }
@@ -713,6 +721,16 @@ const DashboardPage: React.FC = () => {
                           const endText = occupancy ? formatDateTime(occupancy.log.endTime) : undefined
                           const nowMs = Date.now()
                           const isOverdue = occupancy ? Number.isFinite(occupancy.endMs) && occupancy.endMs < nowMs : false
+                          const diffMs = occupancy ? (isOverdue ? nowMs - occupancy.endMs : occupancy.endMs - nowMs) : 0
+                          const isLongTerm = diffMs > 24 * 60 * 60 * 1000
+
+                          const activeRepair =
+                            asset.status === 'maintenance'
+                              ? repairTickets.find((t) => t.assetId === asset.id && t.status !== 'completed')
+                              : undefined
+                          const maintenanceDays = activeRepair
+                            ? differenceInDays(new Date(), new Date(activeRepair.createdAt))
+                            : 0
 
                           const tooltip = occupancy ? (
                             <Box sx={{ p: 0.25 }}>
@@ -740,7 +758,7 @@ const DashboardPage: React.FC = () => {
                                 borderRadius: 2,
                                 p: 1.1,
                                 cursor: 'pointer',
-                                height: 74,
+                                height: 84,
                                 display: 'flex',
                                 flexDirection: 'column',
                                 justifyContent: 'space-between',
@@ -754,17 +772,51 @@ const DashboardPage: React.FC = () => {
                               <Typography sx={{ fontWeight: 950 }} noWrap>
                                   {asset.name}
                               </Typography>
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                                noWrap
-                                sx={{
-                                  mt: 0.25,
-                                  visibility: occupancy && asset.status === 'in-use' ? 'visible' : 'hidden',
-                                }}
-                              >
-                                {occupancy ? tr(`结束：${endText}`, `End: ${endText}`) : tr('占位', 'placeholder')}
-                              </Typography>
+                              
+                              {occupancy && asset.status === 'in-use' ? (
+                                <>
+                                  <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
+                                    {occupancy.log.user}
+                                  </Typography>
+                                  <Typography
+                                    variant="caption"
+                                    color={isOverdue ? 'error.main' : 'text.secondary'}
+                                    noWrap
+                                    sx={{
+                                      fontWeight: isOverdue ? 850 : 500,
+                                    }}
+                                  >
+                                    {isOverdue
+                                      ? (isLongTerm 
+                                          ? tr(`逾期: ${new Date(occupancy.endMs).toLocaleDateString()} ${new Date(occupancy.endMs).getHours().toString().padStart(2, '0')}:${new Date(occupancy.endMs).getMinutes().toString().padStart(2, '0')}`, `Overdue: ${new Date(occupancy.endMs).toLocaleDateString()}`) 
+                                          : tr(`逾期: ${formatDuration(diffMs)}`, `Overdue: ${formatDuration(diffMs)}`))
+                                      : (isLongTerm
+                                          ? tr(`结束: ${new Date(occupancy.endMs).toLocaleDateString()} ${new Date(occupancy.endMs).getHours().toString().padStart(2, '0')}:${new Date(occupancy.endMs).getMinutes().toString().padStart(2, '0')}`, `End: ${new Date(occupancy.endMs).toLocaleDateString()}`)
+                                          : tr(`剩余: ${formatDuration(diffMs)}`, `Remaining: ${formatDuration(diffMs)}`))}
+                                  </Typography>
+                                </>
+                              ) : activeRepair ? (
+                                <>
+                                  <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
+                                    {tr('维护中', 'Maintenance')}
+                                  </Typography>
+                                  <Typography variant="caption" color="text.secondary" noWrap sx={{ fontWeight: 500 }}>
+                                    {tr(`停机: ${maintenanceDays}天`, `Stopped: ${maintenanceDays}d`)}
+                                  </Typography>
+                                </>
+                              ) : (
+                                <Typography
+                                  variant="caption"
+                                  color="text.secondary"
+                                  noWrap
+                                  sx={{
+                                    mt: 'auto',
+                                    visibility: 'hidden',
+                                  }}
+                                >
+                                  -
+                                </Typography>
+                              )}
                             </Box>
                           )
 

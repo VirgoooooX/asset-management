@@ -13,6 +13,7 @@ import {
   Stack,
   Switch,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import PaletteIcon from '@mui/icons-material/Palette'
@@ -53,6 +54,8 @@ const SettingsPage: React.FC = () => {
   const auth = useAppSelector((s) => s.auth)
   const { tr } = useI18n()
   const [changelogExpanded, setChangelogExpanded] = useState(false)
+
+  const isAdmin = auth.user?.role === 'admin'
 
   const changelogShown = useMemo(() => {
     if (changelogExpanded) return buildInfo.changelog
@@ -143,9 +146,20 @@ const SettingsPage: React.FC = () => {
           </Stack>
         </AppCard>
 
-        <AppCard title={tr('仪表盘与告警', 'Dashboard & Alerts')}>
+        <AppCard
+          title={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <span>{tr('仪表盘与异常监控', 'Dashboard & Exceptions')}</span>
+              {!isAdmin && (
+                <Tooltip title={tr('仅管理员可调整', 'Admin only')}>
+                  <Chip label={tr('仅管理员', 'Admin only')} size="small" variant="outlined" />
+                </Tooltip>
+              )}
+            </Stack>
+          }
+        >
           <Stack spacing={2}>
-            <FormControl>
+            <FormControl disabled={!isAdmin}>
               <FormLabel>{tr('Dashboard 默认时间窗', 'Default time range')}</FormLabel>
               <RadioGroup
                 row
@@ -166,6 +180,7 @@ const SettingsPage: React.FC = () => {
               </Typography>
               <Stack direction="row" spacing={2} alignItems="center">
                 <Slider
+                  disabled={!isAdmin}
                   value={settings.alerts.calibrationDaysThreshold}
                   min={1}
                   max={90}
@@ -191,6 +206,7 @@ const SettingsPage: React.FC = () => {
               </Typography>
               <Stack direction="row" spacing={2} alignItems="center">
                 <Slider
+                  disabled={!isAdmin}
                   value={settings.alerts.longOccupancyHoursThreshold}
                   min={1}
                   max={240}
@@ -210,6 +226,7 @@ const SettingsPage: React.FC = () => {
                 {tr('自动刷新（秒）', 'Auto refresh (seconds)')}
               </Typography>
               <TextField
+                disabled={!isAdmin}
                 type="number"
                 value={settings.refreshSeconds}
                 onChange={(e) => dispatch(setRefreshSeconds(Number(e.target.value)))}

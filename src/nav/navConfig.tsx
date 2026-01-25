@@ -60,7 +60,7 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
   {
     id: 'timeline',
     section: 'overview',
-    label: tr('使用时间线', 'Usage timeline'),
+    label: tr('占用排程', 'Occupancy Schedule'),
     description: tr('按时间轴查看设备占用情况', 'View occupancy by timeline'),
     path: '/timeline',
     roles: ['admin', 'manager', 'user'],
@@ -70,7 +70,7 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
   {
     id: 'alerts',
     section: 'ops',
-    label: tr('告警中心', 'Alerts'),
+    label: tr('异常监控', 'Exceptions'),
     description: tr('校准到期、逾期、长占用', 'Calibration due/overdue and long occupancy'),
     path: '/alerts',
     roles: ['admin', 'manager', 'user'],
@@ -113,7 +113,7 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
   {
     id: 'assets',
     section: 'resources',
-    label: tr('设备台账', 'Assets'),
+    label: tr('设备列表', 'Assets'),
     description: tr('设备信息、状态与校准日期', 'Asset info, status, and calibration date'),
     path: '/chambers',
     roles: ['admin', 'manager'],

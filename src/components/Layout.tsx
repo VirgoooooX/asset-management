@@ -66,13 +66,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           }}
         >
           <Box
+            className="app-scroll"
             sx={{
               display: 'flex',
               flexDirection: 'column',
               flexGrow: 1,
               minHeight: 0,
-              overflowY: 'auto',
-              overflowX: 'hidden',
             }}
           >
             {children}

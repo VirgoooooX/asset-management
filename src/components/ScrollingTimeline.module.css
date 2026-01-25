@@ -252,6 +252,22 @@
   margin-right: 18px; /* Space for the delete button, adjust as needed */
 }
 
+.timelineBarBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.74em;
+  font-weight: 850;
+  letter-spacing: -0.1px;
+  border: 1px solid rgba(0,0,0,0.14);
+  background-color: rgba(0,0,0,0.14);
+  margin-right: 6px;
+  opacity: 0.92;
+  vertical-align: middle;
+}
+
 .timelineBarTextPrimary {
   color: currentColor;
   font-weight: 650;
