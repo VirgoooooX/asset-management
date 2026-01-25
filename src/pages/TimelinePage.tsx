@@ -229,6 +229,9 @@ const TimelinePage: React.FC = () => {
                             onDeleteUsageLog={handleDeleteLog}
                             dayWidthPx={dayWidthPx}
                             scrollToTodaySignal={scrollToTodaySignal}
+                            minRowHeightPx={65}
+                            itemBarHeightPx={50}
+                            itemBarGapPx={2}
                             // onAddNewUsageLog prop 已移除，因为按钮在此组件中直接处理
                         />
                     )}

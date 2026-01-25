@@ -44,16 +44,21 @@ interface ScrollingTimelineProps {
   regionCode?: 'cn' | 'tw';
   dayWidthPx?: number;
   scrollToTodaySignal?: number;
+  minRowHeightPx?: number;
+  itemBarHeightPx?: number;
+  itemBarGapPx?: number;
+  getMinRowHeightPx?: (chamberId: string) => number;
+  showConfigCountBadge?: boolean;
 }
 
 export const DAY_WIDTH_PX = 200;
-export const MIN_ROW_HEIGHT_PX = 50;
+export const MIN_ROW_HEIGHT_PX = 80;
 export const HEADER_HEIGHT_PX = 70;
 export const CHAMBER_NAME_WIDTH_PX = 150;
 
-const ITEM_BAR_HEIGHT = 24;
-const ITEM_BAR_VERTICAL_MARGIN = 5;
-const ITEM_BAR_TOTAL_HEIGHT = ITEM_BAR_HEIGHT + ITEM_BAR_VERTICAL_MARGIN;
+const DEFAULT_ITEM_BAR_HEIGHT_PX = 44;
+const DEFAULT_ITEM_BAR_GAP_PX = 2;
+const MAX_CONFIG_PILLS = 4;
 
 export interface TimelineUsageLogDisplayData extends Omit<UsageLog, 'id' | 'selectedConfigIds'> {
   displayId: string;
@@ -358,12 +363,22 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   regionCode = 'cn',
   dayWidthPx: propsDayWidthPx,
   scrollToTodaySignal,
+  minRowHeightPx: propsMinRowHeightPx,
+  itemBarHeightPx: propsItemBarHeightPx,
+  itemBarGapPx: propsItemBarGapPx,
+  getMinRowHeightPx,
+  showConfigCountBadge: propsShowConfigCountBadge,
 }) => {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const theme = useTheme();
   const timelineCssVars = useMemo(() => buildTimelineCssVars(theme), [theme]);
   const dayWidthPx = propsDayWidthPx ?? DAY_WIDTH_PX;
+  const minRowHeightPx = propsMinRowHeightPx ?? MIN_ROW_HEIGHT_PX;
+  const itemBarHeightPx = propsItemBarHeightPx ?? DEFAULT_ITEM_BAR_HEIGHT_PX;
+  const itemBarGapPx = propsItemBarGapPx ?? DEFAULT_ITEM_BAR_GAP_PX;
+  const itemBarTotalHeightPx = itemBarHeightPx + itemBarGapPx;
+  const showConfigCountBadge = propsShowConfigCountBadge ?? true;
   const { assets: chambers, loading: chambersLoading, error: chambersError } = useAppSelector((state) => state.assets)
   const { projects, loading: projectsLoading, error: projectsError } = useAppSelector((state) => state.projects)
   const { testProjects, loading: testProjectsLoading, error: testProjectsError } = useAppSelector((state) => state.testProjects)
@@ -703,15 +718,16 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   }, [chambers, timelineDisplayItems, timelineItemsByChamberId]);
   const getChamberRowHeight = useCallback((chamberId: string): number => { /* ... (保持不变) ... */
       const layout = chamberLayouts.get(chamberId);
+      const chamberMinRowHeightPx = getMinRowHeightPx?.(chamberId) ?? minRowHeightPx;
       if (layout && layout.maxTracks > 0) {
-          return Math.max(MIN_ROW_HEIGHT_PX, layout.maxTracks * ITEM_BAR_TOTAL_HEIGHT + ITEM_BAR_VERTICAL_MARGIN * 2);
+          return Math.max(chamberMinRowHeightPx, layout.maxTracks * itemBarTotalHeightPx + itemBarGapPx * 2);
       }
-      return MIN_ROW_HEIGHT_PX;
-  }, [chamberLayouts]);
+      return chamberMinRowHeightPx;
+  }, [chamberLayouts, getMinRowHeightPx, itemBarGapPx, itemBarTotalHeightPx, minRowHeightPx]);
   const totalTimelineGridHeight = useMemo(() => { /* ... (保持不变) ... */
-    if (!chambers || chambers.length === 0) return MIN_ROW_HEIGHT_PX * 3;
+    if (!chambers || chambers.length === 0) return minRowHeightPx * 3;
     return chambers.reduce((sum, chamber) => sum + getChamberRowHeight(chamber.id), 0);
-  }, [chambers, getChamberRowHeight]);
+  }, [chambers, getChamberRowHeight, minRowHeightPx]);
 
   const chamberRowTopById = useMemo(() => {
     const map = new Map<string, number>();
@@ -924,8 +940,8 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
               const visibleRightPx = visibleDayIndexRange.endIndexExclusive * dayWidthPx;
               const rowHeight = getChamberRowHeight(chamber.id);
               const totalTracks = layoutInfo ? layoutInfo.maxTracks : 0;
-              const tracksHeight = totalTracks > 0 ? totalTracks * ITEM_BAR_TOTAL_HEIGHT : 0;
-              const baseTrackOffset = Math.max(ITEM_BAR_VERTICAL_MARGIN, Math.floor((rowHeight - tracksHeight) / 2));
+              const tracksHeight = totalTracks > 0 ? totalTracks * itemBarTotalHeightPx : 0;
+              const baseTrackOffset = Math.max(itemBarGapPx, Math.floor((rowHeight - tracksHeight) / 2));
 
               return (
                 <div key={chamber.id} className={styles.timelineRow} style={{ position: 'absolute', top: `${rowTopOffset}px`, height: `${rowHeight}px`, width: `${totalTimelineWidth}px` }}>
@@ -961,10 +977,14 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                     const barText = barTextParts.length > 0 ? barTextParts.join(' - ') : (originalLog.user || '使用记录');
                     const barSegments: Array<{ text: string; tone: 'primary' | 'secondary' }> = [];
                     if (logDisplayItem.projectName) barSegments.push({ text: logDisplayItem.projectName, tone: 'primary' });
-                    if (hasConfigs) barSegments.push({ text: configText, tone: 'primary' });
                     if (originalLog.selectedWaterfall) barSegments.push({ text: `WF:${originalLog.selectedWaterfall}`, tone: 'secondary' });
                     if (logDisplayItem.testProjectName) barSegments.push({ text: logDisplayItem.testProjectName, tone: 'secondary' });
-                    const barTopPosition = baseTrackOffset + logDisplayItem.trackIndex * ITEM_BAR_TOTAL_HEIGHT;
+                    const configPills = hasConfigs ? configNames.slice(0, MAX_CONFIG_PILLS) : [];
+                    const remainingConfigCount = hasConfigs ? Math.max(0, configNames.length - configPills.length) : 0;
+                    const pillBg = alpha(styling.textColor, 0.10);
+                    const pillBorder = alpha(styling.textColor, 0.18);
+                    const pillEmptyBg = alpha(styling.textColor, 0.06);
+                    const barTopPosition = baseTrackOffset + logDisplayItem.trackIndex * itemBarTotalHeightPx;
 
                     return (
                       <Tooltip
@@ -977,7 +997,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                               开始: {format(parseISO(originalLog.startTime), 'yyyy-MM-dd HH:mm', { locale: zhCN })}<br />
                               结束: {originalLog.endTime ? format(parseISO(originalLog.endTime), 'yyyy-MM-dd HH:mm', { locale: zhCN }) : (logDisplayItem.effectiveStatus === 'in-progress' || logDisplayItem.effectiveStatus === 'overdue' ? '进行中/已超时' : '未设定')}<br />
                               状态: {logDisplayItem.effectiveStatus}
-                              {hasConfigs ? <><br />Configs: {configText}</> : null}
+                              <br />Configs: {hasConfigs ? configText : '未选配置'}
                               {originalLog.notes && <><br />备注: {originalLog.notes.substring(0, 100)}{originalLog.notes.length > 100 && '...'}</>}
                             </Typography>
                           </React.Fragment>
@@ -993,27 +1013,51 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                             backgroundColor: styling.backgroundColor,
                             borderColor: styling.borderColor,
                             color: styling.textColor,
-                            height: `${ITEM_BAR_HEIGHT}px`,
+                            height: `${itemBarHeightPx}px`,
                             top: `${barTopPosition}px`,
+                            ['--timeline-pill-bg' as any]: pillBg,
+                            ['--timeline-pill-border' as any]: pillBorder,
+                            ['--timeline-pill-empty-bg' as any]: pillEmptyBg,
                           }}
                           onClick={(e) => {
                             if ((e.target as HTMLElement).closest(`.${styles.timelineBarDeleteButton}`)) return;
                             onViewUsageLog(logDisplayItem.originalLogId);
                           }}
                         >
-                          <span className={styles.timelineBarText}>
-                            {isMultiConfig ? <span className={styles.timelineBarBadge}>CFG×{configNames.length}</span> : null}
-                            {barSegments.length > 0
-                              ? barSegments.map((seg, idx) => (
-                                  <React.Fragment key={`${logDisplayItem.displayId}-seg-${idx}`}>
-                                    {idx > 0 ? <span className={styles.timelineBarTextSeparator}> · </span> : null}
-                                    <span className={seg.tone === 'primary' ? styles.timelineBarTextPrimary : styles.timelineBarTextSecondary}>
-                                      {seg.text}
+                          <div className={styles.timelineBarContent}>
+                            <div className={styles.timelineBarLine1}>
+                              {barSegments.length > 0
+                                ? barSegments.map((seg, idx) => (
+                                    <React.Fragment key={`${logDisplayItem.displayId}-seg-${idx}`}>
+                                      {idx > 0 ? <span className={styles.timelineBarTextSeparator}> · </span> : null}
+                                      <span className={seg.tone === 'primary' ? styles.timelineBarTextPrimary : styles.timelineBarTextSecondary}>
+                                        {seg.text}
+                                      </span>
+                                    </React.Fragment>
+                                  ))
+                                : (originalLog.user || '使用记录')}
+                            </div>
+                            <div className={styles.timelineBarLine2}>
+                              {hasConfigs ? (
+                                <React.Fragment>
+                                  {configPills.map((name, idx) => (
+                                    <span key={`${logDisplayItem.displayId}-cfg-${idx}`} className={styles.timelineConfigPill}>
+                                      {name}
                                     </span>
-                                  </React.Fragment>
-                                ))
-                              : (originalLog.user || '使用记录')}
-                          </span>
+                                  ))}
+                                  {remainingConfigCount > 0 ? (
+                                    showConfigCountBadge ? (
+                                      <span className={styles.timelineConfigCountPill}>CFG×{configNames.length}</span>
+                                    ) : (
+                                      <span className={styles.timelineConfigPillMore}>+{remainingConfigCount}</span>
+                                    )
+                                  ) : null}
+                                </React.Fragment>
+                              ) : (
+                                <span className={styles.timelineConfigPillEmpty}>未选配置</span>
+                              )}
+                            </div>
+                          </div>
                           {onDeleteUsageLog && logDisplayItem.configIds.length > 0 ? (
                             <button
                               className={styles.timelineBarDeleteButton}
