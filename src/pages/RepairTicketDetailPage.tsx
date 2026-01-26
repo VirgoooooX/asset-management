@@ -311,7 +311,6 @@ const RepairTicketDetailPage: React.FC = () => {
     <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={dateFnsLocale}>
       <PageShell
         title={<TitleWithIcon icon={<BuildCircleIcon />}>{tr('工单详情', 'Ticket details')}</TitleWithIcon>}
-        maxWidth="xl"
         actions={
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
             <Button size="small" variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate('/repairs')}>

@@ -13,6 +13,29 @@
   overflow: auto;
   position: relative;
   background-color: var(--timeline-bg);
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: auto;
+  scrollbar-color: var(--timeline-scrollbar-thumb) var(--timeline-scrollbar-track);
+}
+
+.timelineScrollContainer::-webkit-scrollbar {
+  height: 12px;
+  width: 12px;
+}
+
+.timelineScrollContainer::-webkit-scrollbar-track {
+  background-color: var(--timeline-scrollbar-track);
+}
+
+.timelineScrollContainer::-webkit-scrollbar-thumb {
+  background-color: var(--timeline-scrollbar-thumb);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+.timelineScrollContainer::-webkit-scrollbar-thumb:hover {
+  background-color: var(--timeline-scrollbar-thumb-hover);
 }
 
 .timelineHeaderRow {

@@ -15,12 +15,20 @@ const TitleWithIcon: React.FC<Props> = ({ icon, children, gap = 1 }) => {
         display: 'inline-flex',
         alignItems: 'center',
         gap,
-        lineHeight: 1,
-        verticalAlign: 'middle',
+        lineHeight: 'inherit',
+        verticalAlign: 'baseline',
       }}
     >
-      {React.cloneElement(icon, { fontSize: 'inherit', style: { fontSize: '1em' } })}
-      <Box component="span" sx={{ lineHeight: 1 }}>
+      {React.cloneElement(icon, {
+        fontSize: 'inherit',
+        style: {
+          ...(icon.props.style || {}),
+          fontSize: '1.12em',
+          display: 'block',
+          transform: 'translateY(1px)',
+        },
+      })}
+      <Box component="span" sx={{ lineHeight: 'inherit' }}>
         {children}
       </Box>
     </Box>
@@ -28,4 +36,3 @@ const TitleWithIcon: React.FC<Props> = ({ icon, children, gap = 1 }) => {
 }
 
 export default TitleWithIcon
-

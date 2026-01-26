@@ -1,5 +1,6 @@
 import React, { ReactNode } from 'react';
 import { Box, Container, ContainerProps, Stack, Typography } from '@mui/material';
+import { APP_PAGE_FRAME } from '../theme'
 
 type PageShellProps = {
   title: ReactNode;
@@ -8,9 +9,9 @@ type PageShellProps = {
   children: ReactNode;
 };
 
-const PageShell: React.FC<PageShellProps> = ({ title, actions, maxWidth = 'xl', children }) => {
+const PageShell: React.FC<PageShellProps> = ({ title, actions, maxWidth = APP_PAGE_FRAME.maxWidth, children }) => {
   return (
-    <Container maxWidth={maxWidth}>
+    <Container maxWidth={maxWidth} disableGutters sx={{ px: APP_PAGE_FRAME.px }}>
       <Box sx={{ py: { xs: 3, sm: 4 } }}>
         <Stack
           direction={{ xs: 'column', sm: 'row' }}

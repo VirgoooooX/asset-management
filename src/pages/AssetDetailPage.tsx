@@ -380,7 +380,6 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
   return (
     <PageShell
       title={<TitleWithIcon icon={<BadgeIcon />}>{titleText}</TitleWithIcon>}
-      maxWidth="xl"
       actions={
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
           <Button size="small" variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate(-1)}>

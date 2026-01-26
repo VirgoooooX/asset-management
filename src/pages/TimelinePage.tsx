@@ -1,18 +1,20 @@
 // src/pages/TimelinePage.tsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Container, Box, Typography, CircularProgress, Button, Alert, Chip, ToggleButtonGroup, ToggleButton } from '@mui/material';
+import { Container, Box, Typography, CircularProgress, Button, Alert, Chip, ToggleButtonGroup, ToggleButton, Stack } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import TimelineIcon from '@mui/icons-material/ViewTimeline'
 import ScrollingTimeline from '../components/ScrollingTimeline';
 import UsageLogDetails from '../components/UsageLogDetails';
 import UsageLogForm from '../components/UsageLogForm';
 import ConfirmDialog from '../components/ConfirmDialog';
+import AppCard from '../components/AppCard';
 import { UsageLog } from '../types';
 import { fetchUsageLogs, removeConfigFromUsageLog } from '../store/usageLogsSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { getEffectiveUsageLogStatus } from '../utils/statusHelpers'
 import { alpha, useTheme } from '@mui/material/styles';
 import TitleWithIcon from '../components/TitleWithIcon'
+import { APP_PAGE_FRAME } from '../theme'
 import { useI18n } from '../i18n'
 
 const TimelinePage: React.FC = () => {
@@ -112,48 +114,59 @@ const TimelinePage: React.FC = () => {
     }, []);
 
     return (
-        <Container
-            maxWidth={false} // 允许内容占据全部可用宽度
-            disableGutters    // 移除容器的默认左右内边距
-            sx={{
-                height: '100%', // 确保容器占据其父元素的全部高度
-                display: 'flex',
-                flexDirection: 'column',
-                p: 0, // 移除容器自身的内边距，让子元素控制
-            }}
-        >
-            <Box // 主内容容器，垂直排列
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                flexGrow: 1, // 占据所有可用垂直空间
-                overflow: 'hidden', // 防止自身出现滚动条，由内部的 ScrollingTimeline 控制滚动
-              }}
-            >
-                {/* 顶部区域：标题和“登记新使用记录”按钮 */}
-                <Box
-                    sx={{
-                        display: 'flex',
-                        justifyContent: 'space-between', // 使标题和按钮分布在两端
-                        alignItems: 'center', // 垂直居中对齐
-                        p: 2, // 内边距
-                        py: 1.5,
-                        backgroundColor: 'background.paper',
-                        borderBottom: '1px solid',
-                        borderBottomColor: 'divider',
-                        flexShrink: 0, // 防止此 Box 在 flex 布局中被压缩
-                    }}
+        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+            <Container maxWidth={APP_PAGE_FRAME.maxWidth} disableGutters sx={{ pt: { xs: 3, sm: 4 }, pb: 2, flexShrink: 0, px: APP_PAGE_FRAME.px }}>
+                <Stack
+                    direction="row"
+                    alignItems="center"
+                    justifyContent="space-between"
+                    spacing={2}
                 >
-                    <Typography
-                        variant="h4"
-                        component="h1"
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, flexWrap: 'nowrap' }}>
+                        <Typography variant="h4" component="h1" sx={{ fontWeight: 850, lineHeight: 1.15, whiteSpace: 'nowrap' }}>
+                            <TitleWithIcon icon={<TimelineIcon />}>{tr('占用排程', 'Occupancy Schedule')}</TitleWithIcon>
+                        </Typography>
+                        {overdueCount > 0 ? (
+                            <Chip
+                                color="error"
+                                size="small"
+                                label={tr(
+                                    `当前有 ${overdueCount} 条超时未完成使用记录，请及时处理`,
+                                    `There are ${overdueCount} overdue usage logs. Please handle them.`
+                                )}
+                                sx={{
+                                    fontWeight: 750,
+                                    borderRadius: 999,
+                                    fontSize: '1.2rem',
+                                    height: 40,
+                                    whiteSpace: 'nowrap',
+                                    animation: 'timelineOverduePulse 1.15s ease-in-out infinite',
+                                    '@media (prefers-reduced-motion: reduce)': {
+                                        animation: 'none',
+                                    },
+                                    '@keyframes timelineOverduePulse': {
+                                        '0%': { opacity: 1, filter: 'saturate(1)' },
+                                        '55%': { opacity: 0.55, filter: 'saturate(1.15)' },
+                                        '100%': { opacity: 1, filter: 'saturate(1)' },
+                                    },
+                                    '& .MuiChip-label': {
+                                        whiteSpace: 'nowrap',
+                                        px: 1.25,
+                                        lineHeight: 1.15,
+                                    },
+                                }}
+                            />
+                        ) : null}
+                    </Box>
+                    <Box
                         sx={{
-                            lineHeight: 1.15,
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: 1,
+                            alignItems: 'center',
+                            justifyContent: { xs: 'flex-start', sm: 'flex-end' },
                         }}
                     >
-                        <TitleWithIcon icon={<TimelineIcon />}>{tr('占用排程', 'Occupancy Schedule')}</TitleWithIcon>
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
                         <Button variant="outlined" size="small" onClick={() => setScrollToTodaySignal((n) => n + 1)} sx={{ whiteSpace: 'nowrap' }}>
                             {tr('跳转今天', 'Today')}
                         </Button>
@@ -187,55 +200,54 @@ const TimelinePage: React.FC = () => {
                             {tr('登记新使用记录', 'New usage log')}
                         </Button>
                     </Box>
-                </Box>
+                </Stack>
+            </Container>
 
-                {overdueCount > 0 && (
-                    <Box sx={{ px: 2, pb: 1, backgroundColor: 'background.paper', borderBottom: '1px solid', borderBottomColor: 'divider', flexShrink: 0 }}>
-                        <Alert severity="error" variant="filled">
-                            {tr(
-                              `当前有 ${overdueCount} 条超时未完成使用记录，请及时处理`,
-                              `There are ${overdueCount} overdue usage logs. Please handle them.`
-                            )}
-                        </Alert>
-                    </Box>
-                )}
-
-                {/* 时间轴主体内容区域 */}
-                <Box
-                  sx={{
-                    flexGrow: 1, // 占据剩余的垂直空间
-                    overflow: 'hidden', // 时间轴组件内部自己处理滚动
-                    position: 'relative', // 为内部绝对定位的元素（如加载指示器）提供定位上下文
-                  }}
+            <Container
+                maxWidth={APP_PAGE_FRAME.maxWidth}
+                disableGutters
+                sx={{
+                    pb: 0,
+                    flexGrow: 1,
+                    minHeight: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    px: APP_PAGE_FRAME.px,
+                }}
+            >
+                <AppCard
+                    sx={{ p: 0, flexGrow: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+                    contentSx={{ m: 0, display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}
                 >
-                    {loading && usageLogs.length === 0 ? ( // 初始加载且无数据时显示加载动画
-                        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                            <CircularProgress />
-                            <Typography sx={{ ml: 2 }}>{tr('加载中...', 'Loading...')}</Typography>
-                        </Box>
-                    ) : error ? ( // 加载出错时显示错误信息和重试按钮
-                        <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', p:2 }}>
-                            <Alert severity="error" sx={{width: '100%', maxWidth: '600px', mb: 2}}>
-                                {tr(`加载时间轴数据失败: ${error}`, `Failed to load timeline: ${error}`)}
-                            </Alert>
-                            <Button variant="outlined" onClick={() => { initialFetchDoneRef.current = false; dispatch(fetchUsageLogs({ force: true })); }}>
-                                {tr('重试', 'Retry')}
-                            </Button>
-                        </Box>
-                    ) : ( // 数据加载成功后渲染时间轴
-                        <ScrollingTimeline
-                            usageLogs={usageLogs}
-                            onViewUsageLog={handleViewUsageLog}
-                            onDeleteUsageLog={handleDeleteLog}
-                            dayWidthPx={dayWidthPx}
-                            scrollToTodaySignal={scrollToTodaySignal}
-                            minRowHeightPx={65}
-                            itemBarHeightPx={50}
-                            itemBarGapPx={2}
-                            // onAddNewUsageLog prop 已移除，因为按钮在此组件中直接处理
-                        />
-                    )}
-                </Box>
+                    <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+                        {loading && usageLogs.length === 0 ? (
+                            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                                <CircularProgress />
+                                <Typography sx={{ ml: 2 }}>{tr('加载中...', 'Loading...')}</Typography>
+                            </Box>
+                        ) : error ? (
+                            <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', p: 2 }}>
+                                <Alert severity="error" sx={{ width: '100%', maxWidth: '600px', mb: 2 }}>
+                                    {tr(`加载时间轴数据失败: ${error}`, `Failed to load timeline: ${error}`)}
+                                </Alert>
+                                <Button variant="outlined" onClick={() => { initialFetchDoneRef.current = false; dispatch(fetchUsageLogs({ force: true })); }}>
+                                    {tr('重试', 'Retry')}
+                                </Button>
+                            </Box>
+                        ) : (
+                            <ScrollingTimeline
+                                usageLogs={usageLogs}
+                                onViewUsageLog={handleViewUsageLog}
+                                onDeleteUsageLog={handleDeleteLog}
+                                dayWidthPx={dayWidthPx}
+                                scrollToTodaySignal={scrollToTodaySignal}
+                                minRowHeightPx={65}
+                                itemBarHeightPx={50}
+                                itemBarGapPx={2}
+                            />
+                        )}
+                    </Box>
+                </AppCard>
 
                 {/* 使用记录详情对话框 */}
                 {detailsOpen && selectedLogId && (
@@ -261,8 +273,8 @@ const TimelinePage: React.FC = () => {
                     onClose={handleCloseDelete}
                     onConfirm={handleConfirmDelete}
                 />
-            </Box>
-        </Container>
+            </Container>
+        </Box>
     );
 };
 

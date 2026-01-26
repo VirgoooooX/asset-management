@@ -157,7 +157,6 @@ const RepairsPage: React.FC = () => {
       title={
         <TitleWithIcon icon={<BuildCircleIcon />}>{tr('维修管理', 'Repairs')}</TitleWithIcon>
       }
-      maxWidth="xl"
       actions={
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
           <Chip

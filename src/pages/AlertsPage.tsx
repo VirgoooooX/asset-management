@@ -80,7 +80,6 @@ const AlertsPage: React.FC = () => {
       title={
         <TitleWithIcon icon={<NotificationsActiveIcon />}>{tr('异常监控', 'Exceptions')}</TitleWithIcon>
       }
-      maxWidth="xl"
       actions={
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
           <Chip

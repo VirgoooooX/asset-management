@@ -19,6 +19,7 @@ import { Box, Typography, Tooltip, CircularProgress, Alert, Menu, MenuItem } fro
 import { useNavigate } from 'react-router-dom'
 
 export const CUSTOM_DAY_START_HOUR = 7;
+export const DEFAULT_SHIFT_START_MINUTES = CUSTOM_DAY_START_HOUR * 60
 
 interface HolidayDetail {
   holiday: boolean;
@@ -115,16 +116,19 @@ const buildTimelineCssVars = (theme: Theme) => {
     ['--timeline-today-text']: theme.palette.info.main,
     ['--timeline-bar-shadow']: `0 1px 2px ${alpha(theme.palette.text.primary, 0.18)}`,
     ['--timeline-bar-shadow-hover']: `0 6px 14px ${alpha(theme.palette.text.primary, 0.22)}`,
+    ['--timeline-scrollbar-thumb']: alpha(theme.palette.text.primary, 0.32),
+    ['--timeline-scrollbar-thumb-hover']: alpha(theme.palette.text.primary, 0.44),
+    ['--timeline-scrollbar-track']: alpha(theme.palette.text.primary, 0.08),
   };
   return vars as unknown as React.CSSProperties;
 };
 
-export const generateDateHeaders = (currentDate: Date, monthsBefore: number, monthsAfter: number) => {
-  let baseDateForCurrentView = setMilliseconds(setSeconds(setMinutes(setHours(dateFnsStartOfDay(currentDate), CUSTOM_DAY_START_HOUR), 0), 0), 0);
-
-  if (currentDate.getHours() < CUSTOM_DAY_START_HOUR) {
-    baseDateForCurrentView = addDays(baseDateForCurrentView, -1);
-  }
+export const generateDateHeaders = (currentDate: Date, monthsBefore: number, monthsAfter: number, shiftStartMinutes: number) => {
+  const h = Math.floor(shiftStartMinutes / 60)
+  const m = shiftStartMinutes % 60
+  let baseDateForCurrentView = setMilliseconds(setSeconds(setMinutes(setHours(dateFnsStartOfDay(currentDate), h), m), 0), 0)
+  const minutesIntoDay = currentDate.getHours() * 60 + currentDate.getMinutes()
+  if (minutesIntoDay < shiftStartMinutes) baseDateForCurrentView = addDays(baseDateForCurrentView, -1)
   
   const viewStartDate = addMonths(baseDateForCurrentView, -monthsBefore);
   const viewEndDate = addMonths(baseDateForCurrentView, monthsAfter);
@@ -134,27 +138,30 @@ export const generateDateHeaders = (currentDate: Date, monthsBefore: number, mon
     end: dateFnsStartOfDay(viewEndDate)
   });
   
-  return intervalCalendarDays.map(calendarDay => {
-    return setMilliseconds(setSeconds(setMinutes(setHours(calendarDay, CUSTOM_DAY_START_HOUR), 0), 0), 0);
-  });
+  return intervalCalendarDays.map((calendarDay) => {
+    return setMilliseconds(setSeconds(setMinutes(setHours(calendarDay, h), m), 0), 0)
+  })
 };
 
-const getTimelineBaseDate = (currentDate: Date) => {
-  let baseDate = setMilliseconds(setSeconds(setMinutes(setHours(dateFnsStartOfDay(currentDate), CUSTOM_DAY_START_HOUR), 0), 0), 0);
-  if (currentDate.getHours() < CUSTOM_DAY_START_HOUR) {
-    baseDate = addDays(baseDate, -1);
-  }
-  return baseDate;
+const getTimelineBaseDate = (currentDate: Date, shiftStartMinutes: number) => {
+  const h = Math.floor(shiftStartMinutes / 60)
+  const m = shiftStartMinutes % 60
+  let baseDate = setMilliseconds(setSeconds(setMinutes(setHours(dateFnsStartOfDay(currentDate), h), m), 0), 0)
+  const minutesIntoDay = currentDate.getHours() * 60 + currentDate.getMinutes()
+  if (minutesIntoDay < shiftStartMinutes) baseDate = addDays(baseDate, -1)
+  return baseDate
 };
 
-const generateDateHeadersFromRange = (rangeStart: Date, rangeEnd: Date) => {
+const generateDateHeadersFromRange = (rangeStart: Date, rangeEnd: Date, shiftStartMinutes: number) => {
+  const h = Math.floor(shiftStartMinutes / 60)
+  const m = shiftStartMinutes % 60
   const intervalCalendarDays = eachDayOfInterval({
     start: dateFnsStartOfDay(rangeStart),
     end: dateFnsStartOfDay(rangeEnd),
   });
 
   return intervalCalendarDays.map((calendarDay) => {
-    return setMilliseconds(setSeconds(setMinutes(setHours(calendarDay, CUSTOM_DAY_START_HOUR), 0), 0), 0);
+    return setMilliseconds(setSeconds(setMinutes(setHours(calendarDay, h), m), 0), 0)
   });
 };
 
@@ -379,12 +386,13 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   const itemBarGapPx = propsItemBarGapPx ?? DEFAULT_ITEM_BAR_GAP_PX;
   const itemBarTotalHeightPx = itemBarHeightPx + itemBarGapPx;
   const showConfigCountBadge = propsShowConfigCountBadge ?? true;
+  const shiftStartMinutes = useAppSelector((state) => state.settings.timeline.shiftStartMinutes) ?? DEFAULT_SHIFT_START_MINUTES
   const { assets: chambers, loading: chambersLoading, error: chambersError } = useAppSelector((state) => state.assets)
   const { projects, loading: projectsLoading, error: projectsError } = useAppSelector((state) => state.projects)
   const { testProjects, loading: testProjectsLoading, error: testProjectsError } = useAppSelector((state) => state.testProjects)
   const { loading: usageLogsDataLoading } = useAppSelector((state) => state.usageLogs)
 
-  const initialTimelineBaseDate = useMemo(() => getTimelineBaseDate(new Date()), []);
+  const initialTimelineBaseDate = useMemo(() => getTimelineBaseDate(new Date(), shiftStartMinutes), [shiftStartMinutes]);
   const [rangeStart, setRangeStart] = useState(() => addMonths(initialTimelineBaseDate, -1));
   const [rangeEnd, setRangeEnd] = useState(() => addMonths(initialTimelineBaseDate, 1));
 
@@ -399,7 +407,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   const [holidaysError, setHolidaysError] = useState<string | null>(null);
   const loadedHolidayYearsRef = useRef<Set<number>>(new Set());
 
-  const dateHeaders = useMemo(() => generateDateHeadersFromRange(rangeStart, rangeEnd), [rangeStart, rangeEnd]);
+  const dateHeaders = useMemo(() => generateDateHeadersFromRange(rangeStart, rangeEnd, shiftStartMinutes), [rangeStart, rangeEnd, shiftStartMinutes]);
   const totalTimelineWidth = useMemo(() => dateHeaders.length * dayWidthPx, [dateHeaders.length, dayWidthPx]);
 
   const timelineContainerRef = useRef<HTMLDivElement>(null);
@@ -408,6 +416,14 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   const isExtendingLeftRef = useRef(false);
   const isExtendingRightRef = useRef(false);
   const [, startTransition] = useTransition();
+
+  useEffect(() => {
+    const base = getTimelineBaseDate(new Date(), shiftStartMinutes)
+    setRangeStart(addMonths(base, -1))
+    setRangeEnd(addMonths(base, 1))
+    initialScrollPerformedForCurrentViewRef.current = false
+  }, [shiftStartMinutes]);
+
   const [visibleDayIndexRange, setVisibleDayIndexRange] = useState<{ startIndex: number; endIndexExclusive: number }>({
     startIndex: 0,
     endIndexExclusive: 0,
@@ -423,7 +439,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     }
 
     const visibleGridWidth = Math.max(0, container.clientWidth - CHAMBER_NAME_WIDTH_PX);
-    const gridScrollLeft = Math.max(0, container.scrollLeft - CHAMBER_NAME_WIDTH_PX);
+    const gridScrollLeft = Math.max(0, container.scrollLeft);
 
     const overscanDays = 20;
     const startIndex = Math.max(0, Math.floor(gridScrollLeft / dayWidthPx) - overscanDays);
@@ -521,17 +537,18 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     const container = timelineContainerRef.current;
     if (!container || dateHeaders.length === 0) return;
 
-    const todayBase = getTimelineBaseDate(new Date());
-    const todayIndex = dateHeaders.findIndex((d) => isEqual(dateFnsStartOfDay(d), dateFnsStartOfDay(todayBase)));
+    const todayByShift = getTimelineBaseDate(new Date(), shiftStartMinutes)
+    const todayIndex = dateHeaders.findIndex((d) => isEqual(d, todayByShift))
     if (todayIndex < 0) return;
 
-    const visibleGridWidth = Math.max(0, container.clientWidth - CHAMBER_NAME_WIDTH_PX);
-    const targetGridLeft = todayIndex * dayWidthPx - Math.max(0, (visibleGridWidth - dayWidthPx) / 2);
-    const targetScrollLeft = Math.max(0, targetGridLeft + CHAMBER_NAME_WIDTH_PX);
+    const desiredTodayCellOffset = 2
+    const targetGridScrollLeft = Math.max(0, (todayIndex - desiredTodayCellOffset) * dayWidthPx);
+    const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+    const clampedScrollLeft = Math.min(targetGridScrollLeft, maxScroll);
 
-    (container as any).scrollTo?.({ left: targetScrollLeft, behavior: 'smooth' });
-    if (!(container as any).scrollTo) container.scrollLeft = targetScrollLeft;
-  }, [dateHeaders, dayWidthPx, scrollToTodaySignal]);
+    (container as any).scrollTo?.({ left: clampedScrollLeft, behavior: 'smooth' });
+    if (!(container as any).scrollTo) container.scrollLeft = clampedScrollLeft;
+  }, [dateHeaders, dayWidthPx, scrollToTodaySignal, shiftStartMinutes]);
 
   const fetchAndProcessHolidaysForYearInternal = useCallback(async (year: number, region: string): Promise<Map<string, HolidayDetail>> => { /* ... (保持不变) ... */
     const yearHolidaysMap = new Map<string, HolidayDetail>();
@@ -671,12 +688,13 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
 
   // 定义整个可见时间轴的开始和结束 (都是7AM的标记)
   const timelineViewActualStart = useMemo(() => {
-    return dateHeaders.length > 0 ? dateHeaders[0] : setMilliseconds(setSeconds(setMinutes(setHours(dateFnsStartOfDay(new Date()), CUSTOM_DAY_START_HOUR),0),0),0);
-  }, [dateHeaders]);
+    return dateHeaders.length > 0 ? dateHeaders[0] : getTimelineBaseDate(new Date(), shiftStartMinutes)
+  }, [dateHeaders, shiftStartMinutes]);
 
   const timelineViewActualEnd = useMemo(() => {
-    return dateHeaders.length > 0 ? addDays(dateHeaders[dateHeaders.length - 1], 1) : addDays(setMilliseconds(setSeconds(setMinutes(setHours(dateFnsStartOfDay(new Date()), CUSTOM_DAY_START_HOUR),0),0),0), 1);
-  }, [dateHeaders]);
+    const fallback = addDays(getTimelineBaseDate(new Date(), shiftStartMinutes), 1)
+    return dateHeaders.length > 0 ? addDays(dateHeaders[dateHeaders.length - 1], 1) : fallback
+  }, [dateHeaders, shiftStartMinutes]);
 
   const usageLogById = useMemo(() => {
     const map = new Map<string, UsageLog>();
@@ -744,32 +762,24 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     const container = timelineContainerRef.current;
     const allDataLoaded = !chambersLoading && !projectsLoading && !testProjectsLoading && !usageLogsDataLoading && !holidaysLoading;
 
-    if (!container || !allDataLoaded || !(dateHeaders.length > 0) || !(totalTimelineWidth > 0) || !(container.offsetWidth > 0)) {
+    if (!container || !allDataLoaded || !(dateHeaders.length > 0) || !(totalTimelineWidth > 0) || !(container.clientWidth > 0)) {
       return;
     }
 
     let targetScrollPosition = 0;
-    const todayForScroll = new Date();
-    let todayCellDate = setMilliseconds(setSeconds(setMinutes(setHours(dateFnsStartOfDay(todayForScroll), CUSTOM_DAY_START_HOUR),0),0),0);
-    if (todayForScroll.getHours() < CUSTOM_DAY_START_HOUR) {
-        todayCellDate = addDays(todayCellDate, -1);
-    }
-    const todayIndex = dateHeaders.findIndex(dh => isEqual(dh, todayCellDate));
+    const todayByShift = getTimelineBaseDate(new Date(), shiftStartMinutes)
+    const todayIndex = dateHeaders.findIndex((dh) => isEqual(dh, todayByShift));
 
     if (todayIndex !== -1) {
-      const containerWidth = container.offsetWidth;
-      const visibleGridWidth = Math.max(0, containerWidth - CHAMBER_NAME_WIDTH_PX);
-      const cellsThatFit = Math.floor(visibleGridWidth / dayWidthPx);
-      const desiredTodayCellOffset = cellsThatFit > 3 ? 2 : (cellsThatFit > 2 ? 1 : 0);
-      targetScrollPosition = (todayIndex - desiredTodayCellOffset) * dayWidthPx;
-      targetScrollPosition = Math.max(0, targetScrollPosition);
-      const maxScroll = (CHAMBER_NAME_WIDTH_PX + totalTimelineWidth) - containerWidth;
-      targetScrollPosition = Math.min(targetScrollPosition, maxScroll > 0 ? maxScroll : 0);
+      const desiredTodayCellOffset = 2
+      targetScrollPosition = Math.max(0, (todayIndex - desiredTodayCellOffset) * dayWidthPx);
+      const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+      targetScrollPosition = Math.min(targetScrollPosition, maxScroll);
     } else {
-      targetScrollPosition = (CHAMBER_NAME_WIDTH_PX + (totalTimelineWidth / 2)) - (container.offsetWidth / 2);
-      targetScrollPosition = Math.max(0, targetScrollPosition);
-      const maxScroll = (CHAMBER_NAME_WIDTH_PX + totalTimelineWidth) - container.offsetWidth;
-      targetScrollPosition = Math.min(targetScrollPosition, maxScroll > 0 ? maxScroll : 0);
+      const visibleGridWidth = Math.max(0, container.clientWidth - CHAMBER_NAME_WIDTH_PX)
+      targetScrollPosition = Math.max(0, (totalTimelineWidth / 2) - (visibleGridWidth / 2));
+      const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
+      targetScrollPosition = Math.min(targetScrollPosition, maxScroll);
     }
 
     if (!initialScrollPerformedForCurrentViewRef.current) {
@@ -782,6 +792,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     dateHeaders, 
     totalTimelineWidth, 
     dayWidthPx,
+    shiftStartMinutes,
     chambersLoading, projectsLoading, testProjectsLoading, usageLogsDataLoading, holidaysLoading,
   ]);
   // *** SCROLL LOGIC END ***
@@ -819,6 +830,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
         </Box>
       );
   }
+  const todayByShift = getTimelineBaseDate(new Date(), shiftStartMinutes)
 
   return (
     <div className={styles.timelinePageContainer} style={timelineCssVars}>
@@ -848,7 +860,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
               else if (classification.type === 'publicHolidayLowWage') { headerClassName += ` ${styles.publicHolidaySoftRedHeader}`; }
               else if (classification.type === 'weekendRest') { headerClassName += ` ${styles.weekendHeader}`; }
               else if (classification.type === 'workdayOverride') { headerClassName += ` ${styles.workdayOnWeekendHeader}`; }
-              if (isEqual(dateFnsStartOfDay(dateHeaderItem), dateFnsStartOfDay(new Date()))) {
+              if (isEqual(dateHeaderItem, todayByShift)) {
                 headerClassName += ` ${styles.todayHeader}`;
               }
               return (

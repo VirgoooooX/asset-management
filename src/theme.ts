@@ -1,5 +1,11 @@
 import { alpha, createTheme, darken, lighten } from '@mui/material/styles'
+import type { ContainerProps } from '@mui/material/Container'
 import type { SettingsState } from './store/settingsSlice'
+
+export const APP_PAGE_FRAME: { maxWidth: ContainerProps['maxWidth'] | false; px: { xs: number; sm: number } } = {
+  maxWidth: 'xl',
+  px: { xs: 1, sm: 0 },
+}
 
 export const createAppTheme = (settings: Pick<SettingsState, 'themeMode' | 'density' | 'primaryColor'>) => {
   const primaryMain = settings.primaryColor || '#155EEF'

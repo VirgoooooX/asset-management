@@ -15,6 +15,9 @@ export interface SettingsState {
   nav: {
     sidebarMode: SidebarMode
   }
+  timeline: {
+    shiftStartMinutes: number
+  }
   dashboard: {
     rangePreset: DashboardRangePreset
   }
@@ -34,6 +37,9 @@ const initialState: SettingsState = {
   primaryColor: '#155EEF',
   nav: {
     sidebarMode: 'auto',
+  },
+  timeline: {
+    shiftStartMinutes: 420,
   },
   dashboard: {
     rangePreset: '30d',
@@ -81,6 +87,7 @@ const settingsSlice = createSlice({
           ...state,
           ...parsed,
           nav: { ...state.nav, ...parsed.nav },
+          timeline: { ...state.timeline, ...parsed.timeline },
           dashboard: { ...state.dashboard, ...parsed.dashboard },
           alerts: { ...state.alerts, ...parsed.alerts }
         }
@@ -106,6 +113,11 @@ const settingsSlice = createSlice({
     },
     setPrimaryColor(state, action: PayloadAction<string>) {
       state.primaryColor = action.payload
+      persist(state)
+    },
+    setTimelineShiftStartMinutes(state, action: PayloadAction<number>) {
+      const next = Math.max(0, Math.min(1439, Math.floor(action.payload)))
+      state.timeline.shiftStartMinutes = next
       persist(state)
     },
     setDashboardRangePreset(state, action: PayloadAction<DashboardRangePreset>) {
@@ -138,6 +150,7 @@ const settingsSlice = createSlice({
         ...state,
         ...parsed,
         nav: { ...state.nav, ...parsed.nav },
+        timeline: { ...state.timeline, ...parsed.timeline },
         dashboard: { ...state.dashboard, ...parsed.dashboard },
         alerts: { ...state.alerts, ...parsed.alerts },
       }
@@ -156,6 +169,7 @@ const settingsSlice = createSlice({
         ...state,
         ...parsed,
         nav: { ...state.nav, ...parsed.nav },
+        timeline: { ...state.timeline, ...parsed.timeline },
         dashboard: { ...state.dashboard, ...parsed.dashboard },
         alerts: { ...state.alerts, ...parsed.alerts },
       }
@@ -172,6 +186,7 @@ export const {
   toggleThemeMode,
   setDensity,
   setPrimaryColor,
+  setTimelineShiftStartMinutes,
   setDashboardRangePreset,
   setCalibrationDaysThreshold,
   setLongOccupancyHoursThreshold,

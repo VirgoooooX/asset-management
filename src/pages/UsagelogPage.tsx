@@ -138,7 +138,6 @@ const UsageLogPage: React.FC = () => {
   return (
     <PageShell
       title={<TitleWithIcon icon={<ListAltIcon />}>{tr('使用记录', 'Usage logs')}</TitleWithIcon>}
-      maxWidth="xl"
       actions={
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           <Button variant="outlined" startIcon={<FileDownloadIcon />} onClick={handleExportAll} sx={{ whiteSpace: 'nowrap' }}>

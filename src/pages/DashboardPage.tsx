@@ -325,7 +325,6 @@ const DashboardPage: React.FC = () => {
       title={
         <TitleWithIcon icon={<DashboardIcon />}>{tr('设备总览', 'Dashboard')}</TitleWithIcon>
       }
-      maxWidth="xl"
       actions={
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
           <ToggleButtonGroup

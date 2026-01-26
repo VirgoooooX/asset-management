@@ -34,6 +34,7 @@ import {
   setLongOccupancyHoursThreshold,
   setPrimaryColor,
   setRefreshSeconds,
+  setTimelineShiftStartMinutes,
   toggleThemeMode,
 } from '../store/settingsSlice'
 import { useI18n } from '../i18n'
@@ -56,6 +57,15 @@ const SettingsPage: React.FC = () => {
   const [changelogExpanded, setChangelogExpanded] = useState(false)
 
   const isAdmin = auth.user?.role === 'admin'
+  const shiftStartMinutes = settings.timeline.shiftStartMinutes
+
+  const shiftStartTimeValue = useMemo(() => {
+    const h = Math.floor(shiftStartMinutes / 60)
+    const m = shiftStartMinutes % 60
+    const hh = String(h).padStart(2, '0')
+    const mm = String(m).padStart(2, '0')
+    return `${hh}:${mm}`
+  }, [shiftStartMinutes])
 
   const changelogShown = useMemo(() => {
     if (changelogExpanded) return buildInfo.changelog
@@ -232,6 +242,37 @@ const SettingsPage: React.FC = () => {
                 onChange={(e) => dispatch(setRefreshSeconds(Number(e.target.value)))}
                 inputProps={{ min: 0, step: 5 }}
                 helperText={tr('0 表示关闭自动刷新', '0 disables auto refresh')}
+                fullWidth
+              />
+            </Box>
+          </Stack>
+        </AppCard>
+
+        <AppCard
+          title={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <span>{tr('时间轴', 'Timeline')}</span>
+            </Stack>
+          }
+        >
+          <Stack spacing={1.5}>
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650, mb: 1 }}>
+                {tr('班别切日时间', 'Shift day starts at')}
+              </Typography>
+              <TextField
+                type="time"
+                value={shiftStartTimeValue}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const [hh, mm] = v.split(':')
+                  const h = Number(hh)
+                  const m = Number(mm)
+                  if (Number.isNaN(h) || Number.isNaN(m)) return
+                  dispatch(setTimelineShiftStartMinutes(h * 60 + m))
+                }}
+                inputProps={{ step: 60 }}
+                helperText={tr('例如 07:00 表示 07:00 之前算作前一天', 'For example, 07:00 means before 07:00 counts as previous day')}
                 fullWidth
               />
             </Box>
