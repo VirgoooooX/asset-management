@@ -8,10 +8,45 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '0.1.1',
-  commit: '0f5fa4f',
-  builtAt: '2026-01-24T12:13:55.176Z',
+  version: '0.1.2',
+  commit: 'b9a9dfe',
+  builtAt: '2026-01-26T15:23:26.279Z',
   changelog: JSON.parse(`[
+  {
+    "hash": "b9a9dfe",
+    "date": "2026-01-26",
+    "message": "refactor(ui): 统一页面布局并改进时间轴组件"
+  },
+  {
+    "hash": "1b09bad",
+    "date": "2026-01-25",
+    "message": "Merge branch 'main' of https://github.com/VirgoooooX/asset-management"
+  },
+  {
+    "hash": "6d67dd3",
+    "date": "2026-01-25",
+    "message": "feat(timeline): 优化时间轴记录条布局、间距及样式，修复 CSS 警告"
+  },
+  {
+    "hash": "4b85bce",
+    "date": "2026-01-25",
+    "message": "style(ScrollingTimeline): 移除未使用的CSS类并简化样式"
+  },
+  {
+    "hash": "7e4456a",
+    "date": "2026-01-25",
+    "message": "feat(timeline): 优化时间轴项目条样式并增加配置项显示"
+  },
+  {
+    "hash": "db01084",
+    "date": "2026-01-25",
+    "message": "feat: 优化滚动条布局、时间线配置删除和仪表盘卡片信息"
+  },
+  {
+    "hash": "a519523",
+    "date": "2026-01-24",
+    "message": "chore: 更新版本至0.1.2并修复release脚本参数"
+  },
   {
     "hash": "0f5fa4f",
     "date": "2026-01-23",

@@ -6,7 +6,11 @@ const isLogOccupying = (log: { status: string; start_time: string; end_time: str
   if (log.status === 'completed') return false
   const startMs = parseIsoMs(log.start_time)
   if (startMs === null) return false
-  if (startMs > nowMs) return false
+  if (startMs > nowMs) {
+    if (log.status !== 'in-progress') return false
+    const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000
+    if (startMs - nowMs > MAX_CLOCK_SKEW_MS) return false
+  }
   const endMs = parseIsoMs(log.end_time)
   if (endMs !== null && endMs <= nowMs) return false
   return true

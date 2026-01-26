@@ -2,6 +2,7 @@
 import { createSlice, createAsyncThunk, PayloadAction, SerializedError } from '@reduxjs/toolkit';
 import { UsageLog } from '../types';
 import * as usageLogService from '../services/usageLogService';
+import { fetchAssetById } from './assetsSlice'
 import type { AppDispatch, RootState } from './index';
 
 interface UsageLogsState {
@@ -70,13 +71,14 @@ export const addUsageLog = createAsyncThunk<
   { rejectValue: string; dispatch: AppDispatch; state: RootState }
 >(
   'usageLogs/addUsageLog',
-  async (usageLogDataFromForm, { rejectWithValue }) => {
+  async (usageLogDataFromForm, { rejectWithValue, dispatch }) => {
     try {
       const newLogId = await usageLogService.createUsageLog(usageLogDataFromForm);
       const createdLog = await usageLogService.getUsageLogById(newLogId);
       if (!createdLog) {
         throw new Error('使用记录创建成功，但未能获取到创建后的数据。');
       }
+      dispatch(fetchAssetById({ id: createdLog.chamberId }))
       return createdLog;
     } catch (error: any) {
       return rejectWithValue(error.message || '添加使用记录失败');
@@ -90,14 +92,19 @@ export const updateUsageLog = createAsyncThunk<
   { rejectValue: string; dispatch: AppDispatch; state: RootState }
 >(
   'usageLogs/updateUsageLog',
-  async ({ id, log: logUpdateData }, { rejectWithValue }) => {
+  async ({ id, log: logUpdateData }, { rejectWithValue, dispatch, getState }) => {
     try {
+      const prev = (getState() as RootState).usageLogs.usageLogs.find((x) => x.id === id)
       await usageLogService.updateUsageLog(id, logUpdateData);
 
       const updatedLog = await usageLogService.getUsageLogById(id);
       if (!updatedLog) {
         throw new Error('更新使用记录后未能检索到该记录。');
       }
+      if (prev?.chamberId && prev.chamberId !== updatedLog.chamberId) {
+        dispatch(fetchAssetById({ id: prev.chamberId }))
+      }
+      dispatch(fetchAssetById({ id: updatedLog.chamberId }))
       return updatedLog;
     } catch (error: any) {
       return rejectWithValue(error.message || '更新使用记录失败');
@@ -112,10 +119,11 @@ export const markLogAsCompleted = createAsyncThunk<
   { rejectValue: string; dispatch: AppDispatch; state: RootState }
 >(
   'usageLogs/markLogAsCompleted',
-  async (logId, { rejectWithValue }) => {
+  async (logId, { rejectWithValue, dispatch, getState }) => {
     try {
       // The service function `updateUsageLog` will handle setting status to 'completed',
       // adjusting endTime if necessary, and then triggering the chamber status update.
+      const prev = (getState() as RootState).usageLogs.usageLogs.find((x) => x.id === logId)
       await usageLogService.updateUsageLog(logId, { status: 'completed' });
 
       // Fetch the updated log to return to the reducer
@@ -123,6 +131,8 @@ export const markLogAsCompleted = createAsyncThunk<
       if (!updatedLog) {
         throw new Error('Log marked as completed, but failed to retrieve updated details.');
       }
+      dispatch(fetchAssetById({ id: updatedLog.chamberId }))
+      if (prev?.chamberId && prev.chamberId !== updatedLog.chamberId) dispatch(fetchAssetById({ id: prev.chamberId }))
 
       return updatedLog;
     } catch (error: any) {
@@ -151,12 +161,14 @@ export const removeConfigFromUsageLog = createAsyncThunk<
 export const deleteUsageLog = createAsyncThunk<
   string,
   string,
-  { rejectValue: string; dispatch: AppDispatch }
+  { rejectValue: string; dispatch: AppDispatch; state: RootState }
 >(
   'usageLogs/deleteUsageLog',
-  async (id, { rejectWithValue }) => {
+  async (id, { rejectWithValue, dispatch, getState }) => {
     try {
+      const prev = (getState() as RootState).usageLogs.usageLogs.find((x) => x.id === id)
       await usageLogService.deleteUsageLog(id);
+      if (prev?.chamberId) dispatch(fetchAssetById({ id: prev.chamberId }))
 
       return id;
     } catch (error: any) {

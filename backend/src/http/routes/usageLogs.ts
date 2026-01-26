@@ -8,6 +8,8 @@ import { recomputeChamberStatus } from '../../services/assetStatus.js'
 
 export const usageLogsRouter = Router()
 
+const CLOCK_SKEW_ALLOW_MS = 2 * 60 * 1000
+
 const usageLogCreateSchema = z.object({
   chamberId: z.string().min(1),
   projectId: z.string().optional(),
@@ -90,6 +92,13 @@ usageLogsRouter.post('/', requireAuth, (req, res) => {
   const db = getDb()
   const id = randomToken(16)
   const createdAt = new Date().toISOString()
+  const nowIso = new Date().toISOString()
+  const nowMs = Date.parse(nowIso)
+  const startMs = Date.parse(d.startTime)
+  const normalizedStartTime =
+    d.status === 'in-progress' && Number.isFinite(startMs) && startMs - nowMs > CLOCK_SKEW_ALLOW_MS ? nowIso : d.startTime
+  const normalizedEndTime =
+    d.status === 'in-progress' && d.endTime && Number.isFinite(startMs) && startMs - nowMs > CLOCK_SKEW_ALLOW_MS ? undefined : d.endTime
 
   db.transaction(() => {
     db.prepare(
@@ -103,8 +112,8 @@ usageLogsRouter.post('/', requireAuth, (req, res) => {
       d.chamberId,
       d.projectId ?? null,
       d.testProjectId ?? null,
-      d.startTime,
-      d.endTime ?? null,
+      normalizedStartTime,
+      normalizedEndTime ?? null,
       d.user,
       d.status,
       d.notes ?? null,
@@ -131,6 +140,11 @@ usageLogsRouter.patch('/:id', requireAuth, (req, res) => {
 
   const nextChamberId = d.chamberId ?? existing.chamber_id
   const prevChamberId = existing.chamber_id
+  const nowIso = new Date().toISOString()
+  const nowMs = Date.parse(nowIso)
+  const startMs = d.startTime ? Date.parse(d.startTime) : Number.NaN
+  const shouldNormalizeInProgressStart =
+    d.status === 'in-progress' && d.startTime && Number.isFinite(startMs) && startMs - nowMs > CLOCK_SKEW_ALLOW_MS
 
   db.transaction(() => {
     const updates: string[] = []
@@ -143,7 +157,7 @@ usageLogsRouter.patch('/:id', requireAuth, (req, res) => {
     if (d.chamberId !== undefined) add('chamber_id = ?', d.chamberId)
     if (d.projectId !== undefined) add('project_id = ?', d.projectId)
     if (d.testProjectId !== undefined) add('test_project_id = ?', d.testProjectId)
-    if (d.startTime !== undefined) add('start_time = ?', d.startTime)
+    if (d.startTime !== undefined) add('start_time = ?', shouldNormalizeInProgressStart ? nowIso : d.startTime)
     if (d.endTime !== undefined) add('end_time = ?', d.endTime)
     if (d.user !== undefined) add('user = ?', d.user)
     if (d.status !== undefined) add('status = ?', d.status)

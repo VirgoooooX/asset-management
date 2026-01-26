@@ -977,6 +977,8 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                     const hasConfigs = configNames.length > 0;
                     const isMultiConfig = configNames.length > 1;
                     const configText = hasConfigs ? configNames.join(', ') : '';
+                    const notesText = (originalLog.notes ?? '').trim().replace(/\s+/g, ' ');
+                    const hasNotes = notesText.length > 0;
                     const barTextParts: string[] = [];
                     if (logDisplayItem.projectName) barTextParts.push(logDisplayItem.projectName);
                     if (hasConfigs) barTextParts.push(configText);
@@ -1066,7 +1068,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                                   ) : null}
                                 </React.Fragment>
                               ) : (
-                                <span className={styles.timelineConfigPillEmpty}>未选配置</span>
+                                <span className={styles.timelineConfigPillEmpty}>{hasNotes ? notesText : '未选配置'}</span>
                               )}
                             </div>
                           </div>
