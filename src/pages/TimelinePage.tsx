@@ -124,7 +124,7 @@ const TimelinePage: React.FC = () => {
                 >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, flexWrap: 'nowrap' }}>
                         <Typography variant="h4" component="h1" sx={{ fontWeight: 850, lineHeight: 1.15, whiteSpace: 'nowrap' }}>
-                            <TitleWithIcon icon={<TimelineIcon />}>{tr('占用排程', 'Occupancy Schedule')}</TitleWithIcon>
+                            <TitleWithIcon icon={<TimelineIcon />}>{tr('设备排程', 'Occupancy Schedule')}</TitleWithIcon>
                         </Typography>
                         {overdueCount > 0 ? (
                             <Chip

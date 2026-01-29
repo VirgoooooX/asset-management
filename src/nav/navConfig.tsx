@@ -60,7 +60,7 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
   {
     id: 'timeline',
     section: 'overview',
-    label: tr('占用排程', 'Occupancy Schedule'),
+    label: tr('设备排程', 'Occupancy Schedule'),
     description: tr('按时间轴查看设备占用情况', 'View occupancy by timeline'),
     path: '/timeline',
     roles: ['admin', 'manager', 'user'],

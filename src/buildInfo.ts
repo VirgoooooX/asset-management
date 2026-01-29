@@ -9,9 +9,14 @@ export type BuildInfo = {
 
 export const buildInfo: BuildInfo = {
   version: '0.1.2',
-  commit: 'b9a9dfe',
-  builtAt: '2026-01-26T15:23:26.279Z',
+  commit: '0b6dec0',
+  builtAt: '2026-01-26T15:24:58.459Z',
   changelog: JSON.parse(`[
+  {
+    "hash": "0b6dec0",
+    "date": "2026-01-26",
+    "message": "fix: 处理未来时间日志的时钟偏移并同步资产状态"
+  },
   {
     "hash": "b9a9dfe",
     "date": "2026-01-26",

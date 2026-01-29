@@ -649,7 +649,7 @@ const DashboardPage: React.FC = () => {
               {tr('设备列表', 'Assets')}
             </Button>
             <Button size="small" variant="outlined" onClick={() => navigate('/timeline')} sx={{ whiteSpace: 'nowrap' }}>
-              {tr('占用排程', 'Occupancy Schedule')}
+              {tr('设备排程', 'Occupancy Schedule')}
             </Button>
           </Stack>
         }
