@@ -7,7 +7,7 @@ import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
 import { syncAssetFolderToPreferred } from '../../services/fileFolders.js'
 import { slugifyCategory } from '../../util/slug.js'
-import { publishAssetStatusChanged } from '../../services/events.js'
+import { publishAssetStatusChanged, publishAssetUpdated } from '../../services/events.js'
 
 export const assetsRouter = Router()
 
@@ -170,6 +170,7 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
   if (d.status !== undefined && beforeStatus && d.status !== beforeStatus) {
     publishAssetStatusChanged(id, d.status, now)
   }
+  publishAssetUpdated(id, now)
   if (d.name !== undefined || d.category !== undefined) {
     await syncAssetFolderToPreferred(id, beforeCategorySlug).catch(() => undefined)
   }

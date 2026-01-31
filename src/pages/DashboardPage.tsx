@@ -21,6 +21,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import EventAvailableIcon from '@mui/icons-material/EventAvailable'
 import BuildCircleIcon from '@mui/icons-material/BuildCircle'
 import SpeedIcon from '@mui/icons-material/Speed'
+import TimerOffIcon from '@mui/icons-material/TimerOff'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { LocalizationProvider, DateTimePicker } from '@mui/x-date-pickers'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
@@ -49,11 +50,14 @@ const TOP_ROW_HEIGHT = 180
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`
 
 const formatDuration = (ms: number) => {
-  if (ms < 0) return '0m'
-  const totalMinutes = Math.floor(ms / 60000)
+  const abs = Math.max(0, Math.round(Math.abs(ms)))
+  const totalMinutes = Math.floor(abs / 60000)
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
-  return `${hours}h ${minutes}m`
+  const days = Math.floor(hours / 24)
+  if (days > 0) return `${days}d ${hours % 24}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
+  return `${minutes}m`
 }
 
 const formatDateTime = (value?: string) => {
@@ -177,6 +181,62 @@ const DashboardPage: React.FC = () => {
   }, [customEnd, customStart, preset])
 
   const nowMs = useMemo(() => Date.now(), [startMs, endMs])
+
+  const glassCardSx = (accent: string, opts: { isOverdue: boolean }) => {
+    const baseBgTop = alpha(accent, theme.palette.mode === 'dark' ? 0.16 : 0.10)
+    const baseBgBottom = alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.44 : 0.92)
+    const border = alpha(accent, theme.palette.mode === 'dark' ? 0.32 : 0.20)
+    const shadow = alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.50 : 0.12)
+
+    const overdueAccent = theme.palette.error.main
+    const overdueBorder = alpha(overdueAccent, theme.palette.mode === 'dark' ? 0.46 : 0.32)
+    const overdueGlow = alpha(overdueAccent, theme.palette.mode === 'dark' ? 0.22 : 0.14)
+
+    return {
+      borderRadius: 2,
+      p: 1.1,
+      cursor: 'pointer',
+      height: 92,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      position: 'relative',
+      overflow: 'hidden',
+      border: '1px solid',
+      borderColor: opts.isOverdue ? overdueBorder : border,
+      background: `linear-gradient(180deg, ${baseBgTop}, ${baseBgBottom})`,
+      boxShadow: `0 18px 36px ${shadow}`,
+      '&::before': {
+        content: '""',
+        position: 'absolute',
+        inset: 0,
+        background: `radial-gradient(circle at 18% 22%, ${alpha(accent, 0.34)}, transparent 58%), radial-gradient(circle at 78% 88%, ${alpha(accent, 0.18)}, transparent 62%)`,
+        opacity: theme.palette.mode === 'dark' ? 0.72 : 0.55,
+        pointerEvents: 'none',
+      },
+      '&::after': {
+        content: '""',
+        position: 'absolute',
+        inset: 0,
+        background: opts.isOverdue
+          ? `radial-gradient(circle at 78% 18%, ${alpha(overdueAccent, 0.34)}, transparent 58%), linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.02) 42%, rgba(255,255,255,0.08))`
+          : 'linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.02) 42%, rgba(255,255,255,0.08))',
+        opacity: theme.palette.mode === 'dark' ? 0.22 : 0.18,
+        pointerEvents: 'none',
+      },
+      ...(opts.isOverdue
+        ? {
+            outline: `1px solid ${alpha(overdueAccent, 0.22)}`,
+            boxShadow: `0 20px 42px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.56 : 0.16)}, 0 10px 30px ${overdueGlow}`,
+          }
+        : null),
+      '&:hover': {
+        transform: 'translateY(-1px)',
+        boxShadow: `0 20px 42px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.54 : 0.14)}`,
+      },
+      transition: 'transform 140ms ease, box-shadow 140ms ease',
+    } as const
+  }
 
   const kpis = useAppSelector((state) =>
     selectDashboardKpis(state, startMs, endMs, calibrationDaysThreshold, nowMs)
@@ -557,14 +617,18 @@ const DashboardPage: React.FC = () => {
             },
           },
         ] as const).map((card) => {
-          const accent =
-            card.tone === 'warning'
+          const hasAttention =
+            (card.title.includes('维修') && (repairStats.quotePending > 0 || repairStats.repairPending > 0)) ||
+            (card.title.includes('校验') && kpis.calibrationAttention.count > 0) ||
+            (card.title.includes('超时') && kpis.overdueActiveCount > 0)
+
+          const accent = hasAttention
+            ? card.tone === 'warning'
               ? theme.palette.warning.main
               : card.tone === 'error'
                 ? theme.palette.error.main
-                : card.tone === 'primary'
-                  ? theme.palette.primary.main
-                  : theme.palette.info.main
+                : theme.palette.primary.main
+            : theme.palette.primary.main
 
           return (
             <Box key={card.title} sx={{ display: 'flex', minWidth: 0, height: '100%', alignItems: 'stretch' }}>
@@ -580,59 +644,47 @@ const DashboardPage: React.FC = () => {
                 contentSx={{ mt: 0 }}
               >
                 <Box
+                  onClick={card.cta.onClick}
                   sx={{
                     height: '100%',
+                    minHeight: 160,
                     border: '1px solid',
                     borderColor: alpha(accent, 0.24),
                     background: `linear-gradient(180deg, ${alpha(accent, 0.12)} 0%, ${alpha(theme.palette.background.paper, 1)} 68%)`,
                     borderRadius: 2,
-                    p: 1.25,
+                    p: 2,
                     display: 'flex',
                     flexDirection: 'column',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: `0 4px 12px ${alpha(accent, 0.25)}`,
+                    },
                   }}
                 >
-                  <Typography variant="subtitle1" sx={{ fontWeight: 950, lineHeight: 1.15, mb: 1, fontSize: { xs: 16, sm: 17 } }} noWrap>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 950, lineHeight: 1.15, mb: 2, fontSize: { xs: 16, sm: 17 } }} noWrap>
                     {card.title}
                   </Typography>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 1.25, alignItems: 'start' }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: 1.25, alignItems: 'center', flex: 1 }}>
                     <Box sx={{ minWidth: 0 }}>
-                      <Stack direction="row" spacing={1} alignItems="baseline" sx={{ flexWrap: 'wrap' }}>
-                        <Typography sx={{ fontWeight: 950, fontSize: 52, lineHeight: 1, letterSpacing: -1.1 }} noWrap>
+                      <Stack direction="row" spacing={0.5} alignItems="baseline" sx={{ flexWrap: 'wrap' }}>
+                        <Typography sx={{ fontWeight: 950, fontSize: 56, lineHeight: 1, letterSpacing: -1.2 }} noWrap>
                           {card.value}
                         </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 850 }}>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 850, ml: 0.5 }}>
                           {card.unit || ' '}
                         </Typography>
                       </Stack>
                     </Box>
 
-                    <Stack spacing={0.5} sx={{ minWidth: 0 }}>
+                    <Stack spacing={0.75} sx={{ minWidth: 0, alignItems: 'flex-end', textAlign: 'right' }}>
                       {card.notes.map((t) => (
-                        <Typography key={t} variant="caption" color="text.secondary" noWrap>
+                        <Typography key={t} variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }} noWrap>
                           {t}
                         </Typography>
                       ))}
                     </Stack>
-                  </Box>
-
-                  <Box sx={{ mt: 'auto', pt: 1.25, minHeight: 34, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                    <Button size="small" variant="outlined" onClick={card.cta.onClick} sx={{ whiteSpace: 'nowrap' }}>
-                      {card.cta.label}
-                    </Button>
-                    <Chip
-                      size="small"
-                      label={card.chip.label}
-                      color={card.chip.color}
-                      variant="filled"
-                      sx={{
-                        fontWeight: 900,
-                        pointerEvents: 'none',
-                        border: '1px solid',
-                        borderColor: alpha(accent, 0.22),
-                        backgroundColor: alpha(accent, theme.palette.mode === 'dark' ? 0.16 : 0.10),
-                        color: alpha(accent, theme.palette.mode === 'dark' ? 0.95 : 0.90),
-                      }}
-                    />
                   </Box>
                 </Box>
               </AppCard>
@@ -714,15 +766,20 @@ const DashboardPage: React.FC = () => {
                                 ? theme.palette.warning.main
                                 : theme.palette.error.main
 
+                          const statusLabel =
+                            asset.status === 'available'
+                              ? tr('可用', 'Available')
+                              : asset.status === 'in-use'
+                                ? tr('使用中', 'In use')
+                                : tr('维护', 'Maintenance')
+
                           const occupancy = activeOccupancyByAssetId.get(asset.id)
                           const projectName = occupancy?.log.projectId ? projectNameById.get(occupancy.log.projectId) : undefined
                           const testProjectName = occupancy?.log.testProjectId ? testProjectNameById.get(occupancy.log.testProjectId) : undefined
                           const endText = occupancy ? formatDateTime(occupancy.log.endTime) : undefined
-                          const nowMs = Date.now()
-                          const isOverdue = occupancy ? Number.isFinite(occupancy.endMs) && occupancy.endMs < nowMs : false
-                          const diffMs = occupancy ? (isOverdue ? nowMs - occupancy.endMs : occupancy.endMs - nowMs) : 0
-                          const isLongTerm = diffMs > 24 * 60 * 60 * 1000
-
+                          const nowForCardMs = Date.now()
+                          const isOverdue = occupancy ? Number.isFinite(occupancy.endMs) && occupancy.endMs < nowForCardMs : false
+                          const diffMs = occupancy ? (isOverdue ? nowForCardMs - occupancy.endMs : occupancy.endMs - nowForCardMs) : 0
                           const activeRepair =
                             asset.status === 'maintenance'
                               ? repairTickets.find((t) => t.assetId === asset.id && t.status !== 'completed')
@@ -730,6 +787,12 @@ const DashboardPage: React.FC = () => {
                           const maintenanceDays = activeRepair
                             ? differenceInDays(new Date(), new Date(activeRepair.createdAt))
                             : 0
+                          const maintenanceStageLabel =
+                            activeRepair?.status === 'quote-pending'
+                              ? tr('未询价', 'Quote pending')
+                              : activeRepair?.status === 'repair-pending'
+                                ? tr('待维修', 'Repair pending')
+                                : undefined
 
                           const tooltip = occupancy ? (
                             <Box sx={{ p: 0.25 }}>
@@ -751,71 +814,95 @@ const DashboardPage: React.FC = () => {
                           const card = (
                             <Box
                               onClick={() => navigate(`/assets/${asset.id}`)}
-                              sx={{
-                                border: '1px solid',
-                                borderColor: alpha(color, 0.26),
-                                borderRadius: 2,
-                                p: 1.1,
-                                cursor: 'pointer',
-                                height: 84,
-                                display: 'flex',
-                                flexDirection: 'column',
-                                justifyContent: 'space-between',
-                                backgroundColor: alpha(color, theme.palette.mode === 'dark' ? 0.22 : 0.14),
-                                '&:hover': {
-                                  borderColor: alpha(color, 0.48),
-                                  boxShadow: `0 10px 22px ${alpha(color, theme.palette.mode === 'dark' ? 0.22 : 0.12)}`,
-                                },
-                              }}
+                              sx={glassCardSx(color, { isOverdue })}
                             >
-                              <Typography sx={{ fontWeight: 950 }} noWrap>
+                              <Stack direction="row" spacing={1} alignItems="center" sx={{ position: 'relative', zIndex: 1 }}>
+                                <Typography sx={{ fontWeight: 950, minWidth: 0 }} noWrap>
                                   {asset.name}
-                              </Typography>
+                                </Typography>
+                                <Box sx={{ flex: 1 }} />
+                                <Chip
+                                  size="small"
+                                  label={statusLabel}
+                                  variant="outlined"
+                                  sx={{
+                                    height: 22,
+                                    fontWeight: 900,
+                                    borderColor: alpha(color, 0.38),
+                                    backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.22 : 0.30),
+                                    '& .MuiChip-label': { px: 0.75 },
+                                  }}
+                                />
+                              </Stack>
                               
                               {occupancy && asset.status === 'in-use' ? (
-                                <>
-                                  <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
-                                    {occupancy.log.user}
-                                  </Typography>
-                                  <Typography
-                                    variant="caption"
-                                    color={isOverdue ? 'error.main' : 'text.secondary'}
-                                    noWrap
-                                    sx={{
-                                      fontWeight: isOverdue ? 850 : 500,
-                                    }}
-                                  >
-                                    {isOverdue
-                                      ? (isLongTerm 
-                                          ? tr(`逾期: ${new Date(occupancy.endMs).toLocaleDateString()} ${new Date(occupancy.endMs).getHours().toString().padStart(2, '0')}:${new Date(occupancy.endMs).getMinutes().toString().padStart(2, '0')}`, `Overdue: ${new Date(occupancy.endMs).toLocaleDateString()}`) 
-                                          : tr(`逾期: ${formatDuration(diffMs)}`, `Overdue: ${formatDuration(diffMs)}`))
-                                      : (isLongTerm
-                                          ? tr(`结束: ${new Date(occupancy.endMs).toLocaleDateString()} ${new Date(occupancy.endMs).getHours().toString().padStart(2, '0')}:${new Date(occupancy.endMs).getMinutes().toString().padStart(2, '0')}`, `End: ${new Date(occupancy.endMs).toLocaleDateString()}`)
-                                          : tr(`剩余: ${formatDuration(diffMs)}`, `Remaining: ${formatDuration(diffMs)}`))}
-                                  </Typography>
-                                </>
-                              ) : activeRepair ? (
-                                <>
-                                  <Typography variant="body2" sx={{ fontWeight: 800 }} noWrap>
-                                    {tr('维护中', 'Maintenance')}
-                                  </Typography>
-                                  <Typography variant="caption" color="text.secondary" noWrap sx={{ fontWeight: 500 }}>
-                                    {tr(`停机: ${maintenanceDays}天`, `Stopped: ${maintenanceDays}d`)}
-                                  </Typography>
-                                </>
+                                <Typography variant="body2" sx={{ fontWeight: 900, position: 'relative', zIndex: 1 }} noWrap>
+                                  {occupancy.log.user}
+                                </Typography>
                               ) : (
                                 <Typography
-                                  variant="caption"
-                                  color="text.secondary"
+                                  variant="body2"
+                                  color="text.primary"
                                   noWrap
                                   sx={{
-                                    mt: 'auto',
+                                    fontWeight: 900,
                                     visibility: 'hidden',
+                                    position: 'relative',
+                                    zIndex: 1,
                                   }}
                                 >
                                   -
                                 </Typography>
                               )}
+
+                              <Stack direction="row" spacing={1} alignItems="center" sx={{ position: 'relative', zIndex: 1 }}>
+                                <Typography
+                                  variant="caption"
+                                  color={isOverdue ? 'error.main' : 'text.secondary'}
+                                  noWrap
+                                  sx={{
+                                    fontWeight: isOverdue ? 900 : 600,
+                                    minWidth: 0,
+                                  }}
+                                >
+                                  {occupancy && asset.status === 'in-use'
+                                    ? isOverdue
+                                      ? tr(`逾期: ${formatDuration(diffMs)}`, `Overdue: ${formatDuration(diffMs)}`)
+                                      : tr(`剩余: ${formatDuration(diffMs)}`, `Remaining: ${formatDuration(diffMs)}`)
+                                    : activeRepair
+                                      ? tr(`停机: ${maintenanceDays}天`, `Stopped: ${maintenanceDays}d`)
+                                      : tr('—', '—')}
+                                </Typography>
+                                <Box sx={{ flex: 1 }} />
+                                {asset.status === 'maintenance' && maintenanceStageLabel ? (
+                                  <Chip
+                                    size="small"
+                                    label={maintenanceStageLabel}
+                                    variant="outlined"
+                                    sx={{
+                                      height: 22,
+                                      fontWeight: 900,
+                                      borderColor: alpha(theme.palette.error.main, 0.30),
+                                      backgroundColor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.14 : 0.08),
+                                      '& .MuiChip-label': { px: 0.75 },
+                                    }}
+                                  />
+                                ) : isOverdue ? (
+                                  <Chip
+                                    size="small"
+                                    icon={<TimerOffIcon />}
+                                    label={tr('超时', 'Overdue')}
+                                    variant="outlined"
+                                    sx={{
+                                      height: 22,
+                                      fontWeight: 950,
+                                      borderColor: alpha(theme.palette.error.main, 0.38),
+                                      backgroundColor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
+                                      '& .MuiChip-label': { px: 0.75 },
+                                    }}
+                                  />
+                                ) : null}
+                              </Stack>
                             </Box>
                           )
 

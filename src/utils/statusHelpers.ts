@@ -71,12 +71,9 @@ export const isUsageLogOccupyingAsset = (log: UsageLog, currentTime: Date = new 
   if (log.status === 'completed') return false
 
   const startTime = log.startTime ? parseISO(log.startTime) : null
-  const endTime = log.endTime ? parseISO(log.endTime) : null
 
   if (startTime && isValid(startTime) && startTime <= currentTime) {
-    if (!endTime || (isValid(endTime) && endTime > currentTime)) {
-      return true
-    }
+    return true
   }
   return false
 }

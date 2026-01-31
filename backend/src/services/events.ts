@@ -7,7 +7,27 @@ type AssetStatusChangedEvent = {
   updatedAt: string
 }
 
-type ServerEvent = AssetStatusChangedEvent
+type AssetUpdatedEvent = {
+  type: 'asset_updated'
+  assetId: string
+  updatedAt: string
+}
+
+type RepairTicketChangedEvent = {
+  type: 'repair_ticket_changed'
+  ticketId: string
+  assetId: string
+  updatedAt: string
+}
+
+type UsageLogChangedEvent = {
+  type: 'usage_log_changed'
+  logId: string
+  chamberId: string
+  updatedAt: string
+}
+
+type ServerEvent = AssetStatusChangedEvent | AssetUpdatedEvent | RepairTicketChangedEvent | UsageLogChangedEvent
 
 type Client = {
   id: string
@@ -74,4 +94,16 @@ export const publish = (evt: ServerEvent) => {
 
 export const publishAssetStatusChanged = (assetId: string, status: string, updatedAt: string) => {
   publish({ type: 'asset_status_changed', assetId, status, updatedAt })
+}
+
+export const publishAssetUpdated = (assetId: string, updatedAt: string) => {
+  publish({ type: 'asset_updated', assetId, updatedAt })
+}
+
+export const publishRepairTicketChanged = (ticketId: string, assetId: string, updatedAt: string) => {
+  publish({ type: 'repair_ticket_changed', ticketId, assetId, updatedAt })
+}
+
+export const publishUsageLogChanged = (logId: string, chamberId: string, updatedAt: string) => {
+  publish({ type: 'usage_log_changed', logId, chamberId, updatedAt })
 }

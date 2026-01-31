@@ -5,6 +5,7 @@ import { getDb } from '../../db/db.js'
 import { requireAuth } from '../middlewares/requireAuth.js'
 import { requireManager } from '../middlewares/requireManager.js'
 import { recomputeChamberStatus } from '../../services/assetStatus.js'
+import { publishUsageLogChanged } from '../../services/events.js'
 
 export const usageLogsRouter = Router()
 
@@ -123,6 +124,7 @@ usageLogsRouter.post('/', requireAuth, (req, res) => {
     )
     recomputeChamberStatus(db, d.chamberId)
   })()
+  publishUsageLogChanged(id, d.chamberId, createdAt)
 
   res.json({ id })
 })
@@ -171,6 +173,7 @@ usageLogsRouter.patch('/:id', requireAuth, (req, res) => {
     recomputeChamberStatus(db, nextChamberId)
     if (prevChamberId !== nextChamberId) recomputeChamberStatus(db, prevChamberId)
   })()
+  publishUsageLogChanged(id, nextChamberId, nowIso)
 
   res.json({ ok: true })
 })
@@ -183,10 +186,12 @@ usageLogsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
     | undefined
   if (!existing) return res.json({ ok: true })
 
+  const nowIso = new Date().toISOString()
   db.transaction(() => {
     db.prepare('delete from usage_logs where id = ?').run(id)
     recomputeChamberStatus(db, existing.chamber_id)
   })()
+  publishUsageLogChanged(id, existing.chamber_id, nowIso)
 
   res.json({ ok: true })
 })

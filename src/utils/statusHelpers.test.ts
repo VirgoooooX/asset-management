@@ -46,13 +46,13 @@ describe('statusHelpers', () => {
     expect(isUsageLogCurrentlyActive(log, new Date('2026-01-01T03:00:00.000Z'))).toBe(false)
   })
 
-  it('treats occupying asset when started and not ended, regardless stored status', () => {
+  it('treats occupying asset when started, regardless endTime and stored status', () => {
     const log = baseLog({
       status: 'not-started',
       startTime: new Date('2026-01-01T00:00:00.000Z').toISOString(),
       endTime: new Date('2026-01-01T02:00:00.000Z').toISOString(),
     })
     expect(isUsageLogOccupyingAsset(log, new Date('2026-01-01T01:00:00.000Z'))).toBe(true)
-    expect(isUsageLogOccupyingAsset(log, new Date('2026-01-01T03:00:00.000Z'))).toBe(false)
+    expect(isUsageLogOccupyingAsset(log, new Date('2026-01-01T03:00:00.000Z'))).toBe(true)
   })
 })

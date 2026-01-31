@@ -5,7 +5,7 @@ import { requireManager } from '../middlewares/requireManager.js'
 import { getDb } from '../../db/db.js'
 import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
-import { publishAssetStatusChanged } from '../../services/events.js'
+import { publishAssetStatusChanged, publishRepairTicketChanged } from '../../services/events.js'
 
 export const repairTicketsRouter = Router()
 
@@ -147,6 +147,7 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
     )
     db.prepare('update assets set status = ?, updated_at = ? where id = ?').run('maintenance', now, d.assetId)
     publishAssetStatusChanged(d.assetId, 'maintenance', now)
+    publishRepairTicketChanged(id, d.assetId, now)
   })()
 
   res.json({ id })
@@ -173,9 +174,11 @@ repairTicketsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
   if (d.quoteAmount !== undefined) add('quote_amount = ?', d.quoteAmount ?? null)
   if (d.expectedReturnAt !== undefined) add('expected_return_at = ?', d.expectedReturnAt ?? null)
   if (d.attachments !== undefined) add('attachments = ?', d.attachments === null ? null : JSON.stringify(d.attachments))
-  add('updated_at = ?', new Date().toISOString())
-
+  const updatedAt = new Date().toISOString()
+  add('updated_at = ?', updatedAt)
   db.prepare(`update repair_tickets set ${updates.join(', ')} where id = ?`).run(...params, id)
+  const ticket = db.prepare('select asset_id from repair_tickets where id = ?').get(id) as { asset_id: string } | undefined
+  if (ticket?.asset_id) publishRepairTicketChanged(id, ticket.asset_id, updatedAt)
   res.json({ ok: true })
 })
 
@@ -226,6 +229,7 @@ repairTicketsRouter.post('/:id/transition', requireAuth, requireManager, (req, r
     const nextAssetStatus = d.to === 'completed' ? (anyOtherOpen ? 'maintenance' : 'available') : 'maintenance'
     db.prepare('update assets set status = ?, updated_at = ? where id = ?').run(nextAssetStatus, now, current.asset_id)
     publishAssetStatusChanged(current.asset_id, nextAssetStatus, now)
+    publishRepairTicketChanged(id, current.asset_id, now)
   })()
 
   res.json({ ok: true })
@@ -250,6 +254,7 @@ repairTicketsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
       ticket.asset_id
     )
     publishAssetStatusChanged(ticket.asset_id, status, now)
+    publishRepairTicketChanged(id, ticket.asset_id, now)
   })()
 
   res.json({ ok: true })

@@ -2,12 +2,16 @@ import type { AnyAction } from '@reduxjs/toolkit'
 import { createListenerMiddleware } from '@reduxjs/toolkit'
 import { apiFetch } from '../services/apiClient'
 import { fetchAssetById } from './assetsSlice'
+import { fetchRepairTickets } from './repairTicketsSlice'
+import { fetchUsageLogs } from './usageLogsSlice'
 
 export const listenerMiddleware = createListenerMiddleware()
 
 let pending: any = null
 let eventSource: EventSource | null = null
 const pendingAssetRefresh = new Map<string, any>()
+let pendingRepairsRefresh: any = null
+let pendingUsageLogsRefresh: any = null
 
 const scheduleAssetRefresh = (api: any, assetId: string) => {
   const existing = pendingAssetRefresh.get(assetId)
@@ -17,6 +21,22 @@ const scheduleAssetRefresh = (api: any, assetId: string) => {
     api.dispatch(fetchAssetById({ id: assetId }))
   }, 150)
   pendingAssetRefresh.set(assetId, t)
+}
+
+const scheduleRepairsRefresh = (api: any) => {
+  if (pendingRepairsRefresh) clearTimeout(pendingRepairsRefresh)
+  pendingRepairsRefresh = setTimeout(() => {
+    pendingRepairsRefresh = null
+    api.dispatch(fetchRepairTickets({ force: true }))
+  }, 250)
+}
+
+const scheduleUsageLogsRefresh = (api: any) => {
+  if (pendingUsageLogsRefresh) clearTimeout(pendingUsageLogsRefresh)
+  pendingUsageLogsRefresh = setTimeout(() => {
+    pendingUsageLogsRefresh = null
+    api.dispatch(fetchUsageLogs({ force: true }))
+  }, 300)
 }
 
 const ensureEventStream = (api: any) => {
@@ -29,6 +49,10 @@ const ensureEventStream = (api: any) => {
     }
     for (const t of pendingAssetRefresh.values()) clearTimeout(t)
     pendingAssetRefresh.clear()
+    if (pendingRepairsRefresh) clearTimeout(pendingRepairsRefresh)
+    if (pendingUsageLogsRefresh) clearTimeout(pendingUsageLogsRefresh)
+    pendingRepairsRefresh = null
+    pendingUsageLogsRefresh = null
     return
   }
   if (eventSource) return
@@ -47,6 +71,27 @@ const ensureEventStream = (api: any) => {
     const assetId = typeof data?.assetId === 'string' ? data.assetId : ''
     if (!assetId) return
     scheduleAssetRefresh(api, assetId)
+  })
+
+  es.addEventListener('asset_updated', (evt: MessageEvent) => {
+    const data = (() => {
+      try {
+        return JSON.parse(String(evt.data || 'null'))
+      } catch {
+        return null
+      }
+    })() as any
+    const assetId = typeof data?.assetId === 'string' ? data.assetId : ''
+    if (!assetId) return
+    scheduleAssetRefresh(api, assetId)
+  })
+
+  es.addEventListener('repair_ticket_changed', () => {
+    scheduleRepairsRefresh(api)
+  })
+
+  es.addEventListener('usage_log_changed', () => {
+    scheduleUsageLogsRefresh(api)
   })
 
   es.addEventListener('ready', () => undefined)
