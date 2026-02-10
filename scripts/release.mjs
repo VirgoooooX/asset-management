@@ -182,7 +182,7 @@ async function main() {
   await waitForKey('确认已在 Trae 中完成提交后，请按回车键继续发布流程...');
 
   // 6. 创建 Tag 并推送
-  const tagName = `v${targetVersion}`
+  const tagName = `${targetVersion}`
   console.log(`正在创建标签: ${tagName}`)
   
   // 检查 tag 是否已存在，存在则删除（可选，但发布流程通常需要干净的 tag）
