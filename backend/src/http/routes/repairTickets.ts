@@ -24,11 +24,13 @@ const attachmentSchema = z.object({
 const createSchema = z.object({
   assetId: z.string().min(1),
   problemDesc: z.string().min(1),
+  startedAt: z.string().optional(),
   expectedReturnAt: z.string().optional()
 })
 
 const patchSchema = z.object({
   problemDesc: z.string().optional(),
+  startedAt: z.string().optional().nullable(),
   vendorName: z.string().optional().nullable(),
   quoteAmount: z.number().optional().nullable(),
   expectedReturnAt: z.string().optional().nullable(),
@@ -47,6 +49,7 @@ const mapRow = (r: any) => ({
   assetId: r.asset_id,
   status: r.status,
   problemDesc: r.problem_desc,
+  startedAt: r.started_at ?? undefined,
   vendorName: r.vendor_name ?? undefined,
   quoteAmount: typeof r.quote_amount === 'number' ? r.quote_amount : undefined,
   quoteAt: r.quote_at ?? undefined,
@@ -121,20 +124,22 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
 
   const id = randomToken(16)
   const now = new Date().toISOString()
-  const timeline = [{ at: now, to: 'quote-pending' as const }]
+  const startedAt = d.startedAt ?? now
+  const timeline = [{ at: startedAt, to: 'quote-pending' as const }]
 
   db.transaction(() => {
     db.prepare(
       [
         'insert into repair_tickets (',
-        'id, asset_id, status, problem_desc, vendor_name, quote_amount, quote_at, expected_return_at, completed_at, created_at, updated_at, timeline, attachments',
-        ') values (?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        'id, asset_id, status, problem_desc, started_at, vendor_name, quote_amount, quote_at, expected_return_at, completed_at, created_at, updated_at, timeline, attachments',
+        ') values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
       ].join(' ')
     ).run(
       id,
       d.assetId,
       'quote-pending',
       d.problemDesc,
+      startedAt,
       null,
       null,
       null,
@@ -170,6 +175,7 @@ repairTicketsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
   }
 
   if (d.problemDesc !== undefined) add('problem_desc = ?', d.problemDesc)
+  if (d.startedAt !== undefined) add('started_at = ?', d.startedAt ?? null)
   if (d.vendorName !== undefined) add('vendor_name = ?', d.vendorName ?? null)
   if (d.quoteAmount !== undefined) add('quote_amount = ?', d.quoteAmount ?? null)
   if (d.expectedReturnAt !== undefined) add('expected_return_at = ?', d.expectedReturnAt ?? null)

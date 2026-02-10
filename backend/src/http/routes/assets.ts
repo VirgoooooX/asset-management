@@ -40,10 +40,12 @@ const assetCreateSchema = z.object({
   photoUrls: z.array(z.string()).optional(),
   nameplateUrls: z.array(z.string()).optional(),
   attachments: z.array(attachmentSchema).optional(),
+  capabilities: z.any().optional(),
   calibrationDate: z.string().optional().nullable()
 })
 
 const assetPatchSchema = assetCreateSchema.partial().extend({
+  capabilities: z.any().optional().nullable(),
   calibrationDate: z.string().optional().nullable()
 })
 
@@ -64,6 +66,7 @@ const mapRowToAsset = (r: any) => ({
   photoUrls: parseJson<string[]>(r.photo_urls, undefined as any),
   nameplateUrls: parseJson<string[]>(r.nameplate_urls, undefined as any),
   attachments: parseJson<any[]>(r.attachments, undefined as any),
+  capabilities: parseJson<any>(r.capabilities, undefined as any),
   calibrationDate: r.calibration_date ?? undefined,
   createdAt: r.created_at,
   updatedAt: r.updated_at ?? undefined
@@ -97,8 +100,8 @@ assetsRouter.post('/', requireAuth, requireManager, (req, res) => {
   db.prepare(
     [
       'insert into assets (',
-      'id, type, name, status, category, asset_code, description, tags, location, serial_number, manufacturer, model, owner, photo_urls, nameplate_urls, attachments, calibration_date, created_at, updated_at',
-      ') values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+      'id, type, name, status, category, asset_code, description, tags, location, serial_number, manufacturer, model, owner, photo_urls, nameplate_urls, attachments, capabilities, calibration_date, created_at, updated_at',
+      ') values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     ].join(' ')
   ).run(
     id,
@@ -117,6 +120,7 @@ assetsRouter.post('/', requireAuth, requireManager, (req, res) => {
     d.photoUrls ? JSON.stringify(d.photoUrls) : null,
     d.nameplateUrls ? JSON.stringify(d.nameplateUrls) : null,
     d.attachments ? JSON.stringify(d.attachments) : null,
+    d.capabilities ? JSON.stringify(d.capabilities) : null,
     d.calibrationDate ?? null,
     now,
     now
@@ -161,6 +165,7 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
   if (d.photoUrls !== undefined) add('photo_urls = ?', d.photoUrls ? JSON.stringify(d.photoUrls) : null)
   if (d.nameplateUrls !== undefined) add('nameplate_urls = ?', d.nameplateUrls ? JSON.stringify(d.nameplateUrls) : null)
   if (d.attachments !== undefined) add('attachments = ?', d.attachments ? JSON.stringify(d.attachments) : null)
+  if (d.capabilities !== undefined) add('capabilities = ?', d.capabilities === null ? null : JSON.stringify(d.capabilities))
   if (d.calibrationDate !== undefined) add('calibration_date = ?', d.calibrationDate ?? null)
 
   const now = new Date().toISOString()

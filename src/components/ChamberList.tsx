@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   Box, 
+  Stack,
   Typography, 
   Table, 
   TableBody, 
@@ -62,8 +63,63 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
     return <Alert severity="error">{tr(`加载设备列表失败: ${error}`, `Failed to load assets: ${error}`)}</Alert>;
   }
 
+  const categorySummary = useMemo(() => {
+    const map = new Map<string, { total: number; available: number; inUse: number; maintenance: number }>()
+    chambers.forEach((a) => {
+      const key = a.category?.trim() || tr('未分类', 'Uncategorized')
+      const prev = map.get(key) ?? { total: 0, available: 0, inUse: 0, maintenance: 0 }
+      prev.total += 1
+      if (a.status === 'available') prev.available += 1
+      else if (a.status === 'in-use') prev.inUse += 1
+      else prev.maintenance += 1
+      map.set(key, prev)
+    })
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'zh-Hans-CN', { sensitivity: 'base' }))
+  }, [chambers, tr])
+
   return (
     <Box>
+      <AppCard title={tr('设备类型概览', 'Category overview')} sx={{ mb: 2 }}>
+        {categorySummary.length === 0 ? (
+          <Typography color="text.secondary">{tr('暂无数据', 'No data')}</Typography>
+        ) : (
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: 'repeat(1, minmax(0, 1fr))', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' },
+              gap: 1.25,
+            }}
+          >
+            {categorySummary.map(([category, c]) => (
+              <Box
+                key={category}
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  borderRadius: 2,
+                  p: 1.25,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1,
+                }}
+              >
+                <Stack direction="row" spacing={1} alignItems="baseline">
+                  <Typography sx={{ fontWeight: 950, minWidth: 0 }} noWrap>
+                    {category}
+                  </Typography>
+                  <Box sx={{ flex: 1 }} />
+                  <Typography sx={{ fontWeight: 950 }}>{c.total}</Typography>
+                </Stack>
+                <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                  <Chip size="small" label={tr(`可用 ${c.available}`, `Available ${c.available}`)} color="success" variant="outlined" />
+                  <Chip size="small" label={tr(`使用中 ${c.inUse}`, `In use ${c.inUse}`)} color="warning" variant="outlined" />
+                  <Chip size="small" label={tr(`维护 ${c.maintenance}`, `Maintenance ${c.maintenance}`)} color="error" variant="outlined" />
+                </Stack>
+              </Box>
+            ))}
+          </Box>
+        )}
+      </AppCard>
       <AppCard
         title={tr('设备列表', 'Asset list')}
         actions={

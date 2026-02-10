@@ -21,6 +21,24 @@ export interface AssetAttachment {
   uploadedAt: string
 }
 
+export interface AssetCapabilities {
+  tempMin?: number
+  tempMax?: number
+  humidityMin?: number
+  humidityMax?: number
+  rampRateCPerMin?: number
+  volumeLiters?: number
+  tempStability?: number
+  humidityStability?: number
+  notes?: string
+  customParams?: Array<{
+    id: string
+    name: string
+    value?: string
+    unit?: string
+  }>
+}
+
 export interface Asset {
   id: string
   type: AssetType
@@ -38,6 +56,7 @@ export interface Asset {
   photoUrls?: string[]
   nameplateUrls?: string[]
   attachments?: AssetAttachment[]
+  capabilities?: AssetCapabilities
   calibrationDate?: string
   createdAt: string
   updatedAt?: string
@@ -70,6 +89,13 @@ export interface Project {
   createdAt: string
 }
 
+export interface TestStage {
+  name?: string
+  durationMinutes: number
+  targetTemp?: number
+  targetHumidity?: number
+}
+
 export interface TestProject {
   id: string
   name: string
@@ -77,6 +103,9 @@ export interface TestProject {
   humidity: number
   duration: number
   projectId?: string
+  assetCategories?: string[]
+  procedure?: string
+  stages?: TestStage[]
   createdAt: string
 }
 
@@ -109,6 +138,7 @@ export interface RepairTicket {
   assetId: string
   status: RepairStatus
   problemDesc: string
+  startedAt?: string
   vendorName?: string
   quoteAmount?: number
   quoteAt?: string

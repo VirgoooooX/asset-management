@@ -6,6 +6,7 @@ import TimelinePage from './pages/TimelinePage';
 import ChambersPage from './pages/ChambersPage';
 import ProjectsPage from './pages/ProjectsPage';
 import TestProjectsPage from './pages/TestProjectsPage';
+import TestProjectDetailPage from './pages/TestProjectDetailPage'
 import UsageLogPage from './pages/UsagelogPage';
 import AlertsPage from './pages/AlertsPage'
 import SettingsPage from './pages/SettingsPage'
@@ -13,6 +14,7 @@ import RepairsPage from './pages/RepairsPage';
 import AssetCalibrationsPage from './pages/AssetCalibrationsPage';
 import RepairTicketDetailPage from './pages/RepairTicketDetailPage';
 import AssetDetailPage from './pages/AssetDetailPage';
+import AssetPerformancePage from './pages/AssetPerformancePage'
 import LoginPage from './pages/LoginPage'; // 新增
 import PrivateRoute from './components/PrivateRoute'; // 新增
 import { bootstrapAuth } from './store/authSlice'
@@ -21,6 +23,7 @@ import { useEffect } from 'react'; // 新增
 import { useAppDispatch, useAppSelector } from './store/hooks'
 import ProfilePage from './pages/ProfilePage'
 import AdminUsersPage from './pages/AdminUsersPage'
+import CapabilitiesSummaryPage from './pages/CapabilitiesSummaryPage'
 
 let didBootstrap = false
 
@@ -62,10 +65,13 @@ function App() {
             <Route path="/chambers" element={<ChambersPage />} />
             <Route path="/projects" element={<ProjectsPage />} />
             <Route path="/test-projects" element={<TestProjectsPage />} />
+            <Route path="/test-projects/:testProjectId" element={<TestProjectDetailPage />} />
             <Route path="/calibrations" element={<AssetCalibrationsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/capabilities" element={<CapabilitiesSummaryPage />} />
             <Route path="/assets/new" element={<AssetDetailPage mode="create" />} />
             <Route path="/assets/:assetId" element={<AssetDetailPage mode="view" />} />
+            <Route path="/assets/:assetId/performance" element={<AssetPerformancePage />} />
           </Route>
 
           <Route element={<PrivateRoute allowedRoles={['admin']} />}>

@@ -69,6 +69,7 @@ const RepairsPage: React.FC = () => {
 
   const [createAssetId, setCreateAssetId] = useState('')
   const [createProblemDesc, setCreateProblemDesc] = useState('')
+  const [createStartedAt, setCreateStartedAt] = useState<Date | null>(new Date())
   const [createExpectedReturnAt, setCreateExpectedReturnAt] = useState<Date | null>(null)
 
   useEffect(() => {
@@ -127,6 +128,7 @@ const RepairsPage: React.FC = () => {
   const openCreate = () => {
     setCreateAssetId('')
     setCreateProblemDesc('')
+    setCreateStartedAt(new Date())
     setCreateExpectedReturnAt(null)
     setCreateOpen(true)
   }
@@ -142,6 +144,7 @@ const RepairsPage: React.FC = () => {
       addRepairTicket({
         assetId: createAssetId,
         problemDesc: createProblemDesc.trim(),
+        startedAt: createStartedAt ? createStartedAt.toISOString() : undefined,
         expectedReturnAt: createExpectedReturnAt ? createExpectedReturnAt.toISOString() : undefined,
       })
     )
@@ -228,7 +231,7 @@ const RepairsPage: React.FC = () => {
           ) : (
             filteredTickets.map((t) => {
               const asset = assetById.get(t.assetId)
-              const days = calcDaysFrom(t.createdAt)
+              const days = calcDaysFrom(t.startedAt ?? t.createdAt)
               return (
                 <Box
                   key={t.id}
@@ -312,6 +315,12 @@ const RepairsPage: React.FC = () => {
                 size="small"
                 multiline
                 minRows={2}
+              />
+              <DateTimePicker
+                label={tr('工单开始时间', 'Ticket start time')}
+                value={createStartedAt}
+                onChange={(v) => setCreateStartedAt(v)}
+                slotProps={{ textField: { fullWidth: true, size: 'small' } }}
               />
               <DateTimePicker
                 label={tr('预计回归时间（可选）', 'Expected return time (optional)')}

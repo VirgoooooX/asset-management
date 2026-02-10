@@ -362,7 +362,10 @@ const DashboardPage: React.FC = () => {
     const map = new Map<string, Asset[]>()
     const sortLocale = language === 'en' ? 'en' : 'zh-Hans-CN'
     assets.forEach((asset) => {
-      const key = asset.category?.trim() || (asset.type === 'chamber' ? tr('环境箱', 'Chamber') : asset.type)
+      const key =
+        settings.dashboard.groupBy === 'location'
+          ? asset.location?.trim() || tr('未设置位置', 'Unassigned')
+          : asset.category?.trim() || (asset.type === 'chamber' ? tr('环境箱', 'Chamber') : asset.type)
       const list = map.get(key) ?? []
       list.push(asset)
       map.set(key, list)
@@ -378,7 +381,7 @@ const DashboardPage: React.FC = () => {
       )
     )
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], sortLocale))
-  }, [assets, language, tr])
+  }, [assets, language, settings.dashboard.groupBy, tr])
 
   return (
     <PageShell
@@ -718,8 +721,8 @@ const DashboardPage: React.FC = () => {
           </Box>
         ) : (
           <Box sx={{ px: 2.5, pb: 2.5 }}>
-            <Stack spacing={1.25}>
-              {assetsByCategory.map(([category, list]) => {
+            <Stack spacing={2}>
+              {assetsByCategory.map(([category, list], idx) => {
                 const statusCounts = list.reduce(
                   (acc, a) => {
                     if (a.status === 'available') acc.available += 1
@@ -731,34 +734,31 @@ const DashboardPage: React.FC = () => {
                 )
 
                 return (
-                  <Accordion key={category} defaultExpanded disableGutters elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Stack direction="row" spacing={1.25} alignItems="center" sx={{ width: '100%', pr: 1 }}>
-                        <Typography sx={{ fontWeight: 900 }}>{category}</Typography>
-                        <Chip size="small" label={tr(`共 ${list.length}`, `Total ${list.length}`)} variant="outlined" sx={{ fontWeight: 800 }} />
-                        <Box sx={{ flex: 1 }} />
-                        <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
-                          <Chip size="small" label={tr(`可用 ${statusCounts.available}`, `Available ${statusCounts.available}`)} color="success" variant="outlined" />
-                          <Chip size="small" label={tr(`使用中 ${statusCounts.inUse}`, `In use ${statusCounts.inUse}`)} color="warning" variant="outlined" />
-                          <Chip size="small" label={tr(`维护 ${statusCounts.maintenance}`, `Maintenance ${statusCounts.maintenance}`)} color="error" variant="outlined" />
-                        </Stack>
+                  <Box key={category}>
+                    <Stack direction="row" spacing={1.25} alignItems="center" flexWrap="wrap" sx={{ mb: 1 }}>
+                      <Typography sx={{ fontWeight: 950 }}>{category}</Typography>
+                      <Chip size="small" label={tr(`共 ${list.length}`, `Total ${list.length}`)} variant="outlined" sx={{ fontWeight: 800 }} />
+                      <Box sx={{ flex: 1 }} />
+                      <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
+                        <Chip size="small" label={tr(`可用 ${statusCounts.available}`, `Available ${statusCounts.available}`)} color="success" variant="outlined" />
+                        <Chip size="small" label={tr(`使用中 ${statusCounts.inUse}`, `In use ${statusCounts.inUse}`)} color="warning" variant="outlined" />
+                        <Chip size="small" label={tr(`维护 ${statusCounts.maintenance}`, `Maintenance ${statusCounts.maintenance}`)} color="error" variant="outlined" />
                       </Stack>
-                    </AccordionSummary>
-                    <AccordionDetails sx={{ pt: 0 }}>
-                      <Box
-                        sx={{
-                          display: 'grid',
-                          gridTemplateColumns: {
-                            xs: 'repeat(2, minmax(0, 1fr))',
-                            sm: 'repeat(3, minmax(0, 1fr))',
-                            md: 'repeat(4, minmax(0, 1fr))',
-                            lg: 'repeat(6, minmax(0, 1fr))',
-                            xl: 'repeat(8, minmax(0, 1fr))',
-                          },
-                          gap: 1.25,
-                        }}
-                      >
-                        {list.map((asset) => {
+                    </Stack>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: {
+                          xs: 'repeat(2, minmax(0, 1fr))',
+                          sm: 'repeat(3, minmax(0, 1fr))',
+                          md: 'repeat(4, minmax(0, 1fr))',
+                          lg: 'repeat(6, minmax(0, 1fr))',
+                          xl: 'repeat(8, minmax(0, 1fr))',
+                        },
+                        gap: 1.25,
+                      }}
+                    >
+                      {list.map((asset) => {
                           const color =
                             asset.status === 'available'
                               ? theme.palette.success.main
@@ -785,7 +785,7 @@ const DashboardPage: React.FC = () => {
                               ? repairTickets.find((t) => t.assetId === asset.id && t.status !== 'completed')
                               : undefined
                           const maintenanceDays = activeRepair
-                            ? differenceInDays(new Date(), new Date(activeRepair.createdAt))
+                            ? differenceInDays(new Date(), new Date(activeRepair.startedAt ?? activeRepair.createdAt))
                             : 0
                           const maintenanceStageLabel =
                             activeRepair?.status === 'quote-pending'
@@ -934,9 +934,9 @@ const DashboardPage: React.FC = () => {
                             </Box>
                           )
                         })}
-                      </Box>
-                    </AccordionDetails>
-                  </Accordion>
+                    </Box>
+                    {idx === assetsByCategory.length - 1 ? null : <Divider sx={{ mt: 2 }} />}
+                  </Box>
                 )
               })}
             </Stack>

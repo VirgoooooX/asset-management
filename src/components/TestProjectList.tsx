@@ -23,6 +23,7 @@ import { TestProject } from '../types';
 import { fetchTestProjects } from '../store/testProjectsSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { useI18n } from '../i18n'
+import { useNavigate } from 'react-router-dom'
 
 // 定义 Props 接口
 interface TestProjectListProps {
@@ -32,6 +33,7 @@ interface TestProjectListProps {
 
 const TestProjectList: React.FC<TestProjectListProps> = ({ onEdit, onDelete }) => {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const { 
     testProjects, 
     loading, 
@@ -107,7 +109,12 @@ const TestProjectList: React.FC<TestProjectListProps> = ({ onEdit, onDelete }) =
               </TableRow>
             ) : (
               testProjects.map((tp) => (
-                <TableRow key={tp.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                <TableRow
+                  key={tp.id}
+                  hover
+                  sx={{ '&:last-child td, &:last-child th': { border: 0 }, cursor: 'pointer' }}
+                  onClick={() => navigate(`/test-projects/${encodeURIComponent(tp.id)}`)}
+                >
                   <TableCell component="th" scope="row">
                     {tp.name}
                   </TableCell>
@@ -118,12 +125,26 @@ const TestProjectList: React.FC<TestProjectListProps> = ({ onEdit, onDelete }) =
                   <TableCell>{formatDate(tp.createdAt)}</TableCell>
                   <TableCell align="center">
                     <Tooltip title={tr('编辑', 'Edit')}>
-                      <IconButton onClick={() => onEdit(tp)} size="small" color="primary">
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onEdit(tp)
+                        }}
+                        size="small"
+                        color="primary"
+                      >
                         <EditIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
                     <Tooltip title={tr('删除', 'Delete')}>
-                      <IconButton onClick={() => onDelete(tp.id)} size="small" color="error">
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onDelete(tp.id)
+                        }}
+                        size="small"
+                        color="error"
+                      >
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>

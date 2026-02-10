@@ -1,5 +1,5 @@
 // src/components/UsageLogForm.tsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button,
   FormControl, InputLabel, Select, MenuItem, SelectChangeEvent, Box,
@@ -64,6 +64,20 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
   const [availableConfigs, setAvailableConfigs] = useState<ConfigType[]>([]);
   const [availableWaterfalls, setAvailableWaterfalls] = useState<string[]>([]);
 
+  const selectedChamberCategory = useMemo(() => {
+    const chamber = chambers.find((c) => c.id === selectedChamberId)
+    return chamber?.category?.trim() || ''
+  }, [chambers, selectedChamberId])
+
+  const filteredTestProjects = useMemo(() => {
+    if (!selectedChamberCategory) return testProjects
+    return testProjects.filter((tp) => {
+      const categories = tp.assetCategories || []
+      if (categories.length === 0) return true
+      return categories.includes(selectedChamberCategory)
+    })
+  }, [selectedChamberCategory, testProjects])
+
   // --- Data Fetching Effect ---
   useEffect(() => {
      if (open) {
@@ -125,6 +139,12 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
       setTempSelectedWaterfall('');
     }
   }, [tempSelectedProjectIdForCascading, projects]);
+
+  useEffect(() => {
+    if (!actualTestProjectId) return
+    const stillAllowed = filteredTestProjects.some((tp) => tp.id === actualTestProjectId)
+    if (!stillAllowed) setActualTestProjectId('')
+  }, [actualTestProjectId, filteredTestProjects])
 
   // --- Auto-calculate End Time ---
   useEffect(() => {
@@ -247,7 +267,7 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
             </FormControl>
 
             {/* 3. 测试项目名 */}
-            <FormControl fullWidth disabled={isLoadingInitialData || testProjects.length === 0}>
+            <FormControl fullWidth disabled={isLoadingInitialData || filteredTestProjects.length === 0}>
                <InputLabel id="test-project-name-label">{tr('测试项目名 (可选)', 'Test project (optional)')}</InputLabel>
                <Select
                    labelId="test-project-name-label"
@@ -256,10 +276,10 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
                    onChange={(e) => setActualTestProjectId(e.target.value)}
                >
                   <MenuItem value=""><em>{tr('无', 'None')}</em></MenuItem>
-                  {testProjects.map((tp) => (<MenuItem key={tp.id} value={tp.id}>{tp.name}</MenuItem>))}
+                  {filteredTestProjects.map((tp) => (<MenuItem key={tp.id} value={tp.id}>{tp.name}</MenuItem>))}
                </Select>
                {testProjectsError && <FormHelperText error>{tr(`加载测试项目失败: ${testProjectsError}`, `Failed to load test projects: ${testProjectsError}`)}</FormHelperText>}
-               {testProjects.length === 0 && !loadingAllTestProjects && <FormHelperText>{tr('暂无可用测试项目', 'No test projects')}</FormHelperText>}
+               {filteredTestProjects.length === 0 && !loadingAllTestProjects && <FormHelperText>{tr('暂无可用测试项目', 'No test projects')}</FormHelperText>}
             </FormControl>
 
             {/* 4. Config (复选, 辅助信息) */}

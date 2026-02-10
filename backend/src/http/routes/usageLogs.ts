@@ -11,6 +11,30 @@ export const usageLogsRouter = Router()
 
 const CLOCK_SKEW_ALLOW_MS = 2 * 60 * 1000
 
+const parseStringArray = (value: any): string[] => {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter((v) => typeof v === 'string')
+  } catch {
+    return []
+  }
+}
+
+const isTestProjectAllowedForChamber = (db: any, chamberId: string, testProjectId: string) => {
+  const chamber = db.prepare('select category from assets where id = ?').get(chamberId) as { category?: string } | undefined
+  const testProject = db.prepare('select asset_categories from test_projects where id = ?').get(testProjectId) as
+    | { asset_categories?: string | null }
+    | undefined
+  if (!testProject) return { ok: false, error: 'test_project_not_found' as const }
+  const allowedCategories = parseStringArray(testProject.asset_categories)
+  if (allowedCategories.length === 0) return { ok: true as const }
+  const chamberCategory = typeof chamber?.category === 'string' ? chamber.category.trim() : ''
+  if (!chamberCategory) return { ok: false, error: 'chamber_category_missing' as const }
+  return { ok: allowedCategories.includes(chamberCategory), error: 'test_project_not_allowed' as const }
+}
+
 const usageLogCreateSchema = z.object({
   chamberId: z.string().min(1),
   projectId: z.string().optional(),
@@ -101,6 +125,11 @@ usageLogsRouter.post('/', requireAuth, (req, res) => {
   const normalizedEndTime =
     d.status === 'in-progress' && d.endTime && Number.isFinite(startMs) && startMs - nowMs > CLOCK_SKEW_ALLOW_MS ? undefined : d.endTime
 
+  if (d.testProjectId) {
+    const allowed = isTestProjectAllowedForChamber(db, d.chamberId, d.testProjectId)
+    if (!allowed.ok) return res.status(400).json({ error: allowed.error })
+  }
+
   db.transaction(() => {
     db.prepare(
       [
@@ -135,18 +164,25 @@ usageLogsRouter.patch('/:id', requireAuth, (req, res) => {
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
   const db = getDb()
-  const existing = db.prepare('select id, chamber_id from usage_logs where id = ?').get(id) as
-    | { id: string; chamber_id: string }
+  const existing = db.prepare('select id, chamber_id, test_project_id from usage_logs where id = ?').get(id) as
+    | { id: string; chamber_id: string; test_project_id?: string | null }
     | undefined
   if (!existing) return res.status(404).json({ error: 'not_found' })
 
   const nextChamberId = d.chamberId ?? existing.chamber_id
   const prevChamberId = existing.chamber_id
+  const nextTestProjectId =
+    d.testProjectId !== undefined ? (d.testProjectId === null ? undefined : d.testProjectId) : existing.test_project_id ?? undefined
   const nowIso = new Date().toISOString()
   const nowMs = Date.parse(nowIso)
   const startMs = d.startTime ? Date.parse(d.startTime) : Number.NaN
   const shouldNormalizeInProgressStart =
     d.status === 'in-progress' && d.startTime && Number.isFinite(startMs) && startMs - nowMs > CLOCK_SKEW_ALLOW_MS
+
+  if (nextTestProjectId) {
+    const allowed = isTestProjectAllowedForChamber(db, nextChamberId, nextTestProjectId)
+    if (!allowed.ok) return res.status(400).json({ error: allowed.error })
+  }
 
   db.transaction(() => {
     const updates: string[] = []

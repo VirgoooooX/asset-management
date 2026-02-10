@@ -13,6 +13,7 @@ import {
   MenuItem,
   SelectChangeEvent,
   Box,
+  Chip,
   FormHelperText,
   CircularProgress,
   Alert,
@@ -21,6 +22,7 @@ import {
 import { TestProject, Project } from '../types'; // 导入 Project 类型
 import { addTestProject, updateTestProject } from '../store/testProjectsSlice';
 import { fetchProjects } from '../store/projectsSlice'; // 导入用于获取项目列表的 action
+import { fetchAssetsByType } from '../store/assetsSlice'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 
 interface TestProjectFormProps {
@@ -32,6 +34,7 @@ interface TestProjectFormProps {
 const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testProject }) => {
   const dispatch = useAppDispatch()
   const { projects, loading: loadingProjects, error: projectsError } = useAppSelector((state) => state.projects) // 获取项目列表用于关联
+  const { assets: chambers, loading: loadingChambers } = useAppSelector((state) => state.assets)
 
   // 表单字段状态
   const [name, setName] = useState('');
@@ -39,6 +42,7 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
   const [humidity, setHumidity] = useState<string>('');     // 用字符串处理输入，提交时转换
   const [duration, setDuration] = useState<string>('');     // 用字符串处理输入，提交时转换
   const [projectId, setProjectId] = useState<string>('');   // 关联的项目 ID (可选)
+  const [assetCategoriesInput, setAssetCategoriesInput] = useState<string>('') // 适用设备类型（逗号分隔，可选）
 
   // 错误状态
   const [errors, setErrors] = useState({
@@ -56,6 +60,12 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
     }
   }, [open, dispatch, projects.length, loadingProjects]);
 
+  useEffect(() => {
+    if (open && chambers.length === 0 && !loadingChambers) {
+      dispatch(fetchAssetsByType({ type: 'chamber' }))
+    }
+  }, [chambers.length, dispatch, loadingChambers, open])
+
   // 初始化/重置表单 Effect
   useEffect(() => {
     if (open) {
@@ -66,12 +76,14 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
         setHumidity(String(testProject.humidity));
         setDuration(String(testProject.duration));
         setProjectId(testProject.projectId || '');
+        setAssetCategoriesInput((testProject.assetCategories || []).join(', '));
       } else { // 新建模式
         setName('');
         setTemperature('');
         setHumidity('');
         setDuration('');
         setProjectId('');
+        setAssetCategoriesInput('');
       }
       setErrors({ name: '', temperature: '', humidity: '', duration: '' }); // 重置校验错误
     }
@@ -99,12 +111,21 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
     }
 
     // 准备提交的数据 (不包含 id 和 createdAt)
+    const assetCategories = Array.from(
+      new Set(
+        assetCategoriesInput
+          .split(/[,，]/g)
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+    )
     const testProjectData = {
       name: name.trim(),
       temperature: Number(temperature),
       humidity: Number(humidity),
       duration: Number(duration),
       projectId: projectId || undefined, // 如果为空字符串，则设为 undefined
+      assetCategories: assetCategories.length > 0 ? assetCategories : undefined,
     };
 
     try {
@@ -223,6 +244,45 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
               {loadingProjects && <FormHelperText>正在加载项目列表...</FormHelperText>}
                {projectsError && <FormHelperText error>无法加载项目列表</FormHelperText>}
             </FormControl>
+
+            <TextField
+              label="适用设备类型（可选）"
+              value={assetCategoriesInput}
+              onChange={(e) => setAssetCategoriesInput(e.target.value)}
+              fullWidth
+              helperText="多个类型用逗号分隔；留空表示所有设备都可用"
+              placeholder="例如：T/H Chamber, LH Chamber"
+            />
+
+            {chambers.length > 0 ? (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {Array.from(
+                  new Set(
+                    chambers
+                      .map((c) => c.category?.trim())
+                      .filter((v): v is string => Boolean(v))
+                  )
+                ).map((c) => (
+                  <Chip
+                    key={c}
+                    label={c}
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      const normalized = c.trim()
+                      if (!normalized) return
+                      const current = assetCategoriesInput
+                        .split(/[,，]/g)
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                      if (current.includes(normalized)) return
+                      const next = current.concat([normalized]).join(', ')
+                      setAssetCategoriesInput(next)
+                    }}
+                  />
+                ))}
+              </Box>
+            ) : null}
 
             {/* 显示提交错误 */}
             {formSubmitError && (

@@ -4,6 +4,7 @@ import { apiFetch } from '../services/apiClient'
 export type ThemeMode = 'light' | 'dark'
 export type DensityMode = 'comfortable' | 'compact'
 export type DashboardRangePreset = '7d' | '30d' | '90d'
+export type DashboardGroupBy = 'category' | 'location'
 export type Language = 'zh' | 'en'
 export type SidebarMode = 'auto' | 'lockedOpen' | 'lockedCollapsed'
 
@@ -20,6 +21,7 @@ export interface SettingsState {
   }
   dashboard: {
     rangePreset: DashboardRangePreset
+    groupBy: DashboardGroupBy
   }
   alerts: {
     calibrationDaysThreshold: number
@@ -43,6 +45,7 @@ const initialState: SettingsState = {
   },
   dashboard: {
     rangePreset: '30d',
+    groupBy: 'category',
   },
   alerts: {
     calibrationDaysThreshold: 30,
@@ -124,6 +127,10 @@ const settingsSlice = createSlice({
       state.dashboard.rangePreset = action.payload
       persist(state)
     },
+    setDashboardGroupBy(state, action: PayloadAction<DashboardGroupBy>) {
+      state.dashboard.groupBy = action.payload
+      persist(state)
+    },
     setCalibrationDaysThreshold(state, action: PayloadAction<number>) {
       state.alerts.calibrationDaysThreshold = Math.max(1, Math.floor(action.payload))
       persist(state)
@@ -188,6 +195,7 @@ export const {
   setPrimaryColor,
   setTimelineShiftStartMinutes,
   setDashboardRangePreset,
+  setDashboardGroupBy,
   setCalibrationDaysThreshold,
   setLongOccupancyHoursThreshold,
   setRefreshSeconds,

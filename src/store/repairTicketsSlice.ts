@@ -46,7 +46,7 @@ export const fetchRepairTickets = createAsyncThunk<
 
 export const addRepairTicket = createAsyncThunk<
   RepairTicket,
-  { assetId: string; problemDesc: string; expectedReturnAt?: string },
+  { assetId: string; problemDesc: string; startedAt?: string; expectedReturnAt?: string },
   { rejectValue: string }
 >('repairTickets/addRepairTicket', async (data, { rejectWithValue }) => {
   try {
@@ -61,7 +61,10 @@ export const addRepairTicket = createAsyncThunk<
 
 export const updateRepairTicket = createAsyncThunk<
   RepairTicket,
-  { id: string; changes: Partial<Pick<RepairTicket, 'problemDesc' | 'vendorName' | 'quoteAmount' | 'expectedReturnAt' | 'attachments'>> },
+  {
+    id: string
+    changes: Partial<Pick<RepairTicket, 'problemDesc' | 'startedAt' | 'vendorName' | 'quoteAmount' | 'expectedReturnAt' | 'attachments'>>
+  },
   { rejectValue: string }
 >('repairTickets/updateRepairTicket', async ({ id, changes }, { rejectWithValue }) => {
   try {

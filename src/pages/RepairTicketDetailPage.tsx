@@ -305,7 +305,7 @@ const RepairTicketDetailPage: React.FC = () => {
     }
   }, [canManage, pendingRemoveAttachment, ticket, tr])
 
-  const downtimeLabel = ticket?.createdAt ? formatDays(calcDaysFrom(ticket.createdAt)) : '-'
+  const downtimeLabel = ticket?.createdAt ? formatDays(calcDaysFrom(ticket.startedAt ?? ticket.createdAt)) : '-'
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={dateFnsLocale}>

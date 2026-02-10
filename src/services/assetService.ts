@@ -1,8 +1,9 @@
 import { Asset, AssetType } from '../types'
 import { apiFetch } from './apiClient'
 
-export type AssetUpdate = Partial<Omit<Omit<Asset, 'id' | 'type' | 'createdAt'>, 'calibrationDate'>> & {
+export type AssetUpdate = Partial<Omit<Omit<Asset, 'id' | 'type' | 'createdAt'>, 'calibrationDate' | 'capabilities'>> & {
   calibrationDate?: string | null
+  capabilities?: Asset['capabilities'] | null
 }
 
 export const getAssets = async (): Promise<Asset[]> => {

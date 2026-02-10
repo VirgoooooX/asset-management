@@ -4,6 +4,7 @@ import { requireAuth } from '../middlewares/requireAuth.js'
 import { requireManager } from '../middlewares/requireManager.js'
 import { getDb } from '../../db/db.js'
 import { randomToken } from '../../util/crypto.js'
+import { parseJson } from '../../util/json.js'
 
 export const testProjectsRouter = Router()
 
@@ -12,7 +13,10 @@ const testProjectCreateSchema = z.object({
   temperature: z.number(),
   humidity: z.number(),
   duration: z.number().int(),
-  projectId: z.string().optional()
+  projectId: z.string().optional(),
+  assetCategories: z.array(z.string()).optional(),
+  procedure: z.string().optional(),
+  stages: z.array(z.any()).optional()
 })
 
 const testProjectPatchSchema = testProjectCreateSchema.partial()
@@ -24,6 +28,9 @@ const mapRow = (r: any) => ({
   humidity: r.humidity,
   duration: r.duration,
   projectId: r.project_id ?? undefined,
+  assetCategories: parseJson<string[]>(r.asset_categories, undefined as any),
+  procedure: r.procedure ?? undefined,
+  stages: parseJson<any[]>(r.stages, undefined as any),
   createdAt: r.created_at
 })
 
@@ -48,8 +55,19 @@ testProjectsRouter.post('/', requireAuth, requireManager, (req, res) => {
   const id = randomToken(16)
   const now = new Date().toISOString()
   db.prepare(
-    'insert into test_projects (id, name, temperature, humidity, duration, project_id, created_at) values (?,?,?,?,?,?,?)'
-  ).run(id, d.name, d.temperature, d.humidity, d.duration, d.projectId ?? null, now)
+    'insert into test_projects (id, name, temperature, humidity, duration, project_id, asset_categories, procedure, stages, created_at) values (?,?,?,?,?,?,?,?,?,?)'
+  ).run(
+    id,
+    d.name,
+    d.temperature,
+    d.humidity,
+    d.duration,
+    d.projectId ?? null,
+    d.assetCategories ? JSON.stringify(d.assetCategories) : null,
+    d.procedure ?? null,
+    d.stages ? JSON.stringify(d.stages) : null,
+    now
+  )
   res.json({ id })
 })
 
@@ -74,6 +92,9 @@ testProjectsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
   if (d.humidity !== undefined) add('humidity = ?', d.humidity)
   if (d.duration !== undefined) add('duration = ?', d.duration)
   if (d.projectId !== undefined) add('project_id = ?', d.projectId ?? null)
+  if (d.assetCategories !== undefined) add('asset_categories = ?', d.assetCategories ? JSON.stringify(d.assetCategories) : null)
+  if (d.procedure !== undefined) add('procedure = ?', d.procedure ?? null)
+  if (d.stages !== undefined) add('stages = ?', d.stages ? JSON.stringify(d.stages) : null)
 
   if (!updates.length) return res.json({ ok: true })
   db.prepare(`update test_projects set ${updates.join(', ')} where id = ?`).run(...params, id)

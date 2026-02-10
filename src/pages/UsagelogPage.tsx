@@ -2,10 +2,27 @@
 import React, { useState, useCallback } from 'react';
 import {
   Box,
-  Typography,
   Button,
   Snackbar, // 用于显示操作结果
-  Alert
+  Alert,
+  Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  FormControlLabel,
+  FormHelperText,
+  FormLabel,
+  InputLabel,
+  MenuItem,
+  OutlinedInput,
+  Radio,
+  RadioGroup,
+  Select,
+  Stack,
+  Switch,
+  TextField,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
@@ -21,6 +38,8 @@ import PageShell from '../components/PageShell'
 import ConfirmDialog from '../components/ConfirmDialog'
 import TitleWithIcon from '../components/TitleWithIcon'
 import { useI18n } from '../i18n'
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
+import { DateTimePicker, LocalizationProvider } from '@mui/x-date-pickers'
 
 const UsageLogPage: React.FC = () => {
   const dispatch = useAppDispatch()
@@ -28,7 +47,7 @@ const UsageLogPage: React.FC = () => {
   const { assets: chambers, loading: loadingChambers } = useAppSelector((state) => state.assets)
   const { projects, loading: loadingProjects } = useAppSelector((state) => state.projects)
   const { testProjects, loading: loadingTestProjects } = useAppSelector((state) => state.testProjects)
-  const { tr, language } = useI18n()
+  const { tr, language, dateFnsLocale } = useI18n()
 
   // --- State Management ---
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -43,6 +62,17 @@ const UsageLogPage: React.FC = () => {
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
+
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
+  const [exportMode, setExportMode] = useState<'year' | 'month' | 'custom'>('month')
+  const now = new Date()
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  const [exportYear, setExportYear] = useState<number>(now.getFullYear())
+  const [exportMonth, setExportMonth] = useState<string>(defaultMonth)
+  const [exportCustomStart, setExportCustomStart] = useState<Date | null>(null)
+  const [exportCustomEnd, setExportCustomEnd] = useState<Date | null>(null)
+  const [exportAssetIds, setExportAssetIds] = useState<string[]>([])
+  const [exportIncludeInProgress, setExportIncludeInProgress] = useState(true)
 
   // --- Handlers ---
   const handleOpenForm = useCallback((logToEdit?: UsageLog) => {
@@ -109,7 +139,7 @@ const UsageLogPage: React.FC = () => {
     setSnackbarOpen(false);
   };
 
-  const handleExportAll = useCallback(() => {
+  const handleOpenExport = useCallback(() => {
     const anyLoading = loadingUsageLogs || loadingChambers || loadingProjects || loadingTestProjects
     if (anyLoading) {
       setSnackbarMessage(tr('数据加载中，稍后再试', 'Data is loading. Please try again later.'))
@@ -123,8 +153,90 @@ const UsageLogPage: React.FC = () => {
       setSnackbarOpen(true)
       return
     }
+    setExportDialogOpen(true)
+  }, [loadingChambers, loadingProjects, loadingTestProjects, loadingUsageLogs, tr, usageLogs.length])
+
+  const parseMs = (value: string | undefined) => {
+    if (!value) return Number.NaN
+    const ms = Date.parse(value)
+    return Number.isFinite(ms) ? ms : Number.NaN
+  }
+
+  const computeRange = () => {
+    if (exportMode === 'year') {
+      const start = new Date(exportYear, 0, 1, 0, 0, 0, 0)
+      const end = new Date(exportYear + 1, 0, 1, 0, 0, 0, 0)
+      return { start, end }
+    }
+    if (exportMode === 'month') {
+      const [yStr, mStr] = exportMonth.split('-')
+      const y = Number(yStr)
+      const m = Number(mStr)
+      if (!Number.isFinite(y) || !Number.isFinite(m) || m < 1 || m > 12) return null
+      const start = new Date(y, m - 1, 1, 0, 0, 0, 0)
+      const end = new Date(y, m, 1, 0, 0, 0, 0)
+      return { start, end }
+    }
+    if (!exportCustomStart || !exportCustomEnd) return null
+    return { start: exportCustomStart, end: exportCustomEnd }
+  }
+
+  const handleExport = useCallback(() => {
+    const anyLoading = loadingUsageLogs || loadingChambers || loadingProjects || loadingTestProjects
+    if (anyLoading) return
+    const range = computeRange()
+    if (!range) {
+      setSnackbarMessage(tr('请填写正确的导出时间范围', 'Please provide a valid time range.'))
+      setSnackbarSeverity('error')
+      setSnackbarOpen(true)
+      return
+    }
+    const startMs = range.start.getTime()
+    const endMs = range.end.getTime()
+    if (!(endMs > startMs)) {
+      setSnackbarMessage(tr('结束时间必须晚于开始时间', 'End time must be after start time.'))
+      setSnackbarSeverity('error')
+      setSnackbarOpen(true)
+      return
+    }
+
+    const selectedSet = new Set(exportAssetIds)
+    const nowMs = Date.now()
+    const filtered = usageLogs.filter((log) => {
+      if (selectedSet.size > 0 && !selectedSet.has(log.chamberId)) return false
+      const s = parseMs(log.startTime)
+      if (!Number.isFinite(s)) return false
+      const rawEnd = parseMs(log.endTime)
+      const e = Number.isFinite(rawEnd) ? rawEnd : exportIncludeInProgress ? nowMs : Number.NaN
+      if (!Number.isFinite(e)) return false
+      return s < endMs && e > startMs
+    })
+
+    if (filtered.length === 0) {
+      setSnackbarMessage(tr('该筛选条件下没有可导出的使用记录', 'No usage logs match the filters.'))
+      setSnackbarSeverity('error')
+      setSnackbarOpen(true)
+      return
+    }
+
     try {
-      exportUsageLogsToXlsx({ usageLogs, chambers, projects, testProjects, language })
+      const fileNamePrefix =
+        exportMode === 'year'
+          ? `usage-logs_${exportYear}`
+          : exportMode === 'month'
+            ? `usage-logs_${exportMonth}`
+            : 'usage-logs_custom'
+      exportUsageLogsToXlsx({
+        usageLogs: filtered,
+        chambers,
+        projects,
+        testProjects,
+        language,
+        fileNamePrefix,
+        range: { start: range.start.toISOString(), end: range.end.toISOString() },
+        includeInProgress: exportIncludeInProgress,
+      })
+      setExportDialogOpen(false)
       setSnackbarMessage(tr('已开始导出 Excel', 'Export started.'))
       setSnackbarSeverity('success')
       setSnackbarOpen(true)
@@ -133,15 +245,31 @@ const UsageLogPage: React.FC = () => {
       setSnackbarSeverity('error')
       setSnackbarOpen(true)
     }
-  }, [chambers, language, loadingChambers, loadingProjects, loadingTestProjects, loadingUsageLogs, projects, testProjects, tr, usageLogs])
+  }, [
+    chambers,
+    exportAssetIds,
+    exportIncludeInProgress,
+    exportMode,
+    exportMonth,
+    exportYear,
+    language,
+    loadingChambers,
+    loadingProjects,
+    loadingTestProjects,
+    loadingUsageLogs,
+    projects,
+    testProjects,
+    tr,
+    usageLogs,
+  ])
 
   return (
     <PageShell
       title={<TitleWithIcon icon={<ListAltIcon />}>{tr('使用记录', 'Usage logs')}</TitleWithIcon>}
       actions={
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-          <Button variant="outlined" startIcon={<FileDownloadIcon />} onClick={handleExportAll} sx={{ whiteSpace: 'nowrap' }}>
-            {tr('导出Excel', 'Export Excel')}
+          <Button variant="outlined" startIcon={<FileDownloadIcon />} onClick={handleOpenExport} sx={{ whiteSpace: 'nowrap' }}>
+            {tr('导出/统计', 'Export')}
           </Button>
           <Button variant="contained" color="primary" startIcon={<AddIcon />} onClick={() => handleOpenForm()} sx={{ whiteSpace: 'nowrap' }}>
             {tr('登记新使用记录', 'New usage log')}
@@ -181,6 +309,104 @@ const UsageLogPage: React.FC = () => {
           onClose={handleCloseConfirmDelete}
           onConfirm={handleConfirmDelete}
         />
+
+        <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={dateFnsLocale}>
+          <Dialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} fullWidth maxWidth="sm">
+            <DialogTitle>{tr('导出与统计', 'Export')}</DialogTitle>
+            <DialogContent dividers>
+              <Stack spacing={2} sx={{ pt: 1 }}>
+                <FormControl>
+                  <FormLabel>{tr('时间范围', 'Time range')}</FormLabel>
+                  <RadioGroup
+                    row
+                    value={exportMode}
+                    onChange={(e) => setExportMode(e.target.value as any)}
+                  >
+                    <FormControlLabel value="month" control={<Radio />} label={tr('按月', 'Month')} />
+                    <FormControlLabel value="year" control={<Radio />} label={tr('按年', 'Year')} />
+                    <FormControlLabel value="custom" control={<Radio />} label={tr('自定义', 'Custom')} />
+                  </RadioGroup>
+                </FormControl>
+
+                {exportMode === 'year' ? (
+                  <TextField
+                    type="number"
+                    label={tr('年份', 'Year')}
+                    value={exportYear}
+                    onChange={(e) => setExportYear(Number(e.target.value))}
+                    inputProps={{ min: 2000, max: 2100, step: 1 }}
+                    fullWidth
+                  />
+                ) : exportMode === 'month' ? (
+                  <TextField
+                    type="month"
+                    label={tr('月份', 'Month')}
+                    value={exportMonth}
+                    onChange={(e) => setExportMonth(e.target.value)}
+                    fullWidth
+                  />
+                ) : (
+                  <Stack spacing={2}>
+                    <DateTimePicker
+                      label={tr('开始时间', 'Start')}
+                      value={exportCustomStart}
+                      onChange={(v) => setExportCustomStart(v)}
+                      slotProps={{ textField: { fullWidth: true } }}
+                    />
+                    <DateTimePicker
+                      label={tr('结束时间', 'End')}
+                      value={exportCustomEnd}
+                      onChange={(v) => setExportCustomEnd(v)}
+                      slotProps={{ textField: { fullWidth: true } }}
+                    />
+                  </Stack>
+                )}
+
+                <FormControl fullWidth>
+                  <InputLabel id="export-assets-label">{tr('设备（可选）', 'Assets (optional)')}</InputLabel>
+                  <Select
+                    labelId="export-assets-label"
+                    multiple
+                    value={exportAssetIds}
+                    label={tr('设备（可选）', 'Assets (optional)')}
+                    onChange={(e) => setExportAssetIds(e.target.value as string[])}
+                    input={<OutlinedInput label={tr('设备（可选）', 'Assets (optional)')} />}
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((id) => (
+                          <Chip key={id} size="small" label={chambers.find((c) => c.id === id)?.name || id} />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {chambers.map((c) => (
+                      <MenuItem key={c.id} value={c.id}>
+                        {c.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  <FormHelperText>{tr('不选则导出全部设备', 'Leave empty to export all assets')}</FormHelperText>
+                </FormControl>
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={exportIncludeInProgress}
+                      onChange={(e) => setExportIncludeInProgress(e.target.checked)}
+                    />
+                  }
+                  label={tr('包含进行中的记录（按导出时刻截断）', 'Include in-progress logs (clipped to now)')}
+                />
+              </Stack>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setExportDialogOpen(false)}>{tr('取消', 'Cancel')}</Button>
+              <Button variant="contained" onClick={handleExport} disabled={loadingUsageLogs || loadingChambers || loadingProjects || loadingTestProjects}>
+                {tr('导出 Excel', 'Export Excel')}
+              </Button>
+            </DialogActions>
+          </Dialog>
+        </LocalizationProvider>
 
         {/* 操作结果提示 */}
         <Snackbar

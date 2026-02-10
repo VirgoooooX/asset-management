@@ -24,11 +24,13 @@ import AppCard from '../components/AppCard'
 import TitleWithIcon from '../components/TitleWithIcon'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import {
+  DashboardGroupBy,
   DashboardRangePreset,
   DensityMode,
   ThemeMode,
   setLanguage,
   setCalibrationDaysThreshold,
+  setDashboardGroupBy,
   setDashboardRangePreset,
   setDensity,
   setLongOccupancyHoursThreshold,
@@ -179,6 +181,20 @@ const SettingsPage: React.FC = () => {
                 <FormControlLabel value="7d" control={<Radio />} label={tr('7天', '7 days')} />
                 <FormControlLabel value="30d" control={<Radio />} label={tr('30天', '30 days')} />
                 <FormControlLabel value="90d" control={<Radio />} label={tr('90天', '90 days')} />
+              </RadioGroup>
+            </FormControl>
+
+            <Divider />
+
+            <FormControl disabled={!isAdmin}>
+              <FormLabel>{tr('Dashboard 分组方式', 'Dashboard grouping')}</FormLabel>
+              <RadioGroup
+                row
+                value={settings.dashboard.groupBy as DashboardGroupBy}
+                onChange={(e) => dispatch(setDashboardGroupBy(e.target.value as DashboardGroupBy))}
+              >
+                <FormControlLabel value="category" control={<Radio />} label={tr('按设备类型', 'By category')} />
+                <FormControlLabel value="location" control={<Radio />} label={tr('按设备位置（Lab）', 'By location')} />
               </RadioGroup>
             </FormControl>
 
