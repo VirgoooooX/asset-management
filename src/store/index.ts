@@ -7,6 +7,7 @@ import testProjectsReducer from './testProjectsSlice';
 import authReducer from './authSlice';
 import settingsReducer from './settingsSlice'
 import repairTicketsReducer from './repairTicketsSlice'
+import notificationsReducer from './notificationsSlice'
 import { listenerMiddleware } from './listeners'
 
 export const store = configureStore({
@@ -19,6 +20,7 @@ export const store = configureStore({
     auth: authReducer,
     settings: settingsReducer,
     repairTickets: repairTicketsReducer,
+    notifications: notificationsReducer,
   },
   middleware: (getDefaultMiddleware) => getDefaultMiddleware().prepend(listenerMiddleware.middleware),
 });

@@ -8,10 +8,40 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '0.1.8',
-  commit: '8208e72',
-  builtAt: '2026-02-10T12:14:53.912Z',
+  version: '0.1.9',
+  commit: 'bb5b35a',
+  builtAt: '2026-02-12T11:59:13.074Z',
   changelog: JSON.parse(`[
+  {
+    "hash": "bb5b35a",
+    "date": "2026-02-11",
+    "message": "Merge branch 'main' of https://github.com/VirgoooooX/asset-management"
+  },
+  {
+    "hash": "641cdf9",
+    "date": "2026-02-11",
+    "message": "docs: 将截图占位符替换为实际的Markdown图片链接"
+  },
+  {
+    "hash": "776c7a9",
+    "date": "2026-02-11",
+    "message": "Update README.md"
+  },
+  {
+    "hash": "5d1db11",
+    "date": "2026-02-11",
+    "message": "docs: 添加仪表盘和时间线预览图片"
+  },
+  {
+    "hash": "7197da8",
+    "date": "2026-02-10",
+    "message": "docs: 更新 README 并增强 Docker 工作流"
+  },
+  {
+    "hash": "3e6d068",
+    "date": "2026-02-10",
+    "message": "chore: 更新项目版本至0.1.8并调整发布配置"
+  },
   {
     "hash": "8208e72",
     "date": "2026-02-10",

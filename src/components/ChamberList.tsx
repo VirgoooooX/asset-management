@@ -23,6 +23,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import ConfirmDialog from './ConfirmDialog';
 import AppCard from './AppCard';
 import { useI18n } from '../i18n'
+import { useNavigate } from 'react-router-dom'
 
 interface ChamberListProps {
   onView: (id: string) => void
@@ -32,6 +33,7 @@ interface ChamberListProps {
 
 const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) => {
   const dispatch = useAppDispatch()
+  const navigate = useNavigate()
   const { assets: chambers, loading, error } = useAppSelector((state) => state.assets)
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const { tr } = useI18n()
@@ -50,6 +52,21 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
     setPendingDeleteId(null);
   };
 
+  const categorySummary = useMemo(() => {
+    const map = new Map<string, { label: string; total: number; available: number; inUse: number; maintenance: number }>()
+    chambers.forEach((a) => {
+      const raw = a.category?.trim() || ''
+      const label = raw ? raw : tr('未分类', 'Uncategorized')
+      const prev = map.get(raw) ?? { label, total: 0, available: 0, inUse: 0, maintenance: 0 }
+      prev.total += 1
+      if (a.status === 'available') prev.available += 1
+      else if (a.status === 'in-use') prev.inUse += 1
+      else prev.maintenance += 1
+      map.set(raw, prev)
+    })
+    return Array.from(map.entries()).sort((a, b) => a[1].label.localeCompare(b[1].label, 'zh-Hans-CN', { sensitivity: 'base' }))
+  }, [chambers, tr])
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3 }}>
@@ -62,20 +79,6 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
   if (error) {
     return <Alert severity="error">{tr(`加载设备列表失败: ${error}`, `Failed to load assets: ${error}`)}</Alert>;
   }
-
-  const categorySummary = useMemo(() => {
-    const map = new Map<string, { total: number; available: number; inUse: number; maintenance: number }>()
-    chambers.forEach((a) => {
-      const key = a.category?.trim() || tr('未分类', 'Uncategorized')
-      const prev = map.get(key) ?? { total: 0, available: 0, inUse: 0, maintenance: 0 }
-      prev.total += 1
-      if (a.status === 'available') prev.available += 1
-      else if (a.status === 'in-use') prev.inUse += 1
-      else prev.maintenance += 1
-      map.set(key, prev)
-    })
-    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'zh-Hans-CN', { sensitivity: 'base' }))
-  }, [chambers, tr])
 
   return (
     <Box>
@@ -90,9 +93,12 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
               gap: 1.25,
             }}
           >
-            {categorySummary.map(([category, c]) => (
+            {categorySummary.map(([categoryRaw, c]) => {
+              const utilization = c.total ? (c.inUse / c.total) * 100 : 0
+              const routeKey = categoryRaw ? encodeURIComponent(categoryRaw) : '__uncategorized__'
+              return (
               <Box
-                key={category}
+                key={categoryRaw || '__uncategorized__'}
                 sx={{
                   border: '1px solid',
                   borderColor: 'divider',
@@ -101,11 +107,14 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 1,
+                  cursor: 'pointer',
+                  '&:hover': { borderColor: 'text.secondary', bgcolor: 'action.hover' },
                 }}
+                onClick={() => navigate(`/assets/categories/${routeKey}`)}
               >
                 <Stack direction="row" spacing={1} alignItems="baseline">
                   <Typography sx={{ fontWeight: 950, minWidth: 0 }} noWrap>
-                    {category}
+                    {c.label}
                   </Typography>
                   <Box sx={{ flex: 1 }} />
                   <Typography sx={{ fontWeight: 950 }}>{c.total}</Typography>
@@ -115,8 +124,11 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
                   <Chip size="small" label={tr(`使用中 ${c.inUse}`, `In use ${c.inUse}`)} color="warning" variant="outlined" />
                   <Chip size="small" label={tr(`维护 ${c.maintenance}`, `Maintenance ${c.maintenance}`)} color="error" variant="outlined" />
                 </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 650 }}>
+                  {tr(`当前使用率 ${utilization.toFixed(1)}%`, `Utilization ${utilization.toFixed(1)}%`)}
+                </Typography>
               </Box>
-            ))}
+            )})}
           </Box>
         )}
       </AppCard>

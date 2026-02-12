@@ -6,6 +6,8 @@ import { requireAuth } from '../middlewares/requireAuth.js'
 import { requireManager } from '../middlewares/requireManager.js'
 import { recomputeChamberStatus } from '../../services/assetStatus.js'
 import { publishUsageLogChanged } from '../../services/events.js'
+import { writeAuditLog } from '../../services/auditLog.js'
+import { computeCostSnapshot } from '../../services/costSnapshot.js'
 
 export const usageLogsRouter = Router()
 
@@ -33,6 +35,64 @@ const isTestProjectAllowedForChamber = (db: any, chamberId: string, testProjectI
   const chamberCategory = typeof chamber?.category === 'string' ? chamber.category.trim() : ''
   if (!chamberCategory) return { ok: false, error: 'chamber_category_missing' as const }
   return { ok: allowedCategories.includes(chamberCategory), error: 'test_project_not_allowed' as const }
+}
+
+const ensureUsageLogCostSnapshot = (db: any, logId: string, source: 'at_completion' | 'recompute') => {
+  const row = db
+    .prepare(
+      'select id, chamber_id, start_time, end_time, status, hourly_rate_cents_snapshot, billable_hours_snapshot, cost_cents_snapshot from usage_logs where id = ?'
+    )
+    .get(logId) as any | undefined
+  if (!row) return { updated: false as const }
+  if (row.status !== 'completed') return { updated: false as const }
+  if (!row.end_time) return { updated: false as const }
+
+  const assetRateRow = db
+    .prepare(
+      `
+      select
+        coalesce(r.hourly_rate_cents, a.hourly_rate_cents, 0) as rate_cents
+      from assets a
+      left join asset_category_rates r on r.category = (case when a.category is null or trim(a.category) = '' then '' else a.category end)
+      where a.id = ?
+      `
+    )
+    .get(row.chamber_id) as { rate_cents?: number } | undefined
+  const hourlyRateCents = typeof assetRateRow?.rate_cents === 'number' ? assetRateRow.rate_cents : 0
+  const snapshot = computeCostSnapshot({ startIso: row.start_time, endIso: row.end_time, hourlyRateCents })
+  if (!snapshot) return { updated: false as const }
+
+  const next = {
+    hourlyRateCentsSnapshot: hourlyRateCents,
+    billableHoursSnapshot: snapshot.billableHours,
+    costCentsSnapshot: snapshot.costCents,
+  }
+
+  const prev = {
+    hourlyRateCentsSnapshot: typeof row.hourly_rate_cents_snapshot === 'number' ? row.hourly_rate_cents_snapshot : null,
+    billableHoursSnapshot: typeof row.billable_hours_snapshot === 'number' ? row.billable_hours_snapshot : null,
+    costCentsSnapshot: typeof row.cost_cents_snapshot === 'number' ? row.cost_cents_snapshot : null,
+  }
+
+  const changed =
+    prev.hourlyRateCentsSnapshot !== next.hourlyRateCentsSnapshot ||
+    prev.billableHoursSnapshot !== next.billableHoursSnapshot ||
+    prev.costCentsSnapshot !== next.costCentsSnapshot
+
+  if (!changed) return { updated: false as const }
+
+  const now = new Date().toISOString()
+  db.prepare(
+    'update usage_logs set hourly_rate_cents_snapshot = ?, billable_hours_snapshot = ?, cost_cents_snapshot = ?, snapshot_at = ?, snapshot_source = ? where id = ?'
+  ).run(next.hourlyRateCentsSnapshot, next.billableHoursSnapshot, next.costCentsSnapshot, now, source, logId)
+
+  return {
+    updated: true as const,
+    prev,
+    next,
+    snapshotAt: now,
+    snapshotSource: source,
+  }
 }
 
 const usageLogCreateSchema = z.object({
@@ -82,6 +142,11 @@ usageLogsRouter.get('/', requireAuth, (req, res) => {
     notes: r.notes ?? undefined,
     selectedConfigIds: r.selected_config_ids ? (JSON.parse(r.selected_config_ids) as string[]) : [],
     selectedWaterfall: r.selected_waterfall ?? undefined,
+    hourlyRateCentsSnapshot: typeof r.hourly_rate_cents_snapshot === 'number' ? r.hourly_rate_cents_snapshot : undefined,
+    billableHoursSnapshot: typeof r.billable_hours_snapshot === 'number' ? r.billable_hours_snapshot : undefined,
+    costCentsSnapshot: typeof r.cost_cents_snapshot === 'number' ? r.cost_cents_snapshot : undefined,
+    snapshotAt: r.snapshot_at ?? undefined,
+    snapshotSource: r.snapshot_source ?? undefined,
     createdAt: r.created_at
   }))
   res.json({ items: result })
@@ -105,6 +170,11 @@ usageLogsRouter.get('/:id', requireAuth, (req, res) => {
       notes: r.notes ?? undefined,
       selectedConfigIds: r.selected_config_ids ? (JSON.parse(r.selected_config_ids) as string[]) : [],
       selectedWaterfall: r.selected_waterfall ?? undefined,
+      hourlyRateCentsSnapshot: typeof r.hourly_rate_cents_snapshot === 'number' ? r.hourly_rate_cents_snapshot : undefined,
+      billableHoursSnapshot: typeof r.billable_hours_snapshot === 'number' ? r.billable_hours_snapshot : undefined,
+      costCentsSnapshot: typeof r.cost_cents_snapshot === 'number' ? r.cost_cents_snapshot : undefined,
+      snapshotAt: r.snapshot_at ?? undefined,
+      snapshotSource: r.snapshot_source ?? undefined,
       createdAt: r.created_at
     }
   })
@@ -155,6 +225,44 @@ usageLogsRouter.post('/', requireAuth, (req, res) => {
   })()
   publishUsageLogChanged(id, d.chamberId, createdAt)
 
+  writeAuditLog(db, {
+    actor: req.user!,
+    action: 'usage_log.create',
+    entityType: 'usage_log',
+    entityId: id,
+    ip: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+    requestId: req.requestId,
+    after: {
+      id,
+      chamberId: d.chamberId,
+      projectId: d.projectId ?? null,
+      testProjectId: d.testProjectId ?? null,
+      startTime: normalizedStartTime,
+      endTime: normalizedEndTime ?? null,
+      user: d.user,
+      status: d.status,
+      notes: d.notes ?? null,
+    },
+  })
+
+  if (d.status === 'completed' && normalizedEndTime) {
+    const snap = ensureUsageLogCostSnapshot(db, id, 'at_completion')
+    if (snap.updated) {
+      writeAuditLog(db, {
+        actor: req.user!,
+        action: 'usage_log.snapshot_written',
+        entityType: 'usage_log',
+        entityId: id,
+        ip: req.ip,
+        userAgent: req.get('user-agent') ?? undefined,
+        requestId: req.requestId,
+        before: snap.prev,
+        after: { ...snap.next, snapshotAt: snap.snapshotAt, snapshotSource: snap.snapshotSource },
+      })
+    }
+  }
+
   res.json({ id })
 })
 
@@ -168,6 +276,8 @@ usageLogsRouter.patch('/:id', requireAuth, (req, res) => {
     | { id: string; chamber_id: string; test_project_id?: string | null }
     | undefined
   if (!existing) return res.status(404).json({ error: 'not_found' })
+
+  const before = db.prepare('select * from usage_logs where id = ?').get(id) as any | undefined
 
   const nextChamberId = d.chamberId ?? existing.chamber_id
   const prevChamberId = existing.chamber_id
@@ -211,6 +321,60 @@ usageLogsRouter.patch('/:id', requireAuth, (req, res) => {
   })()
   publishUsageLogChanged(id, nextChamberId, nowIso)
 
+  const after = db.prepare('select * from usage_logs where id = ?').get(id) as any | undefined
+  writeAuditLog(db, {
+    actor: req.user!,
+    action: 'usage_log.update',
+    entityType: 'usage_log',
+    entityId: id,
+    ip: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+    requestId: req.requestId,
+    before: before
+      ? {
+          chamberId: before.chamber_id,
+          projectId: before.project_id ?? null,
+          testProjectId: before.test_project_id ?? null,
+          startTime: before.start_time,
+          endTime: before.end_time ?? null,
+          user: before.user,
+          status: before.status,
+          notes: before.notes ?? null,
+        }
+      : null,
+    after: after
+      ? {
+          chamberId: after.chamber_id,
+          projectId: after.project_id ?? null,
+          testProjectId: after.test_project_id ?? null,
+          startTime: after.start_time,
+          endTime: after.end_time ?? null,
+          user: after.user,
+          status: after.status,
+          notes: after.notes ?? null,
+        }
+      : null,
+  })
+
+  const shouldConsiderSnapshot =
+    d.status !== undefined || d.endTime !== undefined || d.startTime !== undefined || d.chamberId !== undefined
+  if (shouldConsiderSnapshot) {
+    const snap = ensureUsageLogCostSnapshot(db, id, 'recompute')
+    if (snap.updated) {
+      writeAuditLog(db, {
+        actor: req.user!,
+        action: 'usage_log.snapshot_written',
+        entityType: 'usage_log',
+        entityId: id,
+        ip: req.ip,
+        userAgent: req.get('user-agent') ?? undefined,
+        requestId: req.requestId,
+        before: snap.prev,
+        after: { ...snap.next, snapshotAt: snap.snapshotAt, snapshotSource: snap.snapshotSource },
+      })
+    }
+  }
+
   res.json({ ok: true })
 })
 
@@ -222,12 +386,36 @@ usageLogsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
     | undefined
   if (!existing) return res.json({ ok: true })
 
+  const before = db.prepare('select * from usage_logs where id = ?').get(id) as any | undefined
+
   const nowIso = new Date().toISOString()
   db.transaction(() => {
     db.prepare('delete from usage_logs where id = ?').run(id)
     recomputeChamberStatus(db, existing.chamber_id)
   })()
   publishUsageLogChanged(id, existing.chamber_id, nowIso)
+
+  writeAuditLog(db, {
+    actor: req.user!,
+    action: 'usage_log.delete',
+    entityType: 'usage_log',
+    entityId: id,
+    ip: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+    requestId: req.requestId,
+    before: before
+      ? {
+          chamberId: before.chamber_id,
+          projectId: before.project_id ?? null,
+          testProjectId: before.test_project_id ?? null,
+          startTime: before.start_time,
+          endTime: before.end_time ?? null,
+          user: before.user,
+          status: before.status,
+          notes: before.notes ?? null,
+        }
+      : null,
+  })
 
   res.json({ ok: true })
 })

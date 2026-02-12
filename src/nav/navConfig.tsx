@@ -9,6 +9,7 @@ import ScienceIcon from '@mui/icons-material/Science'
 import SettingsIcon from '@mui/icons-material/Settings'
 import BuildCircleIcon from '@mui/icons-material/BuildCircle'
 import FactCheckIcon from '@mui/icons-material/FactCheck'
+import AssessmentIcon from '@mui/icons-material/Assessment'
 import PersonIcon from '@mui/icons-material/Person'
 import PeopleIcon from '@mui/icons-material/People'
 import type { SvgIconProps } from '@mui/material'
@@ -132,6 +133,16 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
     order: 20,
   },
   {
+    id: 'projectCost',
+    section: 'resources',
+    label: tr('项目成本', 'Project cost'),
+    description: tr('按项目统计设备使用费用', 'Project cost by asset usage'),
+    path: '/reports/project-cost',
+    roles: ['admin', 'manager'],
+    icon: <AssessmentIcon />,
+    order: 25,
+  },
+  {
     id: 'testProjects',
     section: 'resources',
     label: tr('测试项目', 'Test Item'),
@@ -150,6 +161,16 @@ export const buildNavItems = (tr: Tr): NavItem[] => [
     roles: ['admin'],
     icon: <PeopleIcon />,
     order: 5,
+  },
+  {
+    id: 'auditLogs',
+    section: 'system',
+    label: tr('操作日志', 'Audit logs'),
+    description: tr('关键操作审计与追踪', 'Audit trail for key actions'),
+    path: '/admin/audit-logs',
+    roles: ['admin'],
+    icon: <ListAltIcon />,
+    order: 6,
   },
   {
     id: 'settings',

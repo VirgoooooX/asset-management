@@ -752,6 +752,25 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
           <Grid item xs={12} lg={5}>
             <Stack spacing={2}>
               <AppCard
+                title={tr('成本配置', 'Cost')}
+              >
+                <Stack spacing={1.25}>
+                  <InfoRow
+                    label={tr('计费口径', 'Billing rule')}
+                    value={<Typography sx={{ fontWeight: 850 }}>{tr('按小时计费（向上取整）', 'Hourly billing (ceil)')}</Typography>}
+                  />
+                  <InfoRow
+                    label={tr('小时费率', 'Hourly rate')}
+                    value={<Typography sx={{ fontWeight: 850 }}>{tr('按设备类型统一配置', 'Configured by category')}</Typography>}
+                  />
+                  <InfoRow
+                    label={tr('设备类型', 'Category')}
+                    value={<Typography sx={{ fontWeight: 850 }}>{asset?.category || tr('未分类', 'Uncategorized')}</Typography>}
+                  />
+                </Stack>
+              </AppCard>
+
+              <AppCard
                 title={<TitleWithIcon icon={<PhotoIcon />}>{tr('设备照片', 'Photos')}</TitleWithIcon>}
                 actions={
                   isAdmin && mode === 'view' && assetId ? (

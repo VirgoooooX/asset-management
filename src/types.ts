@@ -44,6 +44,7 @@ export interface Asset {
   type: AssetType
   name: string
   status: AssetStatus
+  hourlyRateCents?: number
   category?: string
   assetCode?: string
   description?: string
@@ -121,6 +122,11 @@ export interface UsageLog {
   notes?: string
   selectedConfigIds?: string[]
   selectedWaterfall?: string
+  hourlyRateCentsSnapshot?: number
+  billableHoursSnapshot?: number
+  costCentsSnapshot?: number
+  snapshotAt?: string
+  snapshotSource?: string
   createdAt: string
 }
 

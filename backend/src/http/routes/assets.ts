@@ -8,6 +8,7 @@ import { parseJson } from '../../util/json.js'
 import { syncAssetFolderToPreferred } from '../../services/fileFolders.js'
 import { slugifyCategory } from '../../util/slug.js'
 import { publishAssetStatusChanged, publishAssetUpdated } from '../../services/events.js'
+import { writeAuditLog } from '../../services/auditLog.js'
 
 export const assetsRouter = Router()
 
@@ -28,6 +29,7 @@ const assetCreateSchema = z.object({
   type: assetTypeSchema,
   name: z.string().min(1),
   status: assetStatusSchema,
+  hourlyRateCents: z.number().int().min(0).optional(),
   category: z.string().optional(),
   assetCode: z.string().optional(),
   description: z.string().optional(),
@@ -54,6 +56,7 @@ const mapRowToAsset = (r: any) => ({
   type: r.type,
   name: r.name,
   status: r.status,
+  hourlyRateCents: typeof r.hourly_rate_cents === 'number' ? r.hourly_rate_cents : 0,
   category: r.category ?? undefined,
   assetCode: r.asset_code ?? undefined,
   description: r.description ?? undefined,
@@ -100,14 +103,15 @@ assetsRouter.post('/', requireAuth, requireManager, (req, res) => {
   db.prepare(
     [
       'insert into assets (',
-      'id, type, name, status, category, asset_code, description, tags, location, serial_number, manufacturer, model, owner, photo_urls, nameplate_urls, attachments, capabilities, calibration_date, created_at, updated_at',
-      ') values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+      'id, type, name, status, hourly_rate_cents, category, asset_code, description, tags, location, serial_number, manufacturer, model, owner, photo_urls, nameplate_urls, attachments, capabilities, calibration_date, created_at, updated_at',
+      ') values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     ].join(' ')
   ).run(
     id,
     d.type,
     d.name,
     d.status,
+    d.hourlyRateCents ?? 0,
     d.category ?? null,
     d.assetCode ?? null,
     d.description ?? null,
@@ -126,6 +130,25 @@ assetsRouter.post('/', requireAuth, requireManager, (req, res) => {
     now
   )
 
+  writeAuditLog(db, {
+    actor: req.user!,
+    action: 'asset.create',
+    entityType: 'asset',
+    entityId: id,
+    ip: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+    requestId: req.requestId,
+    after: {
+      id,
+      type: d.type,
+      name: d.name,
+      status: d.status,
+      category: d.category ?? null,
+      hourlyRateCents: d.hourlyRateCents ?? 0,
+      calibrationDate: d.calibrationDate ?? null,
+    },
+  })
+
   res.json({ id })
 })
 
@@ -135,8 +158,8 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
   const db = getDb()
-  const before = db.prepare('select category, status from assets where id = ?').get(id) as
-    | { category?: string; status?: string }
+  const before = db.prepare('select name, category, status, hourly_rate_cents, calibration_date from assets where id = ?').get(id) as
+    | { name?: string; category?: string; status?: string; hourly_rate_cents?: number; calibration_date?: string | null }
     | undefined
   if (!before) return res.status(404).json({ error: 'not_found' })
   const beforeCategory = typeof before?.category === 'string' ? before.category : ''
@@ -153,6 +176,7 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
   if (d.type !== undefined) add('type = ?', d.type)
   if (d.name !== undefined) add('name = ?', d.name)
   if (d.status !== undefined) add('status = ?', d.status)
+  if (d.hourlyRateCents !== undefined) add('hourly_rate_cents = ?', d.hourlyRateCents)
   if (d.category !== undefined) add('category = ?', d.category ?? null)
   if (d.assetCode !== undefined) add('asset_code = ?', d.assetCode ?? null)
   if (d.description !== undefined) add('description = ?', d.description ?? null)
@@ -172,6 +196,45 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
   add('updated_at = ?', now)
 
   db.prepare(`update assets set ${updates.join(', ')} where id = ?`).run(...params, id)
+
+  const shouldAudit =
+    d.name !== undefined ||
+    d.status !== undefined ||
+    d.category !== undefined ||
+    d.hourlyRateCents !== undefined ||
+    d.calibrationDate !== undefined
+
+  if (shouldAudit) {
+    const after = db.prepare('select name, category, status, hourly_rate_cents, calibration_date from assets where id = ?').get(id) as
+      | { name?: string; category?: string; status?: string; hourly_rate_cents?: number; calibration_date?: string | null }
+      | undefined
+    writeAuditLog(db, {
+      actor: req.user!,
+      action: 'asset.update',
+      entityType: 'asset',
+      entityId: id,
+      ip: req.ip,
+      userAgent: req.get('user-agent') ?? undefined,
+      requestId: req.requestId,
+      before: {
+        name: before?.name ?? null,
+        category: before?.category ?? null,
+        status: before?.status ?? null,
+        hourlyRateCents: typeof before?.hourly_rate_cents === 'number' ? before.hourly_rate_cents : 0,
+        calibrationDate: before?.calibration_date ?? null,
+      },
+      after: after
+        ? {
+            name: after.name ?? null,
+            category: after.category ?? null,
+            status: after.status ?? null,
+            hourlyRateCents: typeof after.hourly_rate_cents === 'number' ? after.hourly_rate_cents : 0,
+            calibrationDate: after.calibration_date ?? null,
+          }
+        : null,
+    })
+  }
+
   if (d.status !== undefined && beforeStatus && d.status !== beforeStatus) {
     publishAssetStatusChanged(id, d.status, now)
   }
@@ -185,6 +248,27 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
 assetsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
   const id = req.params.id
   const db = getDb()
+  const before = db.prepare('select name, category, status, hourly_rate_cents, calibration_date from assets where id = ?').get(id) as
+    | { name?: string; category?: string; status?: string; hourly_rate_cents?: number; calibration_date?: string | null }
+    | undefined
   db.prepare('delete from assets where id = ?').run(id)
+  if (before) {
+    writeAuditLog(db, {
+      actor: req.user!,
+      action: 'asset.delete',
+      entityType: 'asset',
+      entityId: id,
+      ip: req.ip,
+      userAgent: req.get('user-agent') ?? undefined,
+      requestId: req.requestId,
+      before: {
+        name: before.name ?? null,
+        category: before.category ?? null,
+        status: before.status ?? null,
+        hourlyRateCents: typeof before.hourly_rate_cents === 'number' ? before.hourly_rate_cents : 0,
+        calibrationDate: before.calibration_date ?? null,
+      },
+    })
+  }
   res.json({ ok: true })
 })

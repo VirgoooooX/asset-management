@@ -1,7 +1,7 @@
 {
   "name": "chamber-tracker",
   "private": true,
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "scripts": {
     "dev": "vite --port 3000",
@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx",
     "test": "vitest run",
+    "smoke": "node scripts/smoke.mjs",
     "release": "node scripts/release.mjs",
     "release:dry": "node scripts/release.mjs --release-dry-run"
   },
@@ -21,6 +22,7 @@
     "@mui/x-date-pickers": "^6.20.2",
     "@reduxjs/toolkit": "^2.2.6",
     "date-fns": "^2.30.0",
+    "echarts": "^5.5.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-redux": "^9.1.2",

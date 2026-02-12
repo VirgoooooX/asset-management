@@ -1,5 +1,5 @@
 // src/components/Layout.tsx
-import React, { ReactNode, useMemo } from 'react';
+import React, { ReactNode, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   CssBaseline,
@@ -9,6 +9,7 @@ import {
 
 import { signOutUser } from '../store/authSlice'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { hydrateNotifications } from '../store/notificationsSlice'
 import { buildNavItems, buildNavSections } from '../nav/navConfig'
 import { useI18n } from '../i18n'
 import { buildInfo } from '../buildInfo'
@@ -23,6 +24,13 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const dispatch = useAppDispatch()
   const { isAuthenticated, user } = useAppSelector((state) => state.auth)
   const { tr } = useI18n()
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const id = user?.id
+    if (!id) return
+    dispatch(hydrateNotifications({ userId: id }))
+  }, [dispatch, isAuthenticated, user?.id])
 
   const handleLogout = () => { // 新增
     dispatch(signOutUser());

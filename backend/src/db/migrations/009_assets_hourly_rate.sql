@@ -1,0 +1,3 @@
+ALTER TABLE assets
+ADD COLUMN hourly_rate_cents INTEGER NOT NULL DEFAULT 0;
+

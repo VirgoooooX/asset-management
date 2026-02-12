@@ -1,8 +1,12 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react'
 import {
   Box,
+  Badge,
+  Button,
+  Chip,
   Divider,
   IconButton,
+  Popover,
   Paper,
   Typography,
   List,
@@ -14,11 +18,14 @@ import { alpha, useTheme } from '@mui/material/styles'
 import LogoutIcon from '@mui/icons-material/ExitToApp'
 import MenuIcon from '@mui/icons-material/Menu'
 import MenuOpenIcon from '@mui/icons-material/MenuOpen'
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import type { NavItem, NavRole, NavSection } from '../nav/navConfig'
 import { useLocation } from 'react-router-dom'
 import { useI18n } from '../i18n'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { setSidebarMode } from '../store/settingsSlice'
+import { selectDerivedAlerts } from '../store/alertsSelectors'
+import { markAllRead, markRead } from '../store/notificationsSlice'
 
 type Props = {
   isAuthenticated: boolean
@@ -50,9 +57,12 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
   const dispatch = useAppDispatch()
   const sidebarMode = useAppSelector((s) => s.settings.nav?.sidebarMode) ?? 'auto'
+  const settings = useAppSelector((s) => s.settings)
+  const readIds = useAppSelector((s) => s.notifications.readIds)
 
   const [mobileOpen, setMobileOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [notifAnchorEl, setNotifAnchorEl] = useState<HTMLElement | null>(null)
   const effectiveExpanded = isMobile ? true : (sidebarMode === 'lockedOpen' ? true : sidebarMode === 'lockedCollapsed' ? false : expanded)
   const hasFocusWithinRef = useRef(false)
   const isPointerInsideRef = useRef(false)
@@ -78,6 +88,15 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
     map.forEach((list, key) => map.set(key, list.slice().sort((a, b) => a.order - b.order)))
     return map
   }, [visibleItems])
+
+  const nowMs = useMemo(
+    () => Date.now(),
+    [settings.alerts.calibrationDaysThreshold, settings.alerts.longOccupancyHoursThreshold]
+  )
+
+  const alerts = useAppSelector((state) => selectDerivedAlerts(state, nowMs))
+  const unreadCount = useMemo(() => alerts.filter((a) => !readIds[a.id]).length, [alerts, readIds])
+  const latestAlerts = useMemo(() => alerts.slice(0, 20), [alerts])
 
   const visibleSections = useMemo(() => {
     return sectionsSorted.filter((s) => (itemsBySection.get(s.id) ?? []).length > 0)
@@ -540,6 +559,26 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
                 <Divider />
               </Box>
 
+              <ListItemButton
+                aria-label={tr('通知', 'Notifications')}
+                onClick={(e) => setNotifAnchorEl(e.currentTarget)}
+                sx={baseToolRowSx}
+              >
+                <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
+                  <Badge color="error" badgeContent={unreadCount} max={99} invisible={unreadCount === 0}>
+                    <NotificationsActiveIcon />
+                  </Badge>
+                </Box>
+                <Box sx={textColSx}>
+                  <Typography variant="body2" sx={{ fontWeight: 650 }} noWrap>
+                    {tr('通知', 'Notifications')}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }} noWrap>
+                    {unreadCount > 0 ? tr(`未读 ${unreadCount} 条`, `${unreadCount} unread`) : tr('暂无未读', 'No unread')}
+                  </Typography>
+                </Box>
+              </ListItemButton>
+
               <ListItemButton aria-label={tr('登出', 'Sign out')} onClick={onLogout} sx={baseToolRowSx}>
                 <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
                   <LogoutIcon />
@@ -556,6 +595,19 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
       </Box>
     </Box>
   )
+
+  const notifOpen = Boolean(notifAnchorEl)
+  const closeNotif = () => setNotifAnchorEl(null)
+  const handleOpenAlert = (alert: any) => {
+    dispatch(markRead({ id: alert.id }))
+    closeNotif()
+    clearTimers()
+    if (!isMobile && sidebarMode === 'auto') setExpanded(false)
+    const target =
+      alert.type === 'calibration-due' ? '/calibrations' : '/alerts'
+    onNavigate(target)
+    if (isMobile) setMobileOpen(false)
+  }
 
   if (!isAuthenticated) return null
 
@@ -599,6 +651,74 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
             <Box sx={{ height: '100%' }}>{navList}</Box>
           </Paper>
         </Drawer>
+
+        <Popover
+          open={notifOpen}
+          anchorEl={notifAnchorEl}
+          onClose={closeNotif}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+          PaperProps={{ sx: { width: 360, maxWidth: '90vw', p: 1 } }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, px: 0.5, pb: 1 }}>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontWeight: 900 }} noWrap>
+                {tr('通知', 'Notifications')}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" noWrap>
+                {unreadCount > 0 ? tr(`未读 ${unreadCount} 条`, `${unreadCount} unread`) : tr('暂无未读', 'No unread')}
+              </Typography>
+            </Box>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => dispatch(markAllRead({ ids: alerts.map((a) => a.id) }))}
+              disabled={alerts.length === 0 || unreadCount === 0}
+            >
+              {tr('全部已读', 'Mark all read')}
+            </Button>
+          </Box>
+
+          {latestAlerts.length === 0 ? (
+            <Box sx={{ px: 0.5, py: 1.5 }}>
+              <Typography color="text.secondary">{tr('暂无通知', 'No notifications')}</Typography>
+            </Box>
+          ) : (
+            <List sx={{ py: 0 }}>
+              {latestAlerts.map((a) => {
+                const isUnread = !readIds[a.id]
+                return (
+                  <ListItemButton
+                    key={a.id}
+                    onClick={() => handleOpenAlert(a)}
+                    sx={{
+                      borderRadius: 1.5,
+                      mb: 0.5,
+                      border: '1px solid',
+                      borderColor: isUnread ? 'primary.main' : 'divider',
+                      bgcolor: isUnread ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.12 : 0.06) : 'transparent',
+                      alignItems: 'flex-start',
+                      gap: 1,
+                    }}
+                  >
+                    <Chip size="small" label={a.severity} color={a.severity === 'P1' ? 'error' : 'warning'} />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: isUnread ? 900 : 700 }} noWrap>
+                        {a.title}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" noWrap>
+                        {a.assetName}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
+                        {a.detail}
+                      </Typography>
+                    </Box>
+                  </ListItemButton>
+                )
+              })}
+            </List>
+          )}
+        </Popover>
       </>
     )
   }
@@ -621,6 +741,73 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
       }}
     >
       {navList}
+      <Popover
+        open={notifOpen}
+        anchorEl={notifAnchorEl}
+        onClose={closeNotif}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        PaperProps={{ sx: { width: 360, maxWidth: '90vw', p: 1 } }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, px: 0.5, pb: 1 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontWeight: 900 }} noWrap>
+              {tr('通知', 'Notifications')}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" noWrap>
+              {unreadCount > 0 ? tr(`未读 ${unreadCount} 条`, `${unreadCount} unread`) : tr('暂无未读', 'No unread')}
+            </Typography>
+          </Box>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => dispatch(markAllRead({ ids: alerts.map((a) => a.id) }))}
+            disabled={alerts.length === 0 || unreadCount === 0}
+          >
+            {tr('全部已读', 'Mark all read')}
+          </Button>
+        </Box>
+
+        {latestAlerts.length === 0 ? (
+          <Box sx={{ px: 0.5, py: 1.5 }}>
+            <Typography color="text.secondary">{tr('暂无通知', 'No notifications')}</Typography>
+          </Box>
+        ) : (
+          <List sx={{ py: 0 }}>
+            {latestAlerts.map((a) => {
+              const isUnread = !readIds[a.id]
+              return (
+                <ListItemButton
+                  key={a.id}
+                  onClick={() => handleOpenAlert(a)}
+                  sx={{
+                    borderRadius: 1.5,
+                    mb: 0.5,
+                    border: '1px solid',
+                    borderColor: isUnread ? 'primary.main' : 'divider',
+                    bgcolor: isUnread ? alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.12 : 0.06) : 'transparent',
+                    alignItems: 'flex-start',
+                    gap: 1,
+                  }}
+                >
+                  <Chip size="small" label={a.severity} color={a.severity === 'P1' ? 'error' : 'warning'} />
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontWeight: isUnread ? 900 : 700 }} noWrap>
+                      {a.title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" noWrap>
+                      {a.assetName}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
+                      {a.detail}
+                    </Typography>
+                  </Box>
+                </ListItemButton>
+              )
+            })}
+          </List>
+        )}
+      </Popover>
     </Paper>
   )
 }

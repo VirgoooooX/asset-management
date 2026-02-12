@@ -6,6 +6,8 @@ import { requireAdmin } from '../middlewares/requireAdmin.js'
 import { getDb } from '../../db/db.js'
 import { recomputeChamberStatus } from '../../services/assetStatus.js'
 import { randomToken } from '../../util/crypto.js'
+import { parseJson } from '../../util/json.js'
+import { backfillUsageLogCostSnapshots } from '../../services/costSnapshotBackfill.js'
 
 export const adminRouter = Router()
 
@@ -18,6 +20,239 @@ adminRouter.post('/reconcile/asset-status', requireAuth, requireAdmin, (_req, re
     if (r.updated) updated += 1
   }
   res.json({ ok: true, scanned: assets.length, updated })
+})
+
+const assetCategoryRateUpsertSchema = z.object({
+  category: z.string(),
+  hourlyRateCents: z.number().int().min(0),
+})
+
+adminRouter.get('/asset-category-rates', requireAuth, requireAdmin, (_req, res) => {
+  const db = getDb()
+  const rows = db
+    .prepare(
+      `
+      with categories as (
+        select distinct (case when category is null or trim(category) = '' then '' else category end) as category from assets
+        union
+        select category from asset_category_rates
+      )
+      select c.category as category, coalesce(r.hourly_rate_cents, 0) as hourly_rate_cents
+      from categories c
+      left join asset_category_rates r on r.category = c.category
+      order by c.category asc
+      `
+    )
+    .all() as Array<any>
+
+  res.json({
+    items: rows.map((r) => ({
+      category: typeof r.category === 'string' ? r.category : '',
+      hourlyRateCents: typeof r.hourly_rate_cents === 'number' ? r.hourly_rate_cents : 0,
+    })),
+  })
+})
+
+adminRouter.put('/asset-category-rates', requireAuth, requireAdmin, (req, res) => {
+  const body = assetCategoryRateUpsertSchema.safeParse(req.body)
+  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
+  const d = body.data
+  const db = getDb()
+  db.prepare(
+    `
+    insert into asset_category_rates (category, hourly_rate_cents)
+    values (?, ?)
+    on conflict(category) do update set hourly_rate_cents = excluded.hourly_rate_cents
+    `
+  ).run(d.category, d.hourlyRateCents)
+  res.json({ ok: true })
+})
+
+adminRouter.post('/backfill/cost-snapshots', requireAuth, requireAdmin, (req, res) => {
+  const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined
+  const db = getDb()
+  const r = backfillUsageLogCostSnapshots(db, { limit })
+  res.json({ ok: true, scanned: r.scanned, updated: r.updated })
+})
+
+adminRouter.get('/audit-logs', requireAuth, requireAdmin, (req, res) => {
+  const from = typeof req.query.from === 'string' ? req.query.from : undefined
+  const to = typeof req.query.to === 'string' ? req.query.to : undefined
+  const actorUserId = typeof req.query.actorUserId === 'string' ? req.query.actorUserId : undefined
+  const actorUsername = typeof req.query.actorUsername === 'string' ? req.query.actorUsername : undefined
+  const action = typeof req.query.action === 'string' ? req.query.action : undefined
+  const entityType = typeof req.query.entityType === 'string' ? req.query.entityType : undefined
+  const entityId = typeof req.query.entityId === 'string' ? req.query.entityId : undefined
+  const requestId = typeof req.query.requestId === 'string' ? req.query.requestId : undefined
+  const page = typeof req.query.page === 'string' ? Number(req.query.page) : 0
+  const pageSize = typeof req.query.pageSize === 'string' ? Number(req.query.pageSize) : 50
+
+  const safePage = Number.isFinite(page) && page >= 0 ? Math.floor(page) : 0
+  const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.min(200, Math.floor(pageSize)) : 50
+
+  const clauses: string[] = []
+  const params: any[] = []
+
+  if (from) {
+    clauses.push('at >= ?')
+    params.push(from)
+  }
+  if (to) {
+    clauses.push('at <= ?')
+    params.push(to)
+  }
+  if (actorUserId) {
+    clauses.push('actor_user_id = ?')
+    params.push(actorUserId)
+  }
+  if (actorUsername) {
+    clauses.push('actor_username = ?')
+    params.push(actorUsername)
+  }
+  if (action) {
+    clauses.push('action = ?')
+    params.push(action)
+  }
+  if (entityType) {
+    clauses.push('entity_type = ?')
+    params.push(entityType)
+  }
+  if (entityId) {
+    clauses.push('entity_id = ?')
+    params.push(entityId)
+  }
+  if (requestId) {
+    clauses.push('request_id = ?')
+    params.push(requestId)
+  }
+
+  const whereSql = clauses.length ? `where ${clauses.join(' and ')}` : ''
+  const db = getDb()
+  const totalRow = db.prepare(`select count(1) as c from audit_logs ${whereSql}`).get(...params) as { c: number } | undefined
+  const total = typeof totalRow?.c === 'number' ? totalRow.c : 0
+
+  const offset = safePage * safePageSize
+  const rows = db
+    .prepare(`select * from audit_logs ${whereSql} order by at desc limit ? offset ?`)
+    .all(...params, safePageSize, offset) as any[]
+
+  res.json({
+    total,
+    items: rows.map((r) => ({
+      id: r.id,
+      at: r.at,
+      actorUserId: r.actor_user_id,
+      actorUsername: r.actor_username,
+      action: r.action,
+      entityType: r.entity_type,
+      entityId: r.entity_id,
+      ip: r.ip ?? undefined,
+      userAgent: r.user_agent ?? undefined,
+      requestId: r.request_id ?? undefined,
+      before: parseJson<any>(r.before_json, undefined as any),
+      after: parseJson<any>(r.after_json, undefined as any),
+    })),
+  })
+})
+
+const csvEscape = (v: any) => {
+  const s = v === null || typeof v === 'undefined' ? '' : String(v)
+  const needs = /[",\n\r]/.test(s)
+  const out = s.replace(/"/g, '""')
+  return needs ? `"${out}"` : out
+}
+
+adminRouter.get('/audit-logs/export', requireAuth, requireAdmin, (req, res) => {
+  const from = typeof req.query.from === 'string' ? req.query.from : undefined
+  const to = typeof req.query.to === 'string' ? req.query.to : undefined
+  const actorUserId = typeof req.query.actorUserId === 'string' ? req.query.actorUserId : undefined
+  const actorUsername = typeof req.query.actorUsername === 'string' ? req.query.actorUsername : undefined
+  const action = typeof req.query.action === 'string' ? req.query.action : undefined
+  const entityType = typeof req.query.entityType === 'string' ? req.query.entityType : undefined
+  const entityId = typeof req.query.entityId === 'string' ? req.query.entityId : undefined
+  const requestId = typeof req.query.requestId === 'string' ? req.query.requestId : undefined
+  const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : 2000
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(5000, Math.floor(limit)) : 2000
+
+  const clauses: string[] = []
+  const params: any[] = []
+
+  if (from) {
+    clauses.push('at >= ?')
+    params.push(from)
+  }
+  if (to) {
+    clauses.push('at <= ?')
+    params.push(to)
+  }
+  if (actorUserId) {
+    clauses.push('actor_user_id = ?')
+    params.push(actorUserId)
+  }
+  if (actorUsername) {
+    clauses.push('actor_username = ?')
+    params.push(actorUsername)
+  }
+  if (action) {
+    clauses.push('action = ?')
+    params.push(action)
+  }
+  if (entityType) {
+    clauses.push('entity_type = ?')
+    params.push(entityType)
+  }
+  if (entityId) {
+    clauses.push('entity_id = ?')
+    params.push(entityId)
+  }
+  if (requestId) {
+    clauses.push('request_id = ?')
+    params.push(requestId)
+  }
+
+  const whereSql = clauses.length ? `where ${clauses.join(' and ')}` : ''
+  const db = getDb()
+  const rows = db
+    .prepare(`select * from audit_logs ${whereSql} order by at desc limit ?`)
+    .all(...params, safeLimit) as any[]
+
+  const header = [
+    'id',
+    'at',
+    'actor_user_id',
+    'actor_username',
+    'action',
+    'entity_type',
+    'entity_id',
+    'ip',
+    'user_agent',
+    'request_id',
+    'before_json',
+    'after_json',
+  ]
+  const lines = [header.join(',')]
+  rows.forEach((r) => {
+    lines.push(
+      [
+        csvEscape(r.id),
+        csvEscape(r.at),
+        csvEscape(r.actor_user_id),
+        csvEscape(r.actor_username),
+        csvEscape(r.action),
+        csvEscape(r.entity_type),
+        csvEscape(r.entity_id),
+        csvEscape(r.ip),
+        csvEscape(r.user_agent),
+        csvEscape(r.request_id),
+        csvEscape(r.before_json),
+        csvEscape(r.after_json),
+      ].join(',')
+    )
+  })
+
+  res.setHeader('content-type', 'text/csv; charset=utf-8')
+  res.setHeader('content-disposition', 'attachment; filename="audit-logs.csv"')
+  res.send(lines.join('\n'))
 })
 
 adminRouter.get('/users', requireAuth, requireAdmin, (req, res) => {

@@ -6,6 +6,7 @@ import { getDb } from '../../db/db.js'
 import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
 import { publishAssetStatusChanged, publishRepairTicketChanged } from '../../services/events.js'
+import { writeAuditLog } from '../../services/auditLog.js'
 
 export const repairTicketsRouter = Router()
 
@@ -155,6 +156,24 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
     publishRepairTicketChanged(id, d.assetId, now)
   })()
 
+  writeAuditLog(db, {
+    actor: req.user!,
+    action: 'repair_ticket.create',
+    entityType: 'repair_ticket',
+    entityId: id,
+    ip: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+    requestId: req.requestId,
+    after: {
+      id,
+      assetId: d.assetId,
+      status: 'quote-pending',
+      problemDesc: d.problemDesc,
+      startedAt,
+      expectedReturnAt: d.expectedReturnAt ?? null,
+    },
+  })
+
   res.json({ id })
 })
 
@@ -164,8 +183,8 @@ repairTicketsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
   const db = getDb()
-  const row = db.prepare('select id from repair_tickets where id = ?').get(id) as { id: string } | undefined
-  if (!row) return res.status(404).json({ error: 'not_found' })
+  const before = db.prepare('select * from repair_tickets where id = ?').get(id) as any | undefined
+  if (!before) return res.status(404).json({ error: 'not_found' })
 
   const updates: string[] = []
   const params: any[] = []
@@ -185,6 +204,37 @@ repairTicketsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
   db.prepare(`update repair_tickets set ${updates.join(', ')} where id = ?`).run(...params, id)
   const ticket = db.prepare('select asset_id from repair_tickets where id = ?').get(id) as { asset_id: string } | undefined
   if (ticket?.asset_id) publishRepairTicketChanged(id, ticket.asset_id, updatedAt)
+
+  const after = db.prepare('select * from repair_tickets where id = ?').get(id) as any | undefined
+  writeAuditLog(db, {
+    actor: req.user!,
+    action: 'repair_ticket.update',
+    entityType: 'repair_ticket',
+    entityId: id,
+    ip: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+    requestId: req.requestId,
+    before: {
+      status: before.status,
+      problemDesc: before.problem_desc,
+      startedAt: before.started_at ?? null,
+      vendorName: before.vendor_name ?? null,
+      quoteAmount: before.quote_amount ?? null,
+      expectedReturnAt: before.expected_return_at ?? null,
+      completedAt: before.completed_at ?? null,
+    },
+    after: after
+      ? {
+          status: after.status,
+          problemDesc: after.problem_desc,
+          startedAt: after.started_at ?? null,
+          vendorName: after.vendor_name ?? null,
+          quoteAmount: after.quote_amount ?? null,
+          expectedReturnAt: after.expected_return_at ?? null,
+          completedAt: after.completed_at ?? null,
+        }
+      : null,
+  })
   res.json({ ok: true })
 })
 
@@ -238,6 +288,19 @@ repairTicketsRouter.post('/:id/transition', requireAuth, requireManager, (req, r
     publishRepairTicketChanged(id, current.asset_id, now)
   })()
 
+  const after = db.prepare('select * from repair_tickets where id = ?').get(id) as any | undefined
+  writeAuditLog(db, {
+    actor: req.user!,
+    action: 'repair_ticket.transition',
+    entityType: 'repair_ticket',
+    entityId: id,
+    ip: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+    requestId: req.requestId,
+    before: { status: current.status },
+    after: after ? { status: after.status } : { status: d.to },
+  })
+
   res.json({ ok: true })
 })
 
@@ -248,6 +311,8 @@ repairTicketsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
     | { id: string; asset_id: string }
     | undefined
   if (!ticket) return res.json({ ok: true })
+
+  const before = db.prepare('select * from repair_tickets where id = ?').get(id) as any | undefined
 
   db.transaction(() => {
     db.prepare('delete from repair_tickets where id = ?').run(id)
@@ -262,6 +327,23 @@ repairTicketsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
     publishAssetStatusChanged(ticket.asset_id, status, now)
     publishRepairTicketChanged(id, ticket.asset_id, now)
   })()
+
+  writeAuditLog(db, {
+    actor: req.user!,
+    action: 'repair_ticket.delete',
+    entityType: 'repair_ticket',
+    entityId: id,
+    ip: req.ip,
+    userAgent: req.get('user-agent') ?? undefined,
+    requestId: req.requestId,
+    before: before
+      ? {
+          assetId: before.asset_id,
+          status: before.status,
+          problemDesc: before.problem_desc,
+        }
+      : { assetId: ticket.asset_id },
+  })
 
   res.json({ ok: true })
 })

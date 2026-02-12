@@ -27,6 +27,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import * as testProjectService from '../services/testProjectService'
 import type { TestProject, TestStage } from '../types'
 import { useAppSelector } from '../store/hooks'
+import TestProfileChart from '../components/TestProfileChart'
 
 type StageDraft = {
   id: string
@@ -892,14 +893,14 @@ const TestProjectDetailPage: React.FC = () => {
                     const defaults = { temp: 25, humidity: 50 }
                     const steps = buildProfileSteps(stageModels, defaults)
                     return (
-                      <ProfileChart
+                      <TestProfileChart
                         steps={steps}
                         defaults={defaults}
+                        title={tr('测试曲线', 'Test profile')}
                         rampText={tr('升降', 'ramp')}
                         dwellText={tr('稳态', 'dwell')}
                         temperatureText={tr('温度', 'Temperature')}
                         humidityText={tr('湿度', 'Humidity')}
-                        soakText={tr('浸泡', 'Soak')}
                         timeText={tr('时间', 'Time')}
                         minuteText={tr('分钟', 'min')}
                         hourText={tr('小时', 'hour')}

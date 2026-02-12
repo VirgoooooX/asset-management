@@ -19,6 +19,9 @@ import { repairTicketsRouter } from './routes/repairTickets.js'
 import { settingsRouter } from './routes/settings.js'
 import { usersMeRouter } from './routes/usersMe.js'
 import { eventsRouter } from './routes/events.js'
+import { notificationsRouter } from './routes/notifications.js'
+import { reportsRouter } from './routes/reports.js'
+import { attachRequestId } from './middlewares/requestId.js'
 
 export const createApp = async () => {
   fs.mkdirSync(config.dataDir, { recursive: true })
@@ -32,6 +35,7 @@ export const createApp = async () => {
   const app = express()
 
   app.disable('x-powered-by')
+  app.use(attachRequestId)
   app.use(cookieParser())
 
   app.use(
@@ -55,6 +59,8 @@ export const createApp = async () => {
   app.use('/api/settings', settingsRouter)
   app.use('/api/users/me', usersMeRouter)
   app.use('/api/events', eventsRouter)
+  app.use('/api/notifications', notificationsRouter)
+  app.use('/api/reports', reportsRouter)
 
   if (config.frontendDistDir) {
     const indexHtml = path.join(config.frontendDistDir, 'index.html')

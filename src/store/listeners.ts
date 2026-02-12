@@ -4,6 +4,8 @@ import { apiFetch } from '../services/apiClient'
 import { fetchAssetById } from './assetsSlice'
 import { fetchRepairTickets } from './repairTicketsSlice'
 import { fetchUsageLogs } from './usageLogsSlice'
+import { resetNotifications } from './notificationsSlice'
+import { markAllRead as markAllReadApi, markRead as markReadApi } from '../services/notificationService'
 
 export const listenerMiddleware = createListenerMiddleware()
 
@@ -137,5 +139,34 @@ listenerMiddleware.startListening({
   },
   effect: async (_action: AnyAction, api: any) => {
     ensureEventStream(api)
+  }
+})
+
+listenerMiddleware.startListening({
+  predicate: (action: AnyAction) => action?.type === 'notifications/markRead',
+  effect: async (action: AnyAction, api: any) => {
+    const state = api.getState() as any
+    if (!state?.auth?.isAuthenticated) return
+    const id = action?.payload?.id
+    if (typeof id !== 'string' || !id) return
+    await markReadApi(id).catch(() => undefined)
+  },
+})
+
+listenerMiddleware.startListening({
+  predicate: (action: AnyAction) => action?.type === 'notifications/markAllRead',
+  effect: async (action: AnyAction, api: any) => {
+    const state = api.getState() as any
+    if (!state?.auth?.isAuthenticated) return
+    const ids = Array.isArray(action?.payload?.ids) ? action.payload.ids.filter((x: any) => typeof x === 'string' && x) : []
+    if (ids.length === 0) return
+    await markAllReadApi(ids).catch(() => undefined)
+  },
+})
+
+listenerMiddleware.startListening({
+  predicate: (action: AnyAction) => action?.type === 'auth/signOutUser/fulfilled',
+  effect: async (_action: AnyAction, api: any) => {
+    api.dispatch(resetNotifications())
   }
 })
