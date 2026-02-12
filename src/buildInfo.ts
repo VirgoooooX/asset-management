@@ -8,10 +8,15 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '0.1.10',
-  commit: '1c7a46b',
-  builtAt: '2026-02-12T13:22:17.444Z',
+  version: '0.1.11',
+  commit: '25cf090',
+  builtAt: '2026-02-12T13:43:27.691Z',
   changelog: JSON.parse(`[
+  {
+    "hash": "25cf090",
+    "date": "2026-02-12",
+    "message": "chore: 更新版本号至0.1.10"
+  },
   {
     "hash": "1c7a46b",
     "date": "2026-02-12",
