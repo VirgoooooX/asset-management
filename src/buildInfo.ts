@@ -8,10 +8,20 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '0.1.14',
-  commit: 'c20f621',
-  builtAt: '2026-03-20T14:20:44.573Z',
+  version: '0.1.15',
+  commit: 'dbd779a',
+  builtAt: '2026-03-20T14:27:16.635Z',
   changelog: JSON.parse(`[
+  {
+    "hash": "dbd779a",
+    "date": "2026-03-20",
+    "message": "build: 在 tsconfig.json 中排除测试文件"
+  },
+  {
+    "hash": "8a6cbfb",
+    "date": "2026-03-20",
+    "message": "feat: Introduce a new backend project with its own TypeScript configuration and dependencies, and increment the root package version."
+  },
   {
     "hash": "c20f621",
     "date": "2026-03-20",
@@ -151,16 +161,6 @@ export const buildInfo: BuildInfo = {
     "hash": "cbd14d2",
     "date": "2026-01-22",
     "message": "feat(布局): 重构应用布局并添加新的侧边栏导航组件"
-  },
-  {
-    "hash": "ff6b6b3",
-    "date": "2026-01-21",
-    "message": "feat(release): 支持多架构镜像构建并更新版本号至0.0.4"
-  },
-  {
-    "hash": "f573263",
-    "date": "2026-01-21",
-    "message": "feat: 添加版本发布脚本并更新版本号至0.0.3"
   }
 ]`) as ChangelogEntry[],
 }
