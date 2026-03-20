@@ -8,10 +8,20 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '0.1.11',
-  commit: '25cf090',
-  builtAt: '2026-02-12T13:43:27.691Z',
+  version: '0.1.13',
+  commit: '409aa49',
+  builtAt: '2026-03-20T14:19:55.708Z',
   changelog: JSON.parse(`[
+  {
+    "hash": "409aa49",
+    "date": "2026-03-20",
+    "message": "feat: Add new ScrollingTimeline component with its styles."
+  },
+  {
+    "hash": "058c316",
+    "date": "2026-02-12",
+    "message": "feat: Introduce a new backend service with dedicated package and TypeScript configurations."
+  },
   {
     "hash": "25cf090",
     "date": "2026-02-12",
@@ -151,11 +161,6 @@ export const buildInfo: BuildInfo = {
     "hash": "2636d9b",
     "date": "2026-01-21",
     "message": "feat: 添加用户管理功能与角色权限系统"
-  },
-  {
-    "hash": "921bc6b",
-    "date": "2026-01-21",
-    "message": "first commit"
   }
 ]`) as ChangelogEntry[],
 }
