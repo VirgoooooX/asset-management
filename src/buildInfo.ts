@@ -8,10 +8,15 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '0.1.13',
-  commit: '409aa49',
-  builtAt: '2026-03-20T14:19:55.708Z',
+  version: '0.1.14',
+  commit: 'c20f621',
+  builtAt: '2026-03-20T14:20:44.573Z',
   changelog: JSON.parse(`[
+  {
+    "hash": "c20f621",
+    "date": "2026-03-20",
+    "message": "feat: Initialize backend project with dedicated package and TypeScript configurations."
+  },
   {
     "hash": "409aa49",
     "date": "2026-03-20",
@@ -156,11 +161,6 @@ export const buildInfo: BuildInfo = {
     "hash": "f573263",
     "date": "2026-01-21",
     "message": "feat: 添加版本发布脚本并更新版本号至0.0.3"
-  },
-  {
-    "hash": "2636d9b",
-    "date": "2026-01-21",
-    "message": "feat: 添加用户管理功能与角色权限系统"
   }
 ]`) as ChangelogEntry[],
 }
