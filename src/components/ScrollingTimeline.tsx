@@ -1012,7 +1012,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                               结束: {originalLog.endTime ? format(parseISO(originalLog.endTime), 'yyyy-MM-dd HH:mm', { locale: zhCN }) : (logDisplayItem.effectiveStatus === 'in-progress' || logDisplayItem.effectiveStatus === 'overdue' ? '进行中/已超时' : '未设定')}<br />
                               状态: {logDisplayItem.effectiveStatus}
                               <br />Configs: {hasConfigs ? configText : '未选配置'}
-                              {originalLog.notes && <><br />备注: {originalLog.notes.substring(0, 100)}{originalLog.notes.length > 100 && '...'}</>}
+                              {originalLog.notes && <><br />备注: {originalLog.notes.substring(0, 500)}{originalLog.notes.length > 500 && '...'}</>}
                             </Typography>
                           </React.Fragment>
                         }
