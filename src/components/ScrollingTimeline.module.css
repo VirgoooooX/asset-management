@@ -298,9 +298,9 @@
   font-weight: 750;
   border: 1px solid var(--timeline-pill-border, rgba(0,0,0,0.16));
   background-color: var(--timeline-pill-bg, rgba(0,0,0,0.08));
-  max-width: 80%;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .timelineConfigPillMore {

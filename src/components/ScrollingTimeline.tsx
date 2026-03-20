@@ -1068,7 +1068,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                                   ) : null}
                                 </React.Fragment>
                               ) : (
-                                <span className={styles.timelineConfigPillEmpty}>{hasNotes ? notesText : '未选配置'}</span>
+                                <span className={styles.timelineConfigPillEmpty} style={{ maxWidth: `${width * 0.8}px` }}>{hasNotes ? notesText : '未选配置'}</span>
                               )}
                             </div>
                           </div>
