@@ -192,8 +192,7 @@ usageLogsRouter.post('/', requireAuth, (req, res) => {
   const startMs = Date.parse(d.startTime)
   const normalizedStartTime =
     d.status === 'in-progress' && Number.isFinite(startMs) && startMs - nowMs > CLOCK_SKEW_ALLOW_MS ? nowIso : d.startTime
-  const normalizedEndTime =
-    d.status === 'in-progress' && d.endTime && Number.isFinite(startMs) && startMs - nowMs > CLOCK_SKEW_ALLOW_MS ? undefined : d.endTime
+  const normalizedEndTime = d.endTime
 
   if (d.testProjectId) {
     const allowed = isTestProjectAllowedForChamber(db, d.chamberId, d.testProjectId)

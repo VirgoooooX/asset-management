@@ -8,10 +8,15 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '0.1.16',
-  commit: '4ad9c8c',
-  builtAt: '2026-03-20T15:14:20.538Z',
+  version: '0.1.17',
+  commit: '53a0dc2',
+  builtAt: '2026-04-02T13:27:51.504Z',
   changelog: JSON.parse(`[
+  {
+    "hash": "53a0dc2",
+    "date": "2026-03-20",
+    "message": "build: 更新版本号至0.1.16并添加测试配置"
+  },
   {
     "hash": "4ad9c8c",
     "date": "2026-03-20",
@@ -156,11 +161,6 @@ export const buildInfo: BuildInfo = {
     "hash": "5136efc",
     "date": "2026-01-22",
     "message": "feat(数据加载): 优化数据加载逻辑并添加防抖机制"
-  },
-  {
-    "hash": "f0fa49f",
-    "date": "2026-01-22",
-    "message": "feat(用户管理): 增强用户管理功能并更新版本号至0.0.5"
   }
 ]`) as ChangelogEntry[],
 }
