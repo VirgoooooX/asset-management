@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -41,6 +42,14 @@ import {
 } from '../store/settingsSlice'
 import { useI18n } from '../i18n'
 import { buildInfo } from '../buildInfo'
+import {
+  createNotificationChannel,
+  deleteNotificationChannel,
+  fetchNotificationChannels,
+  testNotificationChannel,
+  updateNotificationChannel,
+} from '../services/notificationService'
+import type { NotificationChannel, NotificationChannelType, NotificationType } from '../types'
 
 const PRIMARY_PRESETS = [
   { zhName: '品牌蓝', enName: 'Brand Blue', value: '#155EEF' },
@@ -51,15 +60,113 @@ const PRIMARY_PRESETS = [
   { zhName: '紫色', enName: 'Purple', value: '#7c3aed' },
 ]
 
+const NOTIFICATION_EVENT_OPTIONS: Array<{ type: NotificationType; zh: string; en: string }> = [
+  { type: 'usage_completed', zh: '测试/使用完成', en: 'Usage completed' },
+  { type: 'calibration_due', zh: '校准到期', en: 'Calibration due' },
+  { type: 'usage_overdue', zh: '使用逾期', en: 'Usage overdue' },
+  { type: 'usage_long', zh: '长时间占用', en: 'Long occupancy' },
+]
+
 const SettingsPage: React.FC = () => {
   const dispatch = useAppDispatch()
   const settings = useAppSelector((s) => s.settings)
   const auth = useAppSelector((s) => s.auth)
   const { tr } = useI18n()
   const [changelogExpanded, setChangelogExpanded] = useState(false)
+  const [channels, setChannels] = useState<NotificationChannel[]>([])
+  const [channelsLoading, setChannelsLoading] = useState(false)
+  const [channelsError, setChannelsError] = useState<string | null>(null)
+  const [channelsOk, setChannelsOk] = useState<string | null>(null)
+  const [channelType, setChannelType] = useState<NotificationChannelType>('wecom_bot')
+  const [channelName, setChannelName] = useState('')
+  const [channelWebhookUrl, setChannelWebhookUrl] = useState('')
+  const [channelSubscribedTypes, setChannelSubscribedTypes] = useState<NotificationType[]>(
+    NOTIFICATION_EVENT_OPTIONS.map((o) => o.type)
+  )
 
   const isAdmin = auth.user?.role === 'admin'
   const shiftStartMinutes = settings.timeline.shiftStartMinutes
+
+  const loadChannels = async () => {
+    if (!isAdmin) return
+    setChannelsLoading(true)
+    setChannelsError(null)
+    try {
+      setChannels(await fetchNotificationChannels())
+    } catch (e: any) {
+      setChannelsError(e?.message || tr('加载通知渠道失败', 'Failed to load notification channels'))
+    } finally {
+      setChannelsLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadChannels()
+  }, [isAdmin])
+
+  const toggleSubscribedType = (type: NotificationType) => {
+    setChannelSubscribedTypes((prev) =>
+      prev.includes(type) ? prev.filter((x) => x !== type) : prev.concat(type)
+    )
+  }
+
+  const handleCreateChannel = async () => {
+    setChannelsError(null)
+    setChannelsOk(null)
+    setChannelsLoading(true)
+    try {
+      await createNotificationChannel({
+        type: channelType,
+        name: channelName.trim(),
+        webhookUrl: channelWebhookUrl.trim(),
+        enabled: true,
+        subscribedTypes: channelSubscribedTypes,
+      })
+      setChannelName('')
+      setChannelWebhookUrl('')
+      setChannelSubscribedTypes(NOTIFICATION_EVENT_OPTIONS.map((o) => o.type))
+      setChannelsOk(tr('通知渠道已创建', 'Notification channel created'))
+      await loadChannels()
+    } catch (e: any) {
+      setChannelsError(e?.message || tr('创建通知渠道失败', 'Failed to create notification channel'))
+    } finally {
+      setChannelsLoading(false)
+    }
+  }
+
+  const handleToggleChannel = async (channel: NotificationChannel) => {
+    setChannelsError(null)
+    setChannelsOk(null)
+    try {
+      await updateNotificationChannel(channel.id, { enabled: !channel.enabled })
+      await loadChannels()
+    } catch (e: any) {
+      setChannelsError(e?.message || tr('更新通知渠道失败', 'Failed to update notification channel'))
+    }
+  }
+
+  const handleDeleteChannel = async (id: string) => {
+    setChannelsError(null)
+    setChannelsOk(null)
+    try {
+      await deleteNotificationChannel(id)
+      setChannelsOk(tr('通知渠道已删除', 'Notification channel deleted'))
+      await loadChannels()
+    } catch (e: any) {
+      setChannelsError(e?.message || tr('删除通知渠道失败', 'Failed to delete notification channel'))
+    }
+  }
+
+  const handleTestChannel = async (id: string) => {
+    setChannelsError(null)
+    setChannelsOk(null)
+    try {
+      await testNotificationChannel(id)
+      setChannelsOk(tr('测试通知已发送', 'Test notification sent'))
+    } catch (e: any) {
+      setChannelsError(e?.message || tr('测试通知失败', 'Failed to send test notification'))
+    }
+  }
 
   const shiftStartTimeValue = useMemo(() => {
     const h = Math.floor(shiftStartMinutes / 60)
@@ -292,6 +399,139 @@ const SettingsPage: React.FC = () => {
                 fullWidth
               />
             </Box>
+          </Stack>
+        </AppCard>
+
+        <AppCard
+          title={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <span>{tr('通知渠道', 'Notification channels')}</span>
+              {!isAdmin && <Chip label={tr('仅管理员', 'Admin only')} size="small" variant="outlined" />}
+            </Stack>
+          }
+        >
+          <Stack spacing={2}>
+            {channelsError ? <Alert severity="error">{channelsError}</Alert> : null}
+            {channelsOk ? <Alert severity="success">{channelsOk}</Alert> : null}
+            <Alert severity="info">
+              {tr(
+                'SMTP 邮件通过服务器环境变量配置；企微/飞书机器人可在这里维护。',
+                'SMTP email is configured by server environment variables; WeCom/Feishu bots are managed here.'
+              )}
+            </Alert>
+
+            <FormControl disabled={!isAdmin}>
+              <FormLabel>{tr('机器人类型', 'Bot type')}</FormLabel>
+              <RadioGroup
+                row
+                value={channelType}
+                onChange={(e) => setChannelType(e.target.value as NotificationChannelType)}
+              >
+                <FormControlLabel value="wecom_bot" control={<Radio />} label={tr('企业微信', 'WeCom')} />
+                <FormControlLabel value="feishu_bot" control={<Radio />} label={tr('飞书', 'Feishu')} />
+              </RadioGroup>
+            </FormControl>
+
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5}>
+              <TextField
+                disabled={!isAdmin}
+                label={tr('名称', 'Name')}
+                value={channelName}
+                onChange={(e) => setChannelName(e.target.value)}
+                fullWidth
+              />
+              <TextField
+                disabled={!isAdmin}
+                label={tr('Webhook URL', 'Webhook URL')}
+                value={channelWebhookUrl}
+                onChange={(e) => setChannelWebhookUrl(e.target.value)}
+                fullWidth
+              />
+            </Stack>
+
+            <Box>
+              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650, mb: 1 }}>
+                {tr('订阅事件', 'Subscribed events')}
+              </Typography>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {NOTIFICATION_EVENT_OPTIONS.map((option) => (
+                  <Chip
+                    key={option.type}
+                    label={tr(option.zh, option.en)}
+                    color={channelSubscribedTypes.includes(option.type) ? 'primary' : 'default'}
+                    variant={channelSubscribedTypes.includes(option.type) ? 'filled' : 'outlined'}
+                    onClick={() => isAdmin && toggleSubscribedType(option.type)}
+                  />
+                ))}
+              </Stack>
+            </Box>
+
+            <Box>
+              <Button
+                variant="contained"
+                onClick={handleCreateChannel}
+                disabled={!isAdmin || channelsLoading || !channelName.trim() || !channelWebhookUrl.trim()}
+              >
+                {tr('添加渠道', 'Add channel')}
+              </Button>
+            </Box>
+
+            <Divider />
+
+            {channels.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                {tr('暂无机器人渠道', 'No bot channels')}
+              </Typography>
+            ) : (
+              <Stack spacing={1}>
+                {channels.map((channel) => (
+                  <Box
+                    key={channel.id}
+                    sx={{
+                      border: '1px solid',
+                      borderColor: 'divider',
+                      borderRadius: 2,
+                      p: 1.5,
+                    }}
+                  >
+                    <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                          <Typography sx={{ fontWeight: 850 }}>{channel.name}</Typography>
+                          <Chip size="small" label={channel.type === 'wecom_bot' ? tr('企业微信', 'WeCom') : tr('飞书', 'Feishu')} />
+                          <Chip
+                            size="small"
+                            label={channel.enabled ? tr('已启用', 'Enabled') : tr('已停用', 'Disabled')}
+                            color={channel.enabled ? 'success' : 'default'}
+                            variant={channel.enabled ? 'filled' : 'outlined'}
+                          />
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }} noWrap>
+                          {channel.webhookUrlMasked}
+                        </Typography>
+                        <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap sx={{ mt: 1 }}>
+                          {channel.subscribedTypes.map((type) => {
+                            const option = NOTIFICATION_EVENT_OPTIONS.find((x) => x.type === type)
+                            return <Chip key={type} size="small" variant="outlined" label={option ? tr(option.zh, option.en) : type} />
+                          })}
+                        </Stack>
+                      </Box>
+                      <Stack direction="row" spacing={1} justifyContent={{ xs: 'flex-start', md: 'flex-end' }} flexWrap="wrap">
+                        <Button size="small" variant="outlined" onClick={() => handleToggleChannel(channel)} disabled={!isAdmin}>
+                          {channel.enabled ? tr('停用', 'Disable') : tr('启用', 'Enable')}
+                        </Button>
+                        <Button size="small" variant="outlined" onClick={() => handleTestChannel(channel.id)} disabled={!isAdmin}>
+                          {tr('测试', 'Test')}
+                        </Button>
+                        <Button size="small" color="error" variant="outlined" onClick={() => handleDeleteChannel(channel.id)} disabled={!isAdmin}>
+                          {tr('删除', 'Delete')}
+                        </Button>
+                      </Stack>
+                    </Stack>
+                  </Box>
+                ))}
+              </Stack>
+            )}
           </Stack>
         </AppCard>
 

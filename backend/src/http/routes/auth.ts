@@ -54,8 +54,8 @@ authRouter.post('/login', async (req, res) => {
 
   const db = getDb()
   const user = db
-    .prepare('select id, username, password_hash, role, status from users where username = ?')
-    .get(username) as { id: string; username: string; password_hash: string; role: string; status?: string } | undefined
+    .prepare('select id, username, password_hash, role, status, email from users where username = ?')
+    .get(username) as { id: string; username: string; password_hash: string; role: string; status?: string; email?: string | null } | undefined
   if (!user) return res.status(401).json({ error: 'invalid_credentials' })
   const ok = await bcrypt.compare(password, user.password_hash)
   if (!ok) return res.status(401).json({ error: 'invalid_credentials' })
@@ -78,7 +78,7 @@ authRouter.post('/login', async (req, res) => {
   setAccessCookie(res, accessToken)
   res.json({
     accessToken,
-    user: { id: user.id, username: user.username, role: user.role }
+    user: { id: user.id, username: user.username, role: user.role, email: user.email ?? undefined }
   })
 })
 
@@ -126,8 +126,8 @@ authRouter.post('/refresh', (req, res) => {
   }
 
   const user = db
-    .prepare('select id, username, role, status from users where id = ?')
-    .get(session.user_id) as { id: string; username: string; role: string; status?: string } | undefined
+    .prepare('select id, username, role, status, email from users where id = ?')
+    .get(session.user_id) as { id: string; username: string; role: string; status?: string; email?: string | null } | undefined
   if (!user) return res.status(401).json({ error: 'invalid_refresh_token' })
   const status = typeof user.status === 'string' ? user.status : 'active'
   if (status !== 'active') {
@@ -148,7 +148,7 @@ authRouter.post('/refresh', (req, res) => {
 
   const accessToken = issueAccessToken(user)
   setAccessCookie(res, accessToken)
-  res.json({ accessToken, user })
+  res.json({ accessToken, user: { ...user, email: user.email ?? undefined } })
 })
 
 authRouter.get('/me', requireAuth, (req, res) => {

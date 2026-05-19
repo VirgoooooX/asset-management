@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Box, Button, Divider, Stack, TextField, Typography } from '@mui/material'
 import PersonIcon from '@mui/icons-material/Person'
 import LockIcon from '@mui/icons-material/Lock'
@@ -10,6 +10,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { apiFetch } from '../services/apiClient'
 import { applySettingsFromRemote } from '../store/settingsSlice'
 import { useI18n } from '../i18n'
+import { setAuthUser } from '../store/authSlice'
 
 const ProfilePage: React.FC = () => {
   const dispatch = useAppDispatch()
@@ -31,6 +32,33 @@ const ProfilePage: React.FC = () => {
   const [changeOk, setChangeOk] = useState<string | null>(null)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [email, setEmail] = useState(auth.user?.email ?? '')
+  const [emailSaving, setEmailSaving] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [emailOk, setEmailOk] = useState<string | null>(null)
+
+  useEffect(() => {
+    setEmail(auth.user?.email ?? '')
+  }, [auth.user?.email])
+
+  const handleSaveEmail = async () => {
+    setEmailError(null)
+    setEmailOk(null)
+    setEmailSaving(true)
+    try {
+      await apiFetch('/api/users/me/email', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() || null }),
+      })
+      if (auth.user) dispatch(setAuthUser({ ...auth.user, email: email.trim() || undefined }))
+      setEmailOk(tr('邮箱已更新', 'Email updated'))
+    } catch (e: any) {
+      setEmailError(e?.message || tr('邮箱更新失败', 'Failed to update email'))
+    } finally {
+      setEmailSaving(false)
+    }
+  }
 
   const handleSyncFromCloud = async () => {
     setSyncError(null)
@@ -98,6 +126,22 @@ const ProfilePage: React.FC = () => {
           <Typography variant="body1" sx={{ mt: 0.5, fontWeight: 700 }}>
             {userLabel}
           </Typography>
+          <Stack spacing={1} sx={{ mt: 2 }}>
+            <TextField
+              label={tr('通知邮箱', 'Notification email')}
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              fullWidth
+            />
+            <Box>
+              <Button variant="contained" onClick={handleSaveEmail} disabled={emailSaving || email === (auth.user?.email ?? '')}>
+                {tr('保存邮箱', 'Save email')}
+              </Button>
+            </Box>
+            {emailError ? <Typography variant="body2" color="error">{emailError}</Typography> : null}
+            {emailOk ? <Typography variant="body2" color="success.main">{emailOk}</Typography> : null}
+          </Stack>
         </AppCard>
 
         <AppCard

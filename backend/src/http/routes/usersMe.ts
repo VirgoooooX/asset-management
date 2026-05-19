@@ -7,7 +7,22 @@ import { getDb } from '../../db/db.js'
 export const usersMeRouter = Router()
 
 usersMeRouter.get('/', requireAuth, (req, res) => {
-  res.json({ user: req.user })
+  const db = getDb()
+  const row = db.prepare('select id, username, role, email from users where id = ?').get(req.user!.id) as any | undefined
+  res.json({ user: row ? { id: row.id, username: row.username, role: row.role, email: row.email ?? undefined } : req.user })
+})
+
+const emailSchema = z.object({
+  email: z.string().email().optional().nullable()
+})
+
+usersMeRouter.put('/email', requireAuth, (req, res) => {
+  const body = emailSchema.safeParse(req.body)
+  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
+  const db = getDb()
+  const email = body.data.email?.trim() || null
+  db.prepare('update users set email = ?, updated_at = ? where id = ?').run(email, new Date().toISOString(), req.user!.id)
+  res.json({ ok: true })
 })
 
 usersMeRouter.get('/preferences', requireAuth, (req, res) => {
@@ -56,4 +71,3 @@ usersMeRouter.put('/password', requireAuth, async (req, res) => {
   db.prepare('update users set password_hash = ?, updated_at = ? where id = ?').run(hash, new Date().toISOString(), req.user!.id)
   res.json({ ok: true })
 })
-

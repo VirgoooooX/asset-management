@@ -8,6 +8,7 @@ import { recomputeChamberStatus } from '../../services/assetStatus.js'
 import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
 import { backfillUsageLogCostSnapshots } from '../../services/costSnapshotBackfill.js'
+import { buildFeishuBotPayload, buildWecomBotPayload } from '../../services/notificationService.js'
 
 export const adminRouter = Router()
 
@@ -25,6 +26,32 @@ adminRouter.post('/reconcile/asset-status', requireAuth, requireAdmin, (_req, re
 const assetCategoryRateUpsertSchema = z.object({
   category: z.string(),
   hourlyRateCents: z.number().int().min(0),
+})
+
+const notificationChannelSchema = z.object({
+  type: z.enum(['wecom_bot', 'feishu_bot']),
+  name: z.string().min(1),
+  webhookUrl: z.string().url(),
+  enabled: z.boolean().optional(),
+  subscribedTypes: z.array(z.enum(['usage_completed', 'calibration_due', 'usage_overdue', 'usage_long'])).optional(),
+})
+
+const notificationChannelPatchSchema = notificationChannelSchema.partial()
+
+const maskUrl = (value: string) => {
+  if (value.length <= 16) return '********'
+  return `${value.slice(0, 10)}…${value.slice(-6)}`
+}
+
+const mapNotificationChannel = (r: any) => ({
+  id: r.id,
+  type: r.type,
+  name: r.name,
+  webhookUrlMasked: maskUrl(String(r.webhook_url || '')),
+  enabled: r.enabled === 1,
+  subscribedTypes: parseJson<string[]>(r.subscribed_types, []),
+  createdAt: r.created_at,
+  updatedAt: r.updated_at ?? undefined,
 })
 
 adminRouter.get('/asset-category-rates', requireAuth, requireAdmin, (_req, res) => {
@@ -65,6 +92,90 @@ adminRouter.put('/asset-category-rates', requireAuth, requireAdmin, (req, res) =
     on conflict(category) do update set hourly_rate_cents = excluded.hourly_rate_cents
     `
   ).run(d.category, d.hourlyRateCents)
+  res.json({ ok: true })
+})
+
+adminRouter.get('/notification-channels', requireAuth, requireAdmin, (_req, res) => {
+  const db = getDb()
+  const rows = db.prepare('select * from notification_channels order by created_at desc').all() as any[]
+  res.json({ items: rows.map(mapNotificationChannel) })
+})
+
+adminRouter.post('/notification-channels', requireAuth, requireAdmin, (req, res) => {
+  const body = notificationChannelSchema.safeParse(req.body)
+  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
+  const d = body.data
+  const db = getDb()
+  const id = randomToken(16)
+  const now = new Date().toISOString()
+  db.prepare(
+    [
+      'insert into notification_channels (',
+      'id, type, name, webhook_url, enabled, subscribed_types, created_at',
+      ') values (?,?,?,?,?,?,?)',
+    ].join(' ')
+  ).run(id, d.type, d.name, d.webhookUrl, d.enabled === false ? 0 : 1, JSON.stringify(d.subscribedTypes ?? []), now)
+  res.json({ id })
+})
+
+adminRouter.patch('/notification-channels/:id', requireAuth, requireAdmin, (req, res) => {
+  const body = notificationChannelPatchSchema.safeParse(req.body)
+  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
+  const db = getDb()
+  const existing = db.prepare('select id from notification_channels where id = ?').get(req.params.id) as
+    | { id: string }
+    | undefined
+  if (!existing) return res.status(404).json({ error: 'not_found' })
+  const updates: string[] = []
+  const params: any[] = []
+  const add = (sql: string, value: any) => {
+    updates.push(sql)
+    params.push(value)
+  }
+  const d = body.data
+  if (d.type !== undefined) add('type = ?', d.type)
+  if (d.name !== undefined) add('name = ?', d.name)
+  if (d.webhookUrl !== undefined) add('webhook_url = ?', d.webhookUrl)
+  if (d.enabled !== undefined) add('enabled = ?', d.enabled ? 1 : 0)
+  if (d.subscribedTypes !== undefined) add('subscribed_types = ?', JSON.stringify(d.subscribedTypes))
+  add('updated_at = ?', new Date().toISOString())
+  db.prepare(`update notification_channels set ${updates.join(', ')} where id = ?`).run(...params, req.params.id)
+  res.json({ ok: true })
+})
+
+adminRouter.delete('/notification-channels/:id', requireAuth, requireAdmin, (req, res) => {
+  const db = getDb()
+  db.prepare('delete from notification_channels where id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+adminRouter.post('/notification-channels/:id/test', requireAuth, requireAdmin, async (req, res) => {
+  const db = getDb()
+  const channel = db.prepare('select * from notification_channels where id = ?').get(req.params.id) as any | undefined
+  if (!channel) return res.status(404).json({ error: 'not_found' })
+  const notification = {
+    id: `test-${Date.now()}`,
+    type: 'usage_completed' as const,
+    severity: 'info' as const,
+    title: 'Chamber Tracker 测试通知',
+    message: `这是一条来自 ${req.user!.username} 的测试通知。`,
+    entityType: 'system',
+    entityId: 'notification-channel-test',
+    assetName: 'Test',
+    occurredAt: new Date().toISOString(),
+    url: '/',
+  }
+  const payload = channel.type === 'wecom_bot' ? buildWecomBotPayload(notification) : buildFeishuBotPayload(notification)
+  const result = await fetch(channel.webhook_url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).catch((e) => e)
+  if (result instanceof Error) return res.status(502).json({ error: result.message || 'send_failed' })
+  if (!result.ok) {
+    const text = await result.text().catch(() => '')
+    return res.status(502).json({ error: text || `HTTP ${result.status}` })
+  }
   res.json({ ok: true })
 })
 
@@ -260,12 +371,13 @@ adminRouter.get('/users', requireAuth, requireAdmin, (req, res) => {
   const db = getDb()
   const where = status ? 'where status = ?' : ''
   const rows = db
-    .prepare(`select id, username, role, status, approved_by, approved_at, created_at, updated_at from users ${where} order by created_at desc`)
+    .prepare(`select id, username, email, role, status, approved_by, approved_at, created_at, updated_at from users ${where} order by created_at desc`)
     .all(...(status ? [status] : [])) as any[]
   res.json({
     items: rows.map((r) => ({
       id: r.id,
       username: r.username,
+      email: r.email ?? undefined,
       role: r.role,
       status: r.status,
       approvedBy: r.approved_by ?? undefined,
@@ -279,7 +391,8 @@ adminRouter.get('/users', requireAuth, requireAdmin, (req, res) => {
 const createUserSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(8),
-  role: z.enum(['manager', 'user'])
+  role: z.enum(['manager', 'user']),
+  email: z.string().email().optional().nullable()
 })
 
 adminRouter.post('/users', requireAuth, requireAdmin, async (req, res) => {
@@ -293,8 +406,8 @@ adminRouter.post('/users', requireAuth, requireAdmin, async (req, res) => {
   const now = new Date().toISOString()
   const id = randomToken(16)
   db.prepare(
-    'insert into users (id, username, password_hash, role, status, approved_by, approved_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, d.username, hash, d.role, 'active', req.user!.id, now, now, now)
+    'insert into users (id, username, password_hash, role, email, status, approved_by, approved_at, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, d.username, hash, d.role, d.email?.trim() || null, 'active', req.user!.id, now, now, now)
   res.json({ id })
 })
 
@@ -336,7 +449,8 @@ const resetPasswordSchema = z.object({
 })
 
 const setUserRoleSchema = z.object({
-  role: z.enum(['manager', 'user'])
+  role: z.enum(['manager', 'user']).optional(),
+  email: z.string().email().optional().nullable()
 })
 
 adminRouter.patch('/users/:id', requireAuth, requireAdmin, (req, res) => {
@@ -346,8 +460,20 @@ adminRouter.patch('/users/:id', requireAuth, requireAdmin, (req, res) => {
   const db = getDb()
   const row = db.prepare('select id, role from users where id = ?').get(id) as { id: string; role: string } | undefined
   if (!row) return res.status(404).json({ error: 'not_found' })
-  if (row.role === 'admin') return res.status(400).json({ error: 'cannot_change_admin_role' })
-  db.prepare('update users set role = ?, updated_at = ? where id = ?').run(body.data.role, new Date().toISOString(), id)
+  if (row.role === 'admin' && body.data.role !== undefined) return res.status(400).json({ error: 'cannot_change_admin_role' })
+  const updates: string[] = []
+  const params: any[] = []
+  if (body.data.role !== undefined) {
+    updates.push('role = ?')
+    params.push(body.data.role)
+  }
+  if (body.data.email !== undefined) {
+    updates.push('email = ?')
+    params.push(body.data.email?.trim() || null)
+  }
+  updates.push('updated_at = ?')
+  params.push(new Date().toISOString())
+  db.prepare(`update users set ${updates.join(', ')} where id = ?`).run(...params, id)
   res.json({ ok: true })
 })
 

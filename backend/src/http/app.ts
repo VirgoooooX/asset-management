@@ -22,6 +22,7 @@ import { eventsRouter } from './routes/events.js'
 import { notificationsRouter } from './routes/notifications.js'
 import { reportsRouter } from './routes/reports.js'
 import { attachRequestId } from './middlewares/requestId.js'
+import { startNotificationScanner } from '../services/notificationScheduler.js'
 
 export const createApp = async () => {
   fs.mkdirSync(config.dataDir, { recursive: true })
@@ -31,6 +32,7 @@ export const createApp = async () => {
   const srcMigrationsDir = path.join(here, '..', '..', 'src', 'db', 'migrations')
   runMigrations(fs.existsSync(buildMigrationsDir) ? buildMigrationsDir : srcMigrationsDir)
   await ensureAdminSeed()
+  startNotificationScanner()
 
   const app = express()
 

@@ -2,10 +2,37 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { getDb } from '../../db/db.js'
 import { requireAuth } from '../middlewares/requireAuth.js'
+import { toNotificationRecord } from '../../services/notificationService.js'
 
 export const notificationsRouter = Router()
 
 const idsSchema = z.object({ ids: z.array(z.string().min(1)).max(2000) })
+
+notificationsRouter.get('/', requireAuth, (req, res) => {
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50)))
+  const db = getDb()
+  const rows = db
+    .prepare(
+      [
+        'select n.*, case when nr.notification_id is not null then 1 else 0 end as delivered_to_user,',
+        'case when r.notification_id is not null then 1 else 0 end as is_read',
+        'from notifications n',
+        'left join notification_recipients nr on nr.notification_id = n.id and nr.user_id = ?',
+        'left join notification_reads r on r.notification_id = n.id and r.user_id = ?',
+        'where nr.notification_id is not null',
+        'order by n.created_at desc',
+        'limit ?',
+      ].join(' ')
+    )
+    .all(req.user!.id, req.user!.id, limit) as any[]
+
+  res.json({
+    items: rows.map((r) => ({
+      ...toNotificationRecord(r),
+      read: r.is_read === 1,
+    })),
+  })
+})
 
 notificationsRouter.get('/reads', requireAuth, (req, res) => {
   const limit = Math.min(5000, Math.max(1, Number(req.query.limit ?? 2000)))
@@ -53,4 +80,3 @@ notificationsRouter.post('/read-all', requireAuth, (req, res) => {
   })()
   res.json({ ok: true })
 })
-

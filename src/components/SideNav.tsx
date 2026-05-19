@@ -24,8 +24,8 @@ import { useLocation } from 'react-router-dom'
 import { useI18n } from '../i18n'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { setSidebarMode } from '../store/settingsSlice'
-import { selectDerivedAlerts } from '../store/alertsSelectors'
 import { markAllRead, markRead } from '../store/notificationsSlice'
+import type { AppNotification } from '../types'
 
 type Props = {
   isAuthenticated: boolean
@@ -57,8 +57,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
   const dispatch = useAppDispatch()
   const sidebarMode = useAppSelector((s) => s.settings.nav?.sidebarMode) ?? 'auto'
-  const settings = useAppSelector((s) => s.settings)
-  const readIds = useAppSelector((s) => s.notifications.readIds)
+  const notifications = useAppSelector((s) => s.notifications.items)
 
   const [mobileOpen, setMobileOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -89,14 +88,8 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
     return map
   }, [visibleItems])
 
-  const nowMs = useMemo(
-    () => Date.now(),
-    [settings.alerts.calibrationDaysThreshold, settings.alerts.longOccupancyHoursThreshold]
-  )
-
-  const alerts = useAppSelector((state) => selectDerivedAlerts(state, nowMs))
-  const unreadCount = useMemo(() => alerts.filter((a) => !readIds[a.id]).length, [alerts, readIds])
-  const latestAlerts = useMemo(() => alerts.slice(0, 20), [alerts])
+  const unreadCount = useMemo(() => notifications.filter((n) => !n.read).length, [notifications])
+  const latestNotifications = useMemo(() => notifications.slice(0, 20), [notifications])
 
   const visibleSections = useMemo(() => {
     return sectionsSorted.filter((s) => (itemsBySection.get(s.id) ?? []).length > 0)
@@ -598,13 +591,13 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
 
   const notifOpen = Boolean(notifAnchorEl)
   const closeNotif = () => setNotifAnchorEl(null)
-  const handleOpenAlert = (alert: any) => {
-    dispatch(markRead({ id: alert.id }))
+  const handleOpenNotification = (notification: AppNotification) => {
+    dispatch(markRead({ id: notification.id }))
     closeNotif()
     clearTimers()
     if (!isMobile && sidebarMode === 'auto') setExpanded(false)
     const target =
-      alert.type === 'calibration-due' ? '/calibrations' : '/alerts'
+      notification.url || (notification.type === 'calibration_due' ? '/calibrations' : notification.type === 'usage_completed' ? '/usage-logs' : '/alerts')
     onNavigate(target)
     if (isMobile) setMobileOpen(false)
   }
@@ -672,25 +665,25 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
             <Button
               size="small"
               variant="outlined"
-              onClick={() => dispatch(markAllRead({ ids: alerts.map((a) => a.id) }))}
-              disabled={alerts.length === 0 || unreadCount === 0}
+              onClick={() => dispatch(markAllRead({ ids: notifications.map((a) => a.id) }))}
+              disabled={notifications.length === 0 || unreadCount === 0}
             >
               {tr('全部已读', 'Mark all read')}
             </Button>
           </Box>
 
-          {latestAlerts.length === 0 ? (
+          {latestNotifications.length === 0 ? (
             <Box sx={{ px: 0.5, py: 1.5 }}>
               <Typography color="text.secondary">{tr('暂无通知', 'No notifications')}</Typography>
             </Box>
           ) : (
             <List sx={{ py: 0 }}>
-              {latestAlerts.map((a) => {
-                const isUnread = !readIds[a.id]
+              {latestNotifications.map((a) => {
+                const isUnread = !a.read
                 return (
                   <ListItemButton
                     key={a.id}
-                    onClick={() => handleOpenAlert(a)}
+                    onClick={() => handleOpenNotification(a)}
                     sx={{
                       borderRadius: 1.5,
                       mb: 0.5,
@@ -707,10 +700,10 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
                         {a.title}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" noWrap>
-                        {a.assetName}
+                        {a.assetName || a.entityType}
                       </Typography>
                       <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
-                        {a.detail}
+                        {a.message}
                       </Typography>
                     </Box>
                   </ListItemButton>
@@ -761,25 +754,25 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
           <Button
             size="small"
             variant="outlined"
-            onClick={() => dispatch(markAllRead({ ids: alerts.map((a) => a.id) }))}
-            disabled={alerts.length === 0 || unreadCount === 0}
+            onClick={() => dispatch(markAllRead({ ids: notifications.map((a) => a.id) }))}
+            disabled={notifications.length === 0 || unreadCount === 0}
           >
             {tr('全部已读', 'Mark all read')}
           </Button>
         </Box>
 
-        {latestAlerts.length === 0 ? (
+        {latestNotifications.length === 0 ? (
           <Box sx={{ px: 0.5, py: 1.5 }}>
             <Typography color="text.secondary">{tr('暂无通知', 'No notifications')}</Typography>
           </Box>
         ) : (
           <List sx={{ py: 0 }}>
-            {latestAlerts.map((a) => {
-              const isUnread = !readIds[a.id]
+            {latestNotifications.map((a) => {
+              const isUnread = !a.read
               return (
                 <ListItemButton
                   key={a.id}
-                  onClick={() => handleOpenAlert(a)}
+                  onClick={() => handleOpenNotification(a)}
                   sx={{
                     borderRadius: 1.5,
                     mb: 0.5,
@@ -796,10 +789,10 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
                       {a.title}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" noWrap>
-                      {a.assetName}
+                      {a.assetName || a.entityType}
                     </Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }} noWrap>
-                      {a.detail}
+                      {a.message}
                     </Typography>
                   </Box>
                 </ListItemButton>

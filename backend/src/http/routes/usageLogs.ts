@@ -8,6 +8,8 @@ import { recomputeChamberStatus } from '../../services/assetStatus.js'
 import { publishUsageLogChanged } from '../../services/events.js'
 import { writeAuditLog } from '../../services/auditLog.js'
 import { computeCostSnapshot } from '../../services/costSnapshot.js'
+import { sendPendingNotificationDeliveries } from '../../services/notificationDelivery.js'
+import { createNotificationWithDeliveries, resolveNotificationUsers } from '../../services/notificationService.js'
 
 export const usageLogsRouter = Router()
 
@@ -95,6 +97,40 @@ const ensureUsageLogCostSnapshot = (db: any, logId: string, source: 'at_completi
   }
 }
 
+const notifyUsageCompleted = async (db: any, logId: string) => {
+  const row = db
+    .prepare(
+      [
+        'select l.id, l.chamber_id, l.start_time, l.end_time, l.user, l.status, a.name as asset_name',
+        'from usage_logs l',
+        'left join assets a on a.id = l.chamber_id',
+        'where l.id = ?',
+      ].join(' ')
+    )
+    .get(logId) as any | undefined
+  if (!row || row.status !== 'completed') return
+  const assetName = row.asset_name ?? row.chamber_id
+  const users = resolveNotificationUsers(db, { type: 'usage_completed', usageUser: row.user })
+  const result = createNotificationWithDeliveries(
+    db,
+    {
+      type: 'usage_completed',
+      severity: 'info',
+      title: '测试/使用已完成',
+      message: `${assetName} 的使用记录已完成，使用人：${row.user}`,
+      entityType: 'usage_log',
+      entityId: row.id,
+      assetId: row.chamber_id,
+      assetName,
+      occurredAt: row.end_time ?? new Date().toISOString(),
+      url: '/usage-logs',
+      dedupeKey: `usage_completed:${row.id}`,
+    },
+    { users }
+  )
+  if (result.created) await sendPendingNotificationDeliveries(db)
+}
+
 const usageLogCreateSchema = z.object({
   chamberId: z.string().min(1),
   projectId: z.string().optional(),
@@ -180,7 +216,7 @@ usageLogsRouter.get('/:id', requireAuth, (req, res) => {
   })
 })
 
-usageLogsRouter.post('/', requireAuth, (req, res) => {
+usageLogsRouter.post('/', requireAuth, async (req, res) => {
   const body = usageLogCreateSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
   const d = body.data
@@ -260,12 +296,13 @@ usageLogsRouter.post('/', requireAuth, (req, res) => {
         after: { ...snap.next, snapshotAt: snap.snapshotAt, snapshotSource: snap.snapshotSource },
       })
     }
+    await notifyUsageCompleted(db, id)
   }
 
   res.json({ id })
 })
 
-usageLogsRouter.patch('/:id', requireAuth, (req, res) => {
+usageLogsRouter.patch('/:id', requireAuth, async (req, res) => {
   const id = req.params.id
   const body = usageLogPatchSchema.safeParse(req.body)
   if (!body.success) return res.status(400).json({ error: 'invalid_body' })
@@ -372,6 +409,13 @@ usageLogsRouter.patch('/:id', requireAuth, (req, res) => {
         after: { ...snap.next, snapshotAt: snap.snapshotAt, snapshotSource: snap.snapshotSource },
       })
     }
+  }
+
+  const afterForNotification = db.prepare('select status from usage_logs where id = ?').get(id) as
+    | { status: string }
+    | undefined
+  if (afterForNotification?.status === 'completed') {
+    await notifyUsageCompleted(db, id)
   }
 
   res.json({ ok: true })

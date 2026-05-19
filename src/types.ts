@@ -4,6 +4,7 @@ export interface User {
   id: string
   username: string
   role: UserRole
+  email?: string
   password?: string
 }
 
@@ -154,4 +155,35 @@ export interface RepairTicket {
   updatedAt?: string
   timeline?: RepairTimelineEntry[]
   attachments?: AssetAttachment[]
+}
+
+export type NotificationType = 'usage_completed' | 'calibration_due' | 'usage_overdue' | 'usage_long'
+export type NotificationSeverity = 'P1' | 'P2' | 'info'
+export type NotificationChannelType = 'wecom_bot' | 'feishu_bot'
+
+export interface AppNotification {
+  id: string
+  type: NotificationType
+  severity: NotificationSeverity
+  title: string
+  message: string
+  entityType: string
+  entityId: string
+  assetId?: string
+  assetName?: string
+  occurredAt: string
+  url?: string
+  createdAt?: string
+  read?: boolean
+}
+
+export interface NotificationChannel {
+  id: string
+  type: NotificationChannelType
+  name: string
+  webhookUrlMasked: string
+  enabled: boolean
+  subscribedTypes: NotificationType[]
+  createdAt: string
+  updatedAt?: string
 }
