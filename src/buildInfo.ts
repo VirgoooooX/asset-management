@@ -8,10 +8,15 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '0.1.17',
-  commit: '53a0dc2',
-  builtAt: '2026-04-02T13:27:51.504Z',
+  version: '0.1.18',
+  commit: '4178a21',
+  builtAt: '2026-07-08T14:21:29.860Z',
   changelog: JSON.parse(`[
+  {
+    "hash": "4178a21",
+    "date": "2026-04-02",
+    "message": "feat: implement backend service for chamber usage logs with cost snapshotting and validation"
+  },
   {
     "hash": "53a0dc2",
     "date": "2026-03-20",
@@ -60,7 +65,7 @@ export const buildInfo: BuildInfo = {
   {
     "hash": "bb5b35a",
     "date": "2026-02-11",
-    "message": "Merge branch 'main' of https://github.com/VirgoooooX/asset-management"
+    "message": "Merge branch \'main\' of https://github.com/VirgoooooX/asset-management"
   },
   {
     "hash": "641cdf9",
@@ -120,7 +125,7 @@ export const buildInfo: BuildInfo = {
   {
     "hash": "1b09bad",
     "date": "2026-01-25",
-    "message": "Merge branch 'main' of https://github.com/VirgoooooX/asset-management"
+    "message": "Merge branch \'main\' of https://github.com/VirgoooooX/asset-management"
   },
   {
     "hash": "6d67dd3",
@@ -156,11 +161,6 @@ export const buildInfo: BuildInfo = {
     "hash": "909608a",
     "date": "2026-01-23",
     "message": "feat: 添加资产状态实时更新和测试基础设施"
-  },
-  {
-    "hash": "5136efc",
-    "date": "2026-01-22",
-    "message": "feat(数据加载): 优化数据加载逻辑并添加防抖机制"
   }
 ]`) as ChangelogEntry[],
 }
