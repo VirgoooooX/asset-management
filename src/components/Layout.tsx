@@ -107,7 +107,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             }}
           >
             <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
-              © {new Date().getFullYear()} {tr('Jabil 内部专用', 'Internal use only')} · All Rights Reserved · By Vigoss
+              © {new Date().getFullYear()} All Rights Reserved · By Vigoss
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }}>
               · {tr('版本', 'Version')} {buildInfo.version}

@@ -105,6 +105,38 @@ async function readJson(filePath) {
   return JSON.parse(raw)
 }
 
+async function readVersionFile() {
+  const versionPath = path.join(repoRoot, 'VERSION')
+  const version = (await readFile(versionPath, 'utf8')).trim()
+  if (!/^\d+\.\d+\.\d+(?:-.+)?$/.test(version)) {
+    throw new Error(`Invalid VERSION file contents: ${version}`)
+  }
+  return version
+}
+
+async function assertVersionConsistency(expectedVersion) {
+  const packageFiles = [
+    path.join(repoRoot, 'package.json'),
+    path.join(repoRoot, 'package-lock.json'),
+    path.join(repoRoot, 'backend', 'package.json'),
+    path.join(repoRoot, 'backend', 'package-lock.json'),
+  ]
+
+  for (const filePath of packageFiles) {
+    const json = await readJson(filePath)
+    const versions = [json.version, json.packages?.['']?.version].filter(Boolean)
+    if (versions.some((version) => version !== expectedVersion)) {
+      throw new Error(`${path.relative(repoRoot, filePath)} is ${versions.join(', ')}, expected ${expectedVersion}. Run the release script to resync versions.`)
+    }
+  }
+
+  const buildInfo = await readFile(path.join(repoRoot, 'src', 'buildInfo.ts'), 'utf8')
+  const match = buildInfo.match(/\bversion:\s*'([^']+)'/)
+  if (!match || match[1] !== expectedVersion) {
+    throw new Error(`src/buildInfo.ts is ${match?.[1] ?? 'missing'}, expected ${expectedVersion}. Run the release script to regenerate it.`)
+  }
+}
+
 async function writeJson(filePath, data) {
   await writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8')
 }
@@ -225,6 +257,14 @@ async function updatePackageVersions(targetVersion, dryRun) {
   }
 }
 
+async function updateVersionFile(targetVersion, dryRun) {
+  const versionPath = path.join(repoRoot, 'VERSION')
+  if (!dryRun) {
+    await writeFile(versionPath, `${targetVersion}\n`, 'utf8')
+  }
+  console.log(`${dryRun ? '[dry-run] Would update' : 'Updated'} VERSION -> ${targetVersion}`)
+}
+
 async function runChecks(options) {
   if (options.skipChecks) {
     console.log('Skipping checks.')
@@ -249,6 +289,7 @@ async function stageReleaseFiles() {
     'package-lock.json',
     'backend/package.json',
     'backend/package-lock.json',
+    'VERSION',
     'src/buildInfo.ts',
     'scripts/release.mjs',
     '.github/workflows/docker-release.yml',
@@ -334,9 +375,8 @@ async function createGitHubRelease({ tagName, targetVersion, imageName, changelo
 
 async function main() {
   const options = parseArgs(process.argv.slice(2))
-  const rootPkgPath = path.join(repoRoot, 'package.json')
-  const rootPkg = await readJson(rootPkgPath)
-  const currentVersion = rootPkg.version
+  const currentVersion = await readVersionFile()
+  await assertVersionConsistency(currentVersion)
   const targetVersion = options.version ?? bumpVersion(currentVersion, options.bump)
   const tagName = targetVersion
 
@@ -351,6 +391,7 @@ async function main() {
   const repoSlug = await getRepoSlug()
   const imageName = `ghcr.io/${repoSlug.toLowerCase()}`
 
+  await updateVersionFile(targetVersion, options.dryRun)
   await updatePackageVersions(targetVersion, options.dryRun)
   if (options.dryRun) {
     console.log(`[dry-run] Update src/buildInfo.ts -> ${targetVersion}`)

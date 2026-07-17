@@ -188,8 +188,10 @@ docker-compose up -d
 
 ### 4. 发布新版本
 
+仓库根目录的 `VERSION` 是唯一的项目版本来源；根目录与后端的 package manifest、lockfile 以及前端版本/更新日志信息均由发布脚本同步生成，不要手动分别修改这些版本号。
+
 ```bash
-# 默认 patch bump，例如 0.1.17 -> 0.1.18
+# 默认执行 patch bump
 npm run release
 
 # 指定 bump 类型或版本号
