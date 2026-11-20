@@ -22,9 +22,16 @@ const jsonFetch = async (path, init = {}) => {
     },
   })
   const requestId = res.headers.get('x-request-id') || undefined
-  const text = await res.text().catch(() => '')
-  const data = text ? JSON.parse(text) : null
-  return { res, data, requestId }
+  const rawText = await res.text().catch(() => '')
+  let data = null
+  if (rawText) {
+    try {
+      data = JSON.parse(rawText)
+    } catch {
+      data = null
+    }
+  }
+  return { res, data, rawText, requestId }
 }
 
 const main = async () => {
@@ -62,31 +69,44 @@ const main = async () => {
   const createRid = assetCreate.requestId
   if (!createRid) fail('asset_create_missing_x_request_id')
 
-  const audit = await jsonFetch(`/api/admin/audit-logs?requestId=${encodeURIComponent(createRid)}&page=0&pageSize=50`, {
-    headers: authHeader,
-  })
-  if (!audit.res.ok) fail(`audit_logs_failed_${audit.res.status}`)
-  const items = audit.data?.items
-  if (!Array.isArray(items) || items.length === 0) fail('audit_logs_no_items_for_request_id')
-  const anyBad = items.some((it) => it.requestId !== createRid || !it.ip || !it.userAgent)
-  if (anyBad) fail('audit_logs_missing_context_fields')
+  let auditCount = 0
+  let deletedAsset = false
+  try {
+    const audit = await jsonFetch(`/api/admin/audit-logs?requestId=${encodeURIComponent(createRid)}&page=0&pageSize=50`, {
+      headers: authHeader,
+    })
+    if (!audit.res.ok) fail(`audit_logs_failed_${audit.res.status}`)
+    const items = audit.data?.items
+    if (!Array.isArray(items) || items.length === 0) fail('audit_logs_no_items_for_request_id')
+    auditCount = items.length
+    const anyBad = items.some((it) => it.requestId !== createRid || !it.ip || !it.userAgent)
+    if (anyBad) fail('audit_logs_missing_context_fields')
 
-  const csvRes = await fetch(joinUrl(`/api/admin/audit-logs/export?requestId=${encodeURIComponent(createRid)}&limit=100`), {
-    method: 'GET',
-    headers: authHeader,
-  })
-  if (!csvRes.ok) fail(`audit_export_failed_${csvRes.status}`)
-  const csvType = csvRes.headers.get('content-type') || ''
-  if (!csvType.includes('text/csv')) fail('audit_export_bad_content_type')
-  const csvText = await csvRes.text()
-  if (!csvText.startsWith('id,at,actor_user_id')) fail('audit_export_bad_header')
+    const csvRes = await fetch(joinUrl(`/api/admin/audit-logs/export?requestId=${encodeURIComponent(createRid)}&limit=100`), {
+      method: 'GET',
+      headers: authHeader,
+    })
+    if (!csvRes.ok) fail(`audit_export_failed_${csvRes.status}`)
+    const csvType = csvRes.headers.get('content-type') || ''
+    if (!csvType.includes('text/csv')) fail('audit_export_bad_content_type')
+    const csvText = await csvRes.text()
+    if (!csvText.startsWith('id,at,actor_user_id')) fail('audit_export_bad_header')
 
-  const del = await jsonFetch(`/api/assets/${encodeURIComponent(createdAssetId)}`, { method: 'DELETE', headers: authHeader })
-  if (!del.res.ok) fail(`asset_delete_failed_${del.res.status}`)
+    const del = await jsonFetch(`/api/assets/${encodeURIComponent(createdAssetId)}`, { method: 'DELETE', headers: authHeader })
+    if (!del.res.ok) fail(`asset_delete_failed_${del.res.status}`)
+    deletedAsset = true
 
-  const backfill = await jsonFetch('/api/admin/backfill/cost-snapshots?limit=5', { method: 'POST', headers: authHeader })
-  if (!backfill.res.ok) fail(`backfill_failed_${backfill.res.status}`)
-  if (backfill.data?.ok !== true) fail('backfill_response_not_ok')
+    const backfill = await jsonFetch('/api/admin/backfill/cost-snapshots?limit=5', { method: 'POST', headers: authHeader })
+    if (!backfill.res.ok) fail(`backfill_failed_${backfill.res.status}`)
+    if (backfill.data?.ok !== true) fail('backfill_response_not_ok')
+  } finally {
+    if (!deletedAsset) {
+      await jsonFetch(`/api/assets/${encodeURIComponent(createdAssetId)}`, {
+        method: 'DELETE',
+        headers: authHeader,
+      }).catch(() => undefined)
+    }
+  }
 
   process.stdout.write(
     JSON.stringify(
@@ -97,7 +117,7 @@ const main = async () => {
         requestId: createRid,
         createdAssetId,
         categoryRateCount: rates.data?.items?.length ?? 0,
-        auditMatchCount: items.length,
+        auditMatchCount: auditCount,
       },
       null,
       2
@@ -109,4 +129,3 @@ main().catch((e) => {
   process.exitCode = 1
   process.stderr.write(String(e?.message || e) + '\n')
 })
-

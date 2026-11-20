@@ -2,21 +2,11 @@ import React, { useMemo } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
 import EChart from './EChart'
+import type { ProfileStep } from '../utils/testProfile'
 
-export type ProfileStep = {
-  index: number
-  name?: string
-  durationMinutes: number
-  x0: number
-  x1: number
-  kind: 'ramp' | 'dwell'
-  startTemp?: number
-  endTemp?: number
-  startHumidity?: number
-  endHumidity?: number
-}
+export type { ProfileStep }
 
-const isNum = (v: any): v is number => typeof v === 'number' && Number.isFinite(v)
+const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 
 export const TestProfileChart: React.FC<{
   steps: ProfileStep[]
@@ -150,7 +140,6 @@ export const TestProfileChart: React.FC<{
   }, [mapRealToDisplay, scaled.ranges, steps, theme.palette.primary.main, theme.palette.success.main])
 
   const xAxis = useMemo(() => {
-    const useHours = totalMinutes >= 360
     const name = `${timeText}`
     return {
       type: 'value' as const,
@@ -163,7 +152,201 @@ export const TestProfileChart: React.FC<{
       axisTick: { show: false },
       splitLine: { lineStyle: { color: theme.palette.divider, opacity: 0.5 } },
     }
-  }, [scaled.total, theme.palette.divider, timeText, totalMinutes])
+  }, [scaled.total, theme.palette.divider, timeText])
+
+  const chartOption = useMemo(
+    () =>
+      ({
+        color: [theme.palette.error.main, theme.palette.info.main],
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'cross' },
+          formatter: (params: any) => {
+            const items = Array.isArray(params) ? params : [params]
+            const dx = Number(items[0]?.axisValue)
+            const x = mapDisplayToReal(dx)
+            const step = steps.find((s) => x > s.x0 - 1e-9 && x <= s.x1 + 1e-9)
+            const stepTitle = step
+              ? `${step.kind === 'ramp' ? rampText : dwellText}${step.name ? ` · ${step.name}` : ''}`
+              : ''
+            const t = Number.isFinite(x)
+              ? totalMinutes >= 360
+                ? `${Math.round((x / 60) * 10) / 10}${hourText}`
+                : `${Math.round(x)}${minuteText}`
+              : ''
+            const lines = [`<div style="font-weight:800;margin-bottom:2px;">${t}</div>`]
+            if (stepTitle) lines.push(`<div style="opacity:0.8;margin-bottom:6px;">${stepTitle}</div>`)
+            items.forEach((it: any) => {
+              const name = String(it?.seriesName || '')
+              const val = Array.isArray(it?.data) ? it.data[1] : it?.data
+              const unit = name === temperatureText ? '°C' : '%'
+              const safe = Number.isFinite(Number(val)) ? Number(val) : 0
+              lines.push(`<div>${it.marker}${name}: <span style="font-weight:800;">${safe}</span> ${unit}</div>`)
+            })
+            return lines.join('')
+          },
+        },
+        legend: {
+          top: 8,
+          left: 12,
+          textStyle: { color: theme.palette.text.secondary },
+          itemWidth: 10,
+          itemHeight: 10,
+          data: [temperatureText, humidityText],
+        },
+        grid: { top: 44, left: 56, right: 56, bottom: 124 },
+        xAxis,
+        yAxis: [
+          {
+            type: 'value',
+            min: 0,
+            max: 100,
+            splitNumber: 5,
+            name: `${temperatureText} (°C)`,
+            nameLocation: 'middle',
+            nameGap: 44,
+            axisLabel: { formatter: (v: number) => `${v}°` },
+            splitLine: { lineStyle: { color: theme.palette.divider, opacity: 0.5 } },
+          },
+          {
+            type: 'value',
+            min: 0,
+            max: 100,
+            splitNumber: 5,
+            name: `${humidityText} (%)`,
+            nameLocation: 'middle',
+            nameGap: 44,
+            axisLabel: { formatter: (v: number) => `${v}%` },
+            splitLine: { show: false },
+          },
+        ],
+        series: [
+          {
+            name: temperatureText,
+            type: 'line',
+            yAxisIndex: 0,
+            showSymbol: false,
+            smooth: false,
+            itemStyle: { color: theme.palette.error.main },
+            lineStyle: { width: 3, color: theme.palette.error.main },
+            areaStyle: { opacity: 0.07, color: theme.palette.error.main },
+            data: points.tempPoints,
+            markArea: { silent: true, data: markAreas as any },
+            markLine: {
+              symbol: ['none', 'none'],
+              label: { show: false },
+              lineStyle: { color: theme.palette.divider, opacity: 0.65, type: 'dashed', width: 1 },
+              data: scaled.ranges.slice(0, -1).map((r) => ({ xAxis: r.d1 })),
+            },
+          },
+          {
+            name: humidityText,
+            type: 'line',
+            yAxisIndex: 1,
+            showSymbol: false,
+            smooth: false,
+            itemStyle: { color: theme.palette.info.main },
+            lineStyle: { width: 3, color: theme.palette.info.main },
+            areaStyle: { opacity: 0.05, color: theme.palette.info.main },
+            data: points.humPoints,
+          },
+          {
+            name: '__durations__',
+            type: 'custom',
+            coordinateSystem: 'cartesian2d',
+            silent: true,
+            tooltip: { show: false },
+            xAxisIndex: 0,
+            yAxisIndex: 0,
+            z: 10,
+            clip: false,
+            renderItem: (params: any, api: any) => {
+              const x0 = Number(api.value(0) ?? 0)
+              const x1 = Number(api.value(1) ?? 0)
+              const minutes = Number(api.value(2) ?? 0)
+              const idx = Number(api.value(3) ?? 0)
+
+              const c0 = api.coord([x0, 0])
+              const c1 = api.coord([x1, 0])
+              const cs = params.coordSys
+              const yBase = (cs?.y ?? 0) + (cs?.height ?? 0)
+
+              const left = Math.min(c0[0], c1[0])
+              const width = Math.max(0, Math.abs(c1[0] - c0[0]))
+
+              const label = (() => {
+                const m = Number.isFinite(minutes) ? Math.max(0, minutes) : 0
+                if (m >= 60) {
+                  const h = m / 60
+                  if (Math.abs(h - Math.round(h)) < 1e-9) return `${Math.round(h)}${hourText}`
+                  return `${Math.round(h * 10) / 10}${hourText}`
+                }
+                return `${Math.round(m)}${minuteText}`
+              })()
+
+              const bandTop = yBase + 6
+              const bandH = 22
+              const bandFill = idx % 2 === 0 ? 'rgba(0,0,0,0.02)' : 'rgba(0,0,0,0.00)'
+
+              return {
+                type: 'group',
+                children: [
+                  {
+                    type: 'rect',
+                    shape: { x: left, y: bandTop, width, height: bandH, r: 3 },
+                    style: { fill: bandFill, stroke: theme.palette.divider, lineWidth: 1, opacity: 1 },
+                    silent: true,
+                  },
+                  {
+                    type: 'line',
+                    shape: { x1: left, y1: bandTop, x2: left, y2: bandTop + bandH },
+                    style: { stroke: theme.palette.divider, lineWidth: 1, opacity: 0.85 },
+                    silent: true,
+                  },
+                  {
+                    type: 'text',
+                    x: left + width / 2,
+                    y: bandTop + bandH / 2 + 1,
+                    style: {
+                      text: label,
+                      fill: theme.palette.text.secondary,
+                      font: `800 12px ${theme.typography.fontFamily}`,
+                      align: 'center',
+                      verticalAlign: 'middle',
+                    },
+                    silent: true,
+                  },
+                ],
+                silent: true,
+              }
+            },
+            data: scaled.ranges.map((r, i) => [r.d0, r.d1, steps[i]?.durationMinutes ?? 0, i]),
+            emphasis: { disabled: true },
+          },
+        ],
+      }) as any,
+    [
+      dwellText,
+      hourText,
+      humidityText,
+      mapDisplayToReal,
+      markAreas,
+      minuteText,
+      points.humPoints,
+      points.tempPoints,
+      rampText,
+      scaled.ranges,
+      steps,
+      temperatureText,
+      theme.palette.divider,
+      theme.palette.error.main,
+      theme.palette.info.main,
+      theme.palette.text.secondary,
+      theme.typography.fontFamily,
+      totalMinutes,
+      xAxis,
+    ]
+  )
 
   if (!steps.length) return null
 
@@ -178,183 +361,7 @@ export const TestProfileChart: React.FC<{
         </Typography>
       </Stack>
 
-      <EChart
-        height={440}
-        minWidth={640}
-        option={
-          ({
-          color: [theme.palette.error.main, theme.palette.info.main],
-          tooltip: {
-            trigger: 'axis',
-            axisPointer: { type: 'cross' },
-            formatter: (params: any) => {
-              const items = Array.isArray(params) ? params : [params]
-              const dx = Number(items[0]?.axisValue)
-              const x = mapDisplayToReal(dx)
-              const step = steps.find((s) => x > s.x0 - 1e-9 && x <= s.x1 + 1e-9)
-              const stepTitle = step
-                ? `${step.kind === 'ramp' ? rampText : dwellText}${step.name ? ` · ${step.name}` : ''}`
-                : ''
-              const t = Number.isFinite(x)
-                ? totalMinutes >= 360
-                  ? `${Math.round((x / 60) * 10) / 10}${hourText}`
-                  : `${Math.round(x)}${minuteText}`
-                : ''
-              const lines = [`<div style="font-weight:800;margin-bottom:2px;">${t}</div>`]
-              if (stepTitle) lines.push(`<div style="opacity:0.8;margin-bottom:6px;">${stepTitle}</div>`)
-              items.forEach((it: any) => {
-                const name = String(it?.seriesName || '')
-                const val = Array.isArray(it?.data) ? it.data[1] : it?.data
-                const unit = name === temperatureText ? '°C' : '%'
-                const safe = Number.isFinite(Number(val)) ? Number(val) : 0
-                lines.push(`<div>${it.marker}${name}: <span style="font-weight:800;">${safe}</span> ${unit}</div>`)
-              })
-              return lines.join('')
-            },
-          },
-          legend: {
-            top: 8,
-            left: 12,
-            textStyle: { color: theme.palette.text.secondary },
-            itemWidth: 10,
-            itemHeight: 10,
-            data: [temperatureText, humidityText],
-          },
-          grid: { top: 44, left: 56, right: 56, bottom: 124 },
-          xAxis,
-          yAxis: [
-            {
-              type: 'value',
-              min: 0,
-              max: 100,
-              splitNumber: 5,
-              name: `${temperatureText} (°C)`,
-              nameLocation: 'middle',
-              nameGap: 44,
-              axisLabel: { formatter: (v: number) => `${v}°` },
-              splitLine: { lineStyle: { color: theme.palette.divider, opacity: 0.5 } },
-            },
-            {
-              type: 'value',
-              min: 0,
-              max: 100,
-              splitNumber: 5,
-              name: `${humidityText} (%)`,
-              nameLocation: 'middle',
-              nameGap: 44,
-              axisLabel: { formatter: (v: number) => `${v}%` },
-              splitLine: { show: false },
-            },
-          ],
-          series: [
-            {
-              name: temperatureText,
-              type: 'line',
-              yAxisIndex: 0,
-              showSymbol: false,
-              smooth: false,
-              itemStyle: { color: theme.palette.error.main },
-              lineStyle: { width: 3, color: theme.palette.error.main },
-              areaStyle: { opacity: 0.07, color: theme.palette.error.main },
-              data: points.tempPoints,
-              markArea: { silent: true, data: markAreas as any },
-              markLine: {
-                symbol: ['none', 'none'],
-                label: { show: false },
-                lineStyle: { color: theme.palette.divider, opacity: 0.65, type: 'dashed', width: 1 },
-                data: scaled.ranges.slice(0, -1).map((r) => ({ xAxis: r.d1 })),
-              },
-            },
-            {
-              name: humidityText,
-              type: 'line',
-              yAxisIndex: 1,
-              showSymbol: false,
-              smooth: false,
-              itemStyle: { color: theme.palette.info.main },
-              lineStyle: { width: 3, color: theme.palette.info.main },
-              areaStyle: { opacity: 0.05, color: theme.palette.info.main },
-              data: points.humPoints,
-            },
-            {
-              name: '__durations__',
-              type: 'custom',
-              coordinateSystem: 'cartesian2d',
-              silent: true,
-              tooltip: { show: false },
-              xAxisIndex: 0,
-              yAxisIndex: 0,
-              z: 10,
-              clip: false,
-              renderItem: (params: any, api: any) => {
-                const x0 = Number(api.value(0) ?? 0)
-                const x1 = Number(api.value(1) ?? 0)
-                const minutes = Number(api.value(2) ?? 0)
-                const idx = Number(api.value(3) ?? 0)
-
-                const c0 = api.coord([x0, 0])
-                const c1 = api.coord([x1, 0])
-                const cs = params.coordSys
-                const yBase = (cs?.y ?? 0) + (cs?.height ?? 0)
-
-                const left = Math.min(c0[0], c1[0])
-                const width = Math.max(0, Math.abs(c1[0] - c0[0]))
-
-                const label = (() => {
-                  const m = Number.isFinite(minutes) ? Math.max(0, minutes) : 0
-                  if (m >= 60) {
-                    const h = m / 60
-                    if (Math.abs(h - Math.round(h)) < 1e-9) return `${Math.round(h)}${hourText}`
-                    return `${Math.round(h * 10) / 10}${hourText}`
-                  }
-                  return `${Math.round(m)}${minuteText}`
-                })()
-
-                const bandTop = yBase + 6
-                const bandH = 22
-                const bandFill = idx % 2 === 0 ? 'rgba(0,0,0,0.02)' : 'rgba(0,0,0,0.00)'
-
-                return {
-                  type: 'group',
-                  children: [
-                    {
-                      type: 'rect',
-                      shape: { x: left, y: bandTop, width, height: bandH, r: 3 },
-                      style: { fill: bandFill, stroke: theme.palette.divider, lineWidth: 1, opacity: 1 },
-                      silent: true,
-                    },
-                    {
-                      type: 'line',
-                      shape: { x1: left, y1: bandTop, x2: left, y2: bandTop + bandH },
-                      style: { stroke: theme.palette.divider, lineWidth: 1, opacity: 0.85 },
-                      silent: true,
-                    },
-                    {
-                      type: 'text',
-                      x: left + width / 2,
-                      y: bandTop + bandH / 2 + 1,
-                      style: {
-                        text: label,
-                        fill: theme.palette.text.secondary,
-                        font: `800 12px ${theme.typography.fontFamily}`,
-                        align: 'center',
-                        verticalAlign: 'middle',
-                      },
-                      silent: true,
-                    },
-                  ],
-                  silent: true,
-                }
-              },
-              data: (() => {
-                return scaled.ranges.map((r, i) => [r.d0, r.d1, steps[i]?.durationMinutes ?? 0, i])
-              })(),
-              emphasis: { disabled: true },
-            },
-          ],
-          } as any)
-        }
-      />
+      <EChart height={440} minWidth={640} option={chartOption} />
     </Box>
   )
 }

@@ -34,25 +34,14 @@ type Client = {
   res: Response
 }
 
+const MAX_SSE_BUFFER_BYTES = 1024 * 1024
 const clients = new Map<string, Client>()
 let heartbeat: NodeJS.Timeout | null = null
 
-const startHeartbeatIfNeeded = () => {
-  if (heartbeat) return
-  heartbeat = setInterval(() => {
-    if (!clients.size) return
-    for (const c of clients.values()) {
-      try {
-        c.res.write(`: ping\n\n`)
-      } catch {
-        clients.delete(c.id)
-      }
-    }
-    if (!clients.size && heartbeat) {
-      clearInterval(heartbeat)
-      heartbeat = null
-    }
-  }, 25_000)
+const isClientWritable = (res: Response) => {
+  if (res.writableEnded || res.destroyed) return false
+  if (res.writableLength > MAX_SSE_BUFFER_BYTES) return false
+  return true
 }
 
 const stopHeartbeatIfNeeded = () => {
@@ -62,16 +51,42 @@ const stopHeartbeatIfNeeded = () => {
   heartbeat = null
 }
 
-const writeEvent = (res: Response, eventName: string, data: unknown) => {
-  res.write(`event: ${eventName}\n`)
-  res.write(`data: ${JSON.stringify(data)}\n\n`)
+const startHeartbeatIfNeeded = () => {
+  if (heartbeat) return
+  heartbeat = setInterval(() => {
+    if (!clients.size) {
+      stopHeartbeatIfNeeded()
+      return
+    }
+    for (const c of clients.values()) {
+      if (!isClientWritable(c.res)) {
+        clients.delete(c.id)
+        continue
+      }
+      try {
+        c.res.write(`: ping\n\n`)
+      } catch {
+        clients.delete(c.id)
+      }
+    }
+    stopHeartbeatIfNeeded()
+  }, 25_000)
+  heartbeat.unref()
 }
+
+const formatSseFrame = (eventName: string, data: unknown) => `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`
 
 export const addSseClient = (res: Response) => {
   const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`
   clients.set(id, { id, res })
+  res.on('error', () => removeSseClient(id))
+  res.on('close', () => removeSseClient(id))
   startHeartbeatIfNeeded()
-  writeEvent(res, 'ready', { ok: true })
+  try {
+    res.write(formatSseFrame('ready', { ok: true }))
+  } catch {
+    removeSseClient(id)
+  }
   return id
 }
 
@@ -80,11 +95,28 @@ export const removeSseClient = (id: string) => {
   stopHeartbeatIfNeeded()
 }
 
-export const publish = (evt: ServerEvent) => {
-  if (!clients.size) return
+export const closeAllSseClients = () => {
   for (const c of clients.values()) {
     try {
-      writeEvent(c.res, evt.type, evt)
+      c.res.end()
+    } catch {
+      // ignore socket errors during shutdown
+    }
+  }
+  clients.clear()
+  stopHeartbeatIfNeeded()
+}
+
+export const publish = (evt: ServerEvent) => {
+  if (!clients.size) return
+  const payload = formatSseFrame(evt.type, evt)
+  for (const c of clients.values()) {
+    if (!isClientWritable(c.res)) {
+      clients.delete(c.id)
+      continue
+    }
+    try {
+      c.res.write(payload)
     } catch {
       clients.delete(c.id)
     }

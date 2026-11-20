@@ -1,14 +1,9 @@
-import * as XLSX from 'xlsx'
-import { format, isValid, parseISO } from 'date-fns'
-import { enUS, zhCN } from 'date-fns/locale'
+import { format } from 'date-fns'
 import type { Language } from '../store/settingsSlice'
+import { formatDateTimeShort } from './formatters'
 
-const formatDateTime = (value: string | undefined, language: Language) => {
-  if (!value) return ''
-  const date = parseISO(value)
-  if (!isValid(date)) return value
-  return format(date, 'yyyy-MM-dd HH:mm', { locale: language === 'en' ? enUS : zhCN })
-}
+const formatExportTime = (value: string | undefined, language: Language) =>
+  formatDateTimeShort(value, { fallback: '', language })
 
 export type ProjectCostSummary = {
   projectName: string
@@ -34,12 +29,13 @@ export type ProjectCostLine = {
   notes?: string
 }
 
-export const exportProjectCostToXlsx = (params: {
+export const exportProjectCostToXlsx = async (params: {
   summary: ProjectCostSummary
   lines: ProjectCostLine[]
   fileNamePrefix?: string
   language?: Language
 }) => {
+  const XLSX = await import('xlsx')
   const { summary, lines, fileNamePrefix = 'project-cost', language = 'zh' } = params
 
   const summaryRows =
@@ -47,8 +43,8 @@ export const exportProjectCostToXlsx = (params: {
       ? [
           {
             Project: summary.projectName,
-            'Range Start': summary.range ? formatDateTime(summary.range.start, language) : '',
-            'Range End': summary.range ? formatDateTime(summary.range.end, language) : '',
+            'Range Start': summary.range ? formatExportTime(summary.range.start, language) : '',
+            'Range End': summary.range ? formatExportTime(summary.range.end, language) : '',
             'Total Billable Hours': summary.totalBillableHours,
             'Total Cost (CNY)': summary.totalCostYuan,
             'Asset Count': summary.assetCount,
@@ -58,8 +54,8 @@ export const exportProjectCostToXlsx = (params: {
       : [
           {
             项目: summary.projectName,
-            开始时间: summary.range ? formatDateTime(summary.range.start, language) : '',
-            结束时间: summary.range ? formatDateTime(summary.range.end, language) : '',
+            开始时间: summary.range ? formatExportTime(summary.range.start, language) : '',
+            结束时间: summary.range ? formatExportTime(summary.range.end, language) : '',
             计费小时: summary.totalBillableHours,
             总费用元: summary.totalCostYuan,
             设备数: summary.assetCount,
@@ -73,8 +69,8 @@ export const exportProjectCostToXlsx = (params: {
         'Log ID': l.logId,
         Project: l.projectName,
         Asset: l.assetName,
-        'Start Time': formatDateTime(l.startTime, language),
-        'End Time': formatDateTime(l.endTime, language),
+        'Start Time': formatExportTime(l.startTime, language),
+        'End Time': formatExportTime(l.endTime, language),
         'Billable Hours': l.billableHours,
         'Hourly Rate (CNY)': l.hourlyRateYuan,
         'Cost (CNY)': l.costYuan,
@@ -89,8 +85,8 @@ export const exportProjectCostToXlsx = (params: {
       使用记录ID: l.logId,
       项目: l.projectName,
       设备: l.assetName,
-      开始时间: formatDateTime(l.startTime, language),
-      结束时间: formatDateTime(l.endTime, language),
+      开始时间: formatExportTime(l.startTime, language),
+      结束时间: formatExportTime(l.endTime, language),
       计费小时: l.billableHours,
       小时费率元: l.hourlyRateYuan,
       费用元: l.costYuan,

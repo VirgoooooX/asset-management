@@ -63,17 +63,6 @@ export interface Asset {
   updatedAt?: string
 }
 
-export interface Chamber {
-  id: string
-  name: string
-  description?: string
-  status: AssetStatus
-  manufacturer: string
-  model: string
-  calibrationDate?: string
-  createdAt: string
-}
-
 export interface Config {
   id: string
   name: string

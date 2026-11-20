@@ -13,10 +13,22 @@ const envSchema = z.object({
   ADMIN_SEED_USER: z.string().optional(),
   ADMIN_SEED_PASSWORD: z.string().optional(),
   ADMIN_SEED_RESET_PASSWORD: z.string().optional(),
-  COOKIE_SECURE: z.string().optional()
+  COOKIE_SECURE: z.string().optional(),
+  TRUST_PROXY: z.string().optional()
 })
 
 const env = envSchema.parse(process.env)
+
+const parseTrustProxy = (raw?: string): boolean | number | string | undefined => {
+  if (!raw) return undefined
+  const trimmed = raw.trim()
+  if (!trimmed) return undefined
+  if (trimmed === 'true') return true
+  if (trimmed === 'false') return false
+  const num = Number(trimmed)
+  if (Number.isInteger(num) && num >= 0) return num
+  return trimmed
+}
 
 export const config = {
   port: env.PORT ?? 8080,
@@ -29,5 +41,6 @@ export const config = {
   adminSeedUser: env.ADMIN_SEED_USER ?? 'admin',
   adminSeedPassword: env.ADMIN_SEED_PASSWORD,
   adminSeedResetPassword: env.ADMIN_SEED_RESET_PASSWORD === 'true',
-  cookieSecure: env.COOKIE_SECURE === 'true'
+  cookieSecure: env.COOKIE_SECURE === 'true',
+  trustProxy: parseTrustProxy(env.TRUST_PROXY)
 }

@@ -1,6 +1,5 @@
 // src/components/ProjectForm.tsx
 import React, { useState, useEffect } from 'react';
-import { useDispatch } from 'react-redux';
 import {
   Box,
   TextField,
@@ -15,16 +14,16 @@ import {
   List,
   ListItem,
   ListItemText,
-  ListItemSecondaryAction,
   Chip,
   Alert,
   Snackbar,
   Stack,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
-import { Project, Config } from '../types'; // Config 类型现在包含 remark
+import { useI18n } from '../i18n';
+import { useAppDispatch } from '../store/hooks';
 import { addProject, updateProject } from '../store/projectsSlice';
-import { AppDispatch } from '../store';
+import { Project, Config } from '../types';
 
 interface ProjectFormProps {
   open: boolean;
@@ -33,19 +32,17 @@ interface ProjectFormProps {
 }
 
 const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => {
-  const dispatch = useDispatch<AppDispatch>();
+  const dispatch = useAppDispatch();
+  const { tr } = useI18n();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [configs, setConfigs] = useState<Config[]>([]);
-  const [wfs, setWfs] = useState<string[]>([]); // 如果类型中 wfs 改名，这里也要改
+  const [wfs, setWfs] = useState<string[]>([]);
 
-  // 新配置表单状态
   const [configName, setConfigName] = useState('');
-  // const [configParams, setConfigParams] = useState(''); // 旧的参数状态
-  const [configRemark, setConfigRemark] = useState(''); // 新的备注状态
+  const [configRemark, setConfigRemark] = useState('');
 
-  // 新工作流状态
   const [newWf, setNewWf] = useState('');
   const [formSubmitError, setFormSubmitError] = useState<string | null>(null);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
@@ -60,7 +57,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
         setDescription(project.description || '');
         setCustomerName(project.customerName || '');
         setConfigs(project.configs || []);
-        setWfs(project.wfs || []); // 如果类型中 wfs 改名，这里也要改
+        setWfs(project.wfs || []);
       } else {
         setName('');
         setDescription('');
@@ -69,8 +66,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
         setWfs([]);
       }
       setConfigName('');
-      // setConfigParams(''); // 清除旧参数状态
-      setConfigRemark(''); // 清除新备注状态
+      setConfigRemark('');
       setNewWf('');
       setSnackbarOpen(false);
     }
@@ -79,75 +75,76 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormSubmitError(null);
-  
+
     if (!name.trim()) {
-      setFormSubmitError("项目名称不能为空");
+      setFormSubmitError(tr('项目名称不能为空', 'Project name is required'));
       return;
     }
-  
+
     const projectDataForDispatch: Omit<Project, 'id' | 'createdAt'> = {
       name: name.trim(),
       description: description.trim() || undefined,
       customerName: customerName.trim() || undefined,
-      configs, 
-      wfs: wfs.length > 0 ? wfs : [], 
+      configs,
+      wfs: wfs.length > 0 ? wfs : [],
     };
-    
+
     try {
-      if (project && project.id) { 
-        await dispatch(updateProject({ 
-          id: project.id, 
-          project: projectDataForDispatch 
-        })).unwrap();
-      } else { 
+      if (project && project.id) {
+        await dispatch(
+          updateProject({
+            id: project.id,
+            project: projectDataForDispatch,
+          })
+        ).unwrap();
+      } else {
         await dispatch(addProject(projectDataForDispatch)).unwrap();
       }
-      onClose(true); 
-    } catch (error: any) {
-      console.error('ProjectForm: Submit error:', error); // 打印 Thunk 返回的错误
-      setFormSubmitError(error.message || '操作失败，请稍后再试。');
+      onClose(true);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error || '');
+      console.error('ProjectForm: Submit error:', error);
+      setFormSubmitError(msg || tr('操作失败，请稍后再试。', 'Operation failed, please try again later.'));
     }
   };
 
   const handleAddConfig = () => {
     if (!configName.trim()) {
-      setSnackbarMessage('Config 名称不能为空');
+      setSnackbarMessage(tr('Config 名称不能为空', 'Config name is required'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
       return;
     }
-    
-    const trimmedRemark = configRemark.trim(); // 先 trim
-    
-    const newConfigData: { id: string; name: string; remark?: string } = { // 定义一个临时类型
-      id: `config-${Date.now()}-${Math.random()}`, 
-      name: configName.trim(), 
+
+    const trimmedRemark = configRemark.trim();
+
+    const newConfigData: { id: string; name: string; remark?: string } = {
+      id: `config-${Date.now()}-${Math.random()}`,
+      name: configName.trim(),
     };
-  
-    // 只有当 remark 有实际内容时才添加它
+
     if (trimmedRemark) {
       newConfigData.remark = trimmedRemark;
     }
-    // 如果 trimmedRemark 为空，newConfigData 中就不会有 remark 字段
-  
-    setConfigs([...configs, newConfigData as Config]); // 类型断言回 Config
+
+    setConfigs([...configs, newConfigData as Config]);
     setConfigName('');
     setConfigRemark('');
   };
 
   const handleDeleteConfig = (id: string) => {
-    setConfigs(configs.filter(config => config.id !== id));
+    setConfigs(configs.filter((config) => config.id !== id));
   };
 
-  const handleAddWf = () => { // "Wf" 可以考虑是否也改为 "WaterFall Item" 之类的
+  const handleAddWf = () => {
     if (!newWf.trim()) {
-      setSnackbarMessage('WaterFall 名称不能为空');
+      setSnackbarMessage(tr('WaterFall 名称不能为空', 'WaterFall name is required'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
       return;
     }
     if (wfs.includes(newWf.trim())) {
-      setSnackbarMessage('该 WaterFall 已存在');
+      setSnackbarMessage(tr('该 WaterFall 已存在', 'This WaterFall already exists'));
       setSnackbarSeverity('error');
       setSnackbarOpen(true);
       return;
@@ -157,24 +154,25 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
   };
 
   const handleDeleteWf = (wfToRemove: string) => {
-    setWfs(wfs.filter(item => item !== wfToRemove));
+    setWfs(wfs.filter((item) => item !== wfToRemove));
   };
 
   return (
     <Dialog open={open} onClose={() => onClose()} maxWidth="md" fullWidth>
-      <DialogTitle>{project ? '编辑项目' : '添加新项目'}</DialogTitle>
+      <DialogTitle>{project ? tr('编辑项目', 'Edit project') : tr('添加新项目', 'Add project')}</DialogTitle>
       <form onSubmit={handleSubmit}>
         <DialogContent dividers>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
-            <TextField label="项目名称" value={name} onChange={(e) => setName(e.target.value)} fullWidth required autoFocus />
-            <TextField label="项目描述" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={3} />
-            <TextField label="客户名称" value={customerName} onChange={(e) => setCustomerName(e.target.value)} fullWidth />
-            
+            <TextField label={tr('项目名称', 'Project name')} value={name} onChange={(e) => setName(e.target.value)} fullWidth required autoFocus />
+            <TextField label={tr('项目描述', 'Description')} value={description} onChange={(e) => setDescription(e.target.value)} fullWidth multiline rows={3} />
+            <TextField label={tr('客户名称', 'Customer')} value={customerName} onChange={(e) => setCustomerName(e.target.value)} fullWidth />
+
             <Divider sx={{ my: 2 }} />
 
-            {/* Config 管理 */}
             <Box>
-              <Typography variant="h6" sx={{ mb: 1 }}>Config</Typography> {/* 修改标题 */}
+              <Typography variant="h6" sx={{ mb: 1 }}>
+                Config
+              </Typography>
               <Stack
                 direction={{ xs: 'column', sm: 'row' }}
                 spacing={1}
@@ -182,7 +180,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                 sx={{ mb: 1 }}
               >
                 <TextField
-                  label="新 Config 名称"
+                  label={tr('新 Config 名称', 'New Config name')}
                   value={configName}
                   onChange={(e) => setConfigName(e.target.value)}
                   size="small"
@@ -190,7 +188,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                   sx={{ flex: 1 }}
                 />
                 <TextField
-                  label="备注 (可选)"
+                  label={tr('备注 (可选)', 'Remark (optional)')}
                   value={configRemark}
                   onChange={(e) => setConfigRemark(e.target.value)}
                   size="small"
@@ -203,7 +201,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                   size="small"
                   sx={{ minWidth: { xs: '100%', sm: 120 }, whiteSpace: 'nowrap' }}
                 >
-                  添加 Config
+                  {tr('添加 Config', 'Add Config')}
                 </Button>
               </Stack>
               <List dense>
@@ -212,7 +210,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                     key={config.id}
                     sx={{ py: 0.5 }}
                     secondaryAction={
-                      <IconButton edge="end" aria-label="delete" onClick={() => handleDeleteConfig(config.id)} size="small">
+                      <IconButton edge="end" aria-label={tr('删除', 'Delete')} onClick={() => handleDeleteConfig(config.id)} size="small">
                         <DeleteIcon fontSize="small" />
                       </IconButton>
                     }
@@ -224,7 +222,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                             {config.name}
                           </Typography>
                           <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
-                            {config.remark ? config.remark : '无备注'}
+                            {config.remark ? config.remark : tr('无备注', 'No remark')}
                           </Typography>
                         </Stack>
                       }
@@ -235,7 +233,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                   <ListItem sx={{ py: 0.5 }}>
                     <ListItemText
                       primaryTypographyProps={{ variant: 'body2', color: 'text.secondary' }}
-                      primary="暂无 Config"
+                      primary={tr('暂无 Config', 'No configs')}
                     />
                   </ListItem>
                 )}
@@ -244,30 +242,53 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
 
             <Divider sx={{ my: 2 }} />
 
-            {/* WaterFall 管理 */}
             <Box>
-              <Typography variant="h6" gutterBottom>WaterFall</Typography> {/* 修改标题 */}
+              <Typography variant="h6" gutterBottom>
+                WaterFall
+              </Typography>
               <Box display="flex" gap={1} mb={1} alignItems="center">
-                <TextField label="新 WaterFall 名称" value={newWf} onChange={(e) => setNewWf(e.target.value)} sx={{flexGrow: 1}}/> {/* 修改标签 */}
-                <Button onClick={handleAddWf} variant="outlined" size="medium">添加 WaterFall</Button> {/* 修改按钮文本 */}
+                <TextField
+                  label={tr('新 WaterFall 名称', 'New WaterFall name')}
+                  value={newWf}
+                  onChange={(e) => setNewWf(e.target.value)}
+                  sx={{ flexGrow: 1 }}
+                />
+                <Button onClick={handleAddWf} variant="outlined" size="medium">
+                  {tr('添加 WaterFall', 'Add WaterFall')}
+                </Button>
               </Box>
               <Box display="flex" flexWrap="wrap" gap={1}>
-                {wfs.map((wf, index) => ( <Chip key={index} label={wf} onDelete={() => handleDeleteWf(wf)} color="primary" /> ))}
-                {wfs.length === 0 && <Typography variant="body2" color="text.secondary">暂无 WaterFall</Typography>} {/* 修改提示 */}
+                {wfs.map((wf, index) => (
+                  <Chip key={index} label={wf} onDelete={() => handleDeleteWf(wf)} color="primary" />
+                ))}
+                {wfs.length === 0 && (
+                  <Typography variant="body2" color="text.secondary">
+                    {tr('暂无 WaterFall', 'No WaterFalls')}
+                  </Typography>
+                )}
               </Box>
             </Box>
 
-            {formSubmitError && ( <Alert severity="error" sx={{ mt: 2 }}>{formSubmitError}</Alert> )}
+            {formSubmitError && (
+              <Alert severity="error" sx={{ mt: 2 }}>
+                {formSubmitError}
+              </Alert>
+            )}
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => onClose()}>取消</Button>
+          <Button onClick={() => onClose()}>{tr('取消', 'Cancel')}</Button>
           <Button type="submit" variant="contained" color="primary">
-            {project ? '保存更改' : '确认添加'}
+            {project ? tr('保存更改', 'Save changes') : tr('确认添加', 'Create')}
           </Button>
         </DialogActions>
       </form>
-      <Snackbar open={snackbarOpen} autoHideDuration={3500} onClose={() => setSnackbarOpen(false)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={3500}
+        onClose={() => setSnackbarOpen(false)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
         <Alert onClose={() => setSnackbarOpen(false)} severity={snackbarSeverity} sx={{ width: '100%' }} variant="filled">
           {snackbarMessage}
         </Alert>

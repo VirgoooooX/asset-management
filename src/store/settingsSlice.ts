@@ -58,6 +58,22 @@ const persist = (state: SettingsState) => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
 }
 
+const mergeSettings = (state: SettingsState, raw: Partial<SettingsState> & { nav?: any }): SettingsState => {
+  const nav = raw?.nav ? { ...raw.nav } : undefined
+  if (nav && nav.sidebarMode === undefined && nav.sidebarPinned !== undefined) {
+    nav.sidebarMode = nav.sidebarPinned ? 'lockedOpen' : 'auto'
+    delete nav.sidebarPinned
+  }
+  return {
+    ...state,
+    ...raw,
+    nav: { ...state.nav, ...nav },
+    timeline: { ...state.timeline, ...raw?.timeline },
+    dashboard: { ...state.dashboard, ...raw?.dashboard },
+    alerts: { ...state.alerts, ...raw?.alerts },
+  }
+}
+
 export const loadSettingsFromBackend = createAsyncThunk<
   Partial<SettingsState>,
   void,
@@ -81,19 +97,8 @@ const settingsSlice = createSlice({
       const stored = localStorage.getItem(STORAGE_KEY)
       if (!stored) return
       try {
-        const parsed = JSON.parse(stored) as any
-        if (parsed?.nav?.sidebarMode === undefined && parsed?.nav?.sidebarPinned !== undefined) {
-          parsed.nav.sidebarMode = parsed.nav.sidebarPinned ? 'lockedOpen' : 'auto'
-          delete parsed.nav.sidebarPinned
-        }
-        return {
-          ...state,
-          ...parsed,
-          nav: { ...state.nav, ...parsed.nav },
-          timeline: { ...state.timeline, ...parsed.timeline },
-          dashboard: { ...state.dashboard, ...parsed.dashboard },
-          alerts: { ...state.alerts, ...parsed.alerts }
-        }
+        const parsed = JSON.parse(stored)
+        return mergeSettings(state, parsed)
       } catch {
         return state
       }
@@ -148,38 +153,14 @@ const settingsSlice = createSlice({
       persist(state)
     },
     applySettingsFromRemote(state, action: PayloadAction<Partial<SettingsState>>) {
-      const parsed = action.payload as any
-      if (parsed?.nav?.sidebarMode === undefined && parsed?.nav?.sidebarPinned !== undefined) {
-        parsed.nav.sidebarMode = parsed.nav.sidebarPinned ? 'lockedOpen' : 'auto'
-        delete parsed.nav.sidebarPinned
-      }
-      const next = {
-        ...state,
-        ...parsed,
-        nav: { ...state.nav, ...parsed.nav },
-        timeline: { ...state.timeline, ...parsed.timeline },
-        dashboard: { ...state.dashboard, ...parsed.dashboard },
-        alerts: { ...state.alerts, ...parsed.alerts },
-      }
+      const next = mergeSettings(state, action.payload)
       persist(next)
       return next
     },
   },
   extraReducers: (builder) => {
     builder.addCase(loadSettingsFromBackend.fulfilled, (state, action) => {
-      const parsed = action.payload as any
-      if (parsed?.nav?.sidebarMode === undefined && parsed?.nav?.sidebarPinned !== undefined) {
-        parsed.nav.sidebarMode = parsed.nav.sidebarPinned ? 'lockedOpen' : 'auto'
-        delete parsed.nav.sidebarPinned
-      }
-      const next = {
-        ...state,
-        ...parsed,
-        nav: { ...state.nav, ...parsed.nav },
-        timeline: { ...state.timeline, ...parsed.timeline },
-        dashboard: { ...state.dashboard, ...parsed.dashboard },
-        alerts: { ...state.alerts, ...parsed.alerts },
-      }
+      const next = mergeSettings(state, action.payload)
       persist(next)
       return next
     })

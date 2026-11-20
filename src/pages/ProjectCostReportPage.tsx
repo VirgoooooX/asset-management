@@ -24,16 +24,16 @@ import AssessmentIcon from '@mui/icons-material/Assessment'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import ExpandLessIcon from '@mui/icons-material/ExpandLess'
 import DownloadIcon from '@mui/icons-material/Download'
-import { LocalizationProvider, DateTimePicker } from '@mui/x-date-pickers'
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { startOfDay, subDays } from 'date-fns'
 import AppCard from '../components/AppCard'
+import CostTrendChart from '../components/CostTrendChart'
+import { CustomDateRangePickers, DateRangePresetBar } from '../components/DateRangePresetBar'
 import PageShell from '../components/PageShell'
 import TitleWithIcon from '../components/TitleWithIcon'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { fetchAssetsByType } from '../store/assetsSlice'
 import { fetchProjects } from '../store/projectsSlice'
 import { useI18n } from '../i18n'
+import { resolveDateRange, type RangePreset } from '../utils/dateRange'
 import { exportProjectCostToXlsx } from '../utils/exportProjectCostToXlsx'
 import type { ProjectCostLine } from '../utils/exportProjectCostToXlsx'
 import {
@@ -45,98 +45,13 @@ import {
   type ProjectCostReportLine,
   type ProjectCostReportSeriesPoint,
 } from '../services/reportService'
-import EChart from '../components/EChart'
-
-type RangePreset = '7d' | '30d' | '90d' | 'custom'
-
-const formatMoneyYuan = (cents: number) => {
-  const safe = Number.isFinite(cents) ? cents : 0
-  return (Math.round(safe) / 100).toFixed(2)
-}
-
-const formatDateTime = (value?: string) => {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString()
-}
-
-const TrendChart: React.FC<{ series: ProjectCostReportSeriesPoint[]; title: string; emptyText: string }> = ({
-  series,
-  title,
-  emptyText,
-}) => {
-  const { tr } = useI18n()
-  const maxCostCents = Math.max(0, ...series.map((p) => (Number.isFinite(p.costCents) ? p.costCents : 0)))
-
-  return (
-    <Box>
-      <Stack direction="row" spacing={1} alignItems="baseline" justifyContent="space-between" sx={{ mb: 1 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 750 }}>
-          {title}
-        </Typography>
-        {series.length ? (
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 650 }}>
-            {series[0].day} → {series[series.length - 1].day}
-          </Typography>
-        ) : null}
-      </Stack>
-      {series.length <= 1 || maxCostCents <= 0 ? (
-        <Typography color="text.secondary">{emptyText}</Typography>
-      ) : (
-        <EChart
-          height={260}
-          option={{
-            grid: { top: 18, left: 58, right: 22, bottom: 48 },
-            tooltip: {
-              trigger: 'axis',
-              axisPointer: { type: 'line' },
-              valueFormatter: (v: any) => `¥${(Number(v) || 0).toFixed(2)}`,
-            },
-            xAxis: {
-              type: 'category',
-              data: series.map((p) => p.day),
-              axisLabel: {
-                formatter: (v: string) => String(v).slice(5),
-              },
-              name: tr('日期', 'Date'),
-              nameLocation: 'middle',
-              nameGap: 34,
-            },
-            yAxis: {
-              type: 'value',
-              axisLabel: { formatter: (v: number) => `¥${Number(v).toFixed(0)}` },
-              name: tr('费用', 'Cost'),
-              nameLocation: 'middle',
-              nameGap: 44,
-            },
-            series: [
-              {
-                type: 'line',
-                smooth: 0.35,
-                showSymbol: false,
-                lineStyle: { width: 3 },
-                areaStyle: { opacity: 0.18 },
-                emphasis: { focus: 'series' },
-                data: series.map((p) => (Number.isFinite(p.costCents) ? p.costCents : 0) / 100),
-              },
-            ],
-          }}
-        />
-      )}
-    </Box>
-  )
-}
+import { formatDateTime, formatMoneyYuan } from '../utils/formatters'
 
 const ProjectCostReportPage: React.FC = () => {
   const dispatch = useAppDispatch()
-  const { tr, dateFnsLocale } = useI18n()
+  const { tr, language } = useI18n()
 
-  const assetsLoading = useAppSelector((s) => s.assets.loading)
   const projectsLoading = useAppSelector((s) => s.projects.loading)
-  const settings = useAppSelector((s) => s.settings)
-
-  const assets = useAppSelector((s) => s.assets.assets)
   const projects = useAppSelector((s) => s.projects.projects)
 
   const [preset, setPreset] = useState<RangePreset>('30d')
@@ -161,44 +76,23 @@ const ProjectCostReportPage: React.FC = () => {
   const [groupLinesLoadingKey, setGroupLinesLoadingKey] = useState<string | null>(null)
 
   useEffect(() => {
-    dispatch(fetchAssetsByType({ type: 'chamber' }))
     dispatch(fetchProjects())
   }, [dispatch])
 
-  const isLoading = assetsLoading || projectsLoading || reportLoading
+  const isLoading = projectsLoading || reportLoading
 
   const { rangeStartMs, rangeEndMs, rangeLabel } = useMemo(() => {
-    const now = new Date()
-    if (preset === '7d') {
-      const start = startOfDay(subDays(now, 7))
-      return {
-        rangeStartMs: start.getTime(),
-        rangeEndMs: now.getTime(),
-        rangeLabel: tr('最近7天', 'Last 7 days'),
-      }
+    const { startMs, endMs } = resolveDateRange(preset, customStart, customEnd)
+    const labelMap: Record<RangePreset, string> = {
+      '7d': tr('最近7天', 'Last 7 days'),
+      '30d': tr('最近30天', 'Last 30 days'),
+      '90d': tr('最近90天', 'Last 90 days'),
+      custom: tr('自定义', 'Custom'),
     }
-    if (preset === '30d') {
-      const start = startOfDay(subDays(now, 30))
-      return {
-        rangeStartMs: start.getTime(),
-        rangeEndMs: now.getTime(),
-        rangeLabel: tr('最近30天', 'Last 30 days'),
-      }
-    }
-    if (preset === '90d') {
-      const start = startOfDay(subDays(now, 90))
-      return {
-        rangeStartMs: start.getTime(),
-        rangeEndMs: now.getTime(),
-        rangeLabel: tr('最近90天', 'Last 90 days'),
-      }
-    }
-    const start = customStart ?? startOfDay(subDays(now, 30))
-    const end = customEnd ?? now
     return {
-      rangeStartMs: start.getTime(),
-      rangeEndMs: end.getTime(),
-      rangeLabel: tr('自定义', 'Custom'),
+      rangeStartMs: startMs,
+      rangeEndMs: endMs,
+      rangeLabel: labelMap[preset],
     }
   }, [customEnd, customStart, preset, tr])
 
@@ -287,7 +181,7 @@ const ProjectCostReportPage: React.FC = () => {
       notes: l.notes ?? undefined,
     }))
 
-    exportProjectCostToXlsx({
+    await exportProjectCostToXlsx({
       summary: {
         projectName: summary.projectName,
         range: summary.range,
@@ -297,7 +191,7 @@ const ProjectCostReportPage: React.FC = () => {
         logCount: summary.logCount,
       },
       lines: exportLines,
-      language: settings.language,
+      language,
       fileNamePrefix: projectId === 'all' ? 'project-cost' : `project-cost_${projectId.slice(0, 8)}`,
     })
   }
@@ -352,24 +246,7 @@ const ProjectCostReportPage: React.FC = () => {
       <AppCard title={tr('筛选', 'Filters')} sx={{ mb: 2 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={4}>
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-              {([
-                { id: '7d', label: tr('7天', '7d') },
-                { id: '30d', label: tr('30天', '30d') },
-                { id: '90d', label: tr('90天', '90d') },
-                { id: 'custom', label: tr('自定义', 'Custom') },
-              ] as const).map((p) => (
-                <Chip
-                  key={p.id}
-                  label={p.label}
-                  clickable
-                  color={preset === p.id ? 'primary' : 'default'}
-                  variant={preset === p.id ? 'filled' : 'outlined'}
-                  onClick={() => setPreset(p.id)}
-                  sx={{ fontWeight: 750 }}
-                />
-              ))}
-            </Box>
+            <DateRangePresetBar preset={preset} onPresetChange={setPreset} variant="chips" />
           </Grid>
           <Grid item xs={12} md={4}>
             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 700 }}>
@@ -431,26 +308,15 @@ const ProjectCostReportPage: React.FC = () => {
 
           {preset === 'custom' ? (
             <Grid item xs={12} md={6}>
-              <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={dateFnsLocale}>
-                <Grid container spacing={2}>
-                  <Grid item xs={12} sm={6}>
-                    <DateTimePicker
-                      label={tr('开始时间', 'Start time')}
-                      value={customStart}
-                      onChange={(v) => setCustomStart(v)}
-                      slotProps={{ textField: { fullWidth: true, size: 'small' } }}
-                    />
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <DateTimePicker
-                      label={tr('结束时间', 'End time')}
-                      value={customEnd}
-                      onChange={(v) => setCustomEnd(v)}
-                      slotProps={{ textField: { fullWidth: true, size: 'small' } }}
-                    />
-                  </Grid>
-                </Grid>
-              </LocalizationProvider>
+              <CustomDateRangePickers
+                start={customStart}
+                end={customEnd}
+                onStartChange={setCustomStart}
+                onEndChange={setCustomEnd}
+                textFieldSize="small"
+                smCols={6}
+                mdCols={6}
+              />
             </Grid>
           ) : null}
         </Grid>
@@ -487,7 +353,7 @@ const ProjectCostReportPage: React.FC = () => {
       </Box>
 
       <AppCard title={tr('费用趋势', 'Cost trend')} sx={{ mb: 2 }}>
-        <TrendChart
+        <CostTrendChart
           series={series}
           title={tr('按天汇总（费用）', 'Daily total (cost)')}
           emptyText={tr('暂无趋势数据', 'No trend data')}

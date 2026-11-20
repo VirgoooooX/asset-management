@@ -7,6 +7,7 @@ interface AssetsState {
   assets: Asset[]
   loading: boolean
   refreshing: boolean
+  submitting: boolean
   lastFetchedAt: number | null
   error: string | null
 }
@@ -15,8 +16,15 @@ const initialState: AssetsState = {
   assets: [],
   loading: false,
   refreshing: false,
+  submitting: false,
   lastFetchedAt: null,
   error: null,
+}
+
+const upsertAssetItem = (items: Asset[], item: Asset) => {
+  const index = items.findIndex((x) => x.id === item.id)
+  if (index !== -1) items[index] = item
+  else items.unshift(item)
 }
 
 export const fetchAssetsByType = createAsyncThunk<
@@ -27,8 +35,7 @@ export const fetchAssetsByType = createAsyncThunk<
   'assets/fetchAssetsByType',
   async ({ type }, { rejectWithValue }) => {
     try {
-      const assets = await assetService.getAssetsByType(type)
-      return assets
+      return await assetService.getAssetsByType(type)
     } catch (error: any) {
       return rejectWithValue(error.message || '获取资产列表失败')
     }
@@ -38,9 +45,8 @@ export const fetchAssetsByType = createAsyncThunk<
       if (force) return true
       const state = (getState() as RootState).assets
       if (state.loading || state.refreshing) return false
-      if (state.assets.length === 0) return true
-      if (!state.lastFetchedAt) return true
-      return Date.now() - state.lastFetchedAt > 60 * 1000
+      if (state.lastFetchedAt !== null && Date.now() - state.lastFetchedAt < 60 * 1000) return false
+      return true
     },
   }
 )
@@ -51,8 +57,7 @@ export const fetchAssetById = createAsyncThunk<
   { rejectValue: string }
 >('assets/fetchAssetById', async ({ id }, { rejectWithValue }) => {
   try {
-    const asset = await assetService.getAssetById(id)
-    return asset
+    return await assetService.getAssetById(id)
   } catch (error: any) {
     return rejectWithValue(error.message || '获取资产失败')
   }
@@ -64,10 +69,7 @@ export const addAsset = createAsyncThunk<
   { rejectValue: string }
 >('assets/addAsset', async (assetDataFromForm, { rejectWithValue }) => {
   try {
-    const newId = await assetService.createAsset(assetDataFromForm)
-    const created = await assetService.getAssetById(newId)
-    if (!created) throw new Error('资产创建成功，但未能获取到创建后的数据。')
-    return created
+    return await assetService.createAsset(assetDataFromForm)
   } catch (error: any) {
     return rejectWithValue(error.message || '添加资产失败')
   }
@@ -79,10 +81,7 @@ export const updateAsset = createAsyncThunk<
   { rejectValue: string }
 >('assets/updateAsset', async ({ id, changes }, { rejectWithValue }) => {
   try {
-    await assetService.updateAsset(id, changes)
-    const updated = await assetService.getAssetById(id)
-    if (!updated) throw new Error('更新资产后未能检索到该资产。')
-    return updated
+    return await assetService.updateAsset(id, changes)
   } catch (error: any) {
     return rejectWithValue(error.message || '更新资产失败')
   }
@@ -130,55 +129,50 @@ const assetsSlice = createSlice({
         }
       )
       .addCase(fetchAssetById.fulfilled, (state, action: PayloadAction<Asset | null>) => {
-        const a = action.payload
-        if (!a) return
-        const index = state.assets.findIndex((x) => x.id === a.id)
-        if (index !== -1) state.assets[index] = a
-        else state.assets.unshift(a)
+        if (action.payload) upsertAssetItem(state.assets, action.payload)
       })
       .addCase(addAsset.pending, (state) => {
-        state.loading = true
+        state.submitting = true
         state.error = null
       })
       .addCase(addAsset.fulfilled, (state, action: PayloadAction<Asset>) => {
-        state.assets.unshift(action.payload)
-        state.loading = false
+        upsertAssetItem(state.assets, action.payload)
+        state.submitting = false
       })
       .addCase(
         addAsset.rejected,
         (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
-          state.loading = false
+          state.submitting = false
           state.error = action.payload || action.error.message || '添加资产失败 (未知错误)'
         }
       )
       .addCase(updateAsset.pending, (state) => {
-        state.loading = true
+        state.submitting = true
         state.error = null
       })
       .addCase(updateAsset.fulfilled, (state, action: PayloadAction<Asset>) => {
-        const index = state.assets.findIndex((a) => a.id === action.payload.id)
-        if (index !== -1) state.assets[index] = action.payload
-        state.loading = false
+        upsertAssetItem(state.assets, action.payload)
+        state.submitting = false
       })
       .addCase(
         updateAsset.rejected,
         (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
-          state.loading = false
+          state.submitting = false
           state.error = action.payload || action.error.message || '更新资产失败 (未知错误)'
         }
       )
       .addCase(deleteAsset.pending, (state) => {
-        state.loading = true
+        state.submitting = true
         state.error = null
       })
       .addCase(deleteAsset.fulfilled, (state, action: PayloadAction<string>) => {
         state.assets = state.assets.filter((a) => a.id !== action.payload)
-        state.loading = false
+        state.submitting = false
       })
       .addCase(
         deleteAsset.rejected,
         (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
-          state.loading = false
+          state.submitting = false
           state.error = action.payload || action.error.message || '删除资产失败 (未知错误)'
         }
       )

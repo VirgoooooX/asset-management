@@ -40,17 +40,19 @@ export const EChart: React.FC<{
     const el = divRef.current
     const chart = chartRef.current
     if (!el || !chart) return
-    const ro = new ResizeObserver(() => chart.resize())
+    let rafId: number | null = null
+    const ro = new ResizeObserver(() => {
+      if (rafId !== null) return
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null
+        chart.resize()
+      })
+    })
     ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-
-  useEffect(() => {
-    const chart = chartRef.current
-    if (!chart) return
-    const handler = () => chart.resize()
-    window.addEventListener('resize', handler)
-    return () => window.removeEventListener('resize', handler)
+    return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId)
+      ro.disconnect()
+    }
   }, [])
 
   return (

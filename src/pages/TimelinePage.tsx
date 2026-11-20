@@ -16,6 +16,7 @@ import { alpha, useTheme } from '@mui/material/styles';
 import TitleWithIcon from '../components/TitleWithIcon'
 import { APP_PAGE_FRAME } from '../theme'
 import { useI18n } from '../i18n'
+import { getUsageLogStatusMeta } from '../utils/statusMeta'
 
 const TimelinePage: React.FC = () => {
     const theme = useTheme();
@@ -28,7 +29,6 @@ const TimelinePage: React.FC = () => {
     const initialFetchDoneRef = useRef(false);
 
     const [isUsageLogFormOpen, setIsUsageLogFormOpen] = useState(false);
-    const [editingLog, setEditingLog] = useState<UsageLog | null>(null);
     const [pendingDelete, setPendingDelete] = useState<{ logId: string; configId: string } | null>(null);
     const [dayWidthPx, setDayWidthPx] = useState<number>(200);
     const [scrollToTodaySignal, setScrollToTodaySignal] = useState(0);
@@ -40,19 +40,15 @@ const TimelinePage: React.FC = () => {
     }, [usageLogs])
 
     const legendChipSx = useCallback((status: UsageLog['status']) => {
-        const main =
-            status === 'completed' ? theme.palette.success.main :
-            status === 'in-progress' ? theme.palette.warning.main :
-            status === 'not-started' ? theme.palette.info.main :
-            status === 'overdue' ? theme.palette.error.main :
-            theme.palette.text.secondary;
-
-        const dark =
-            status === 'completed' ? theme.palette.success.dark :
-            status === 'in-progress' ? theme.palette.warning.dark :
-            status === 'not-started' ? theme.palette.info.dark :
-            status === 'overdue' ? theme.palette.error.dark :
-            theme.palette.text.primary;
+        const tone = getUsageLogStatusMeta(status, tr).tone
+        const paletteEntry =
+            tone === 'success' ? theme.palette.success :
+            tone === 'warning' ? theme.palette.warning :
+            tone === 'error' ? theme.palette.error :
+            tone === 'info' ? theme.palette.info :
+            null
+        const main = paletteEntry?.main ?? theme.palette.text.secondary
+        const dark = paletteEntry?.dark ?? theme.palette.text.primary
 
         return {
             backgroundColor: alpha(main, 0.16),
@@ -61,7 +57,7 @@ const TimelinePage: React.FC = () => {
             color: dark,
             fontWeight: 650,
         } as const;
-    }, [theme]);
+    }, [theme, tr]);
 
     const handleViewUsageLog = useCallback((logId: string) => {
         setSelectedLogId(logId);
@@ -99,13 +95,11 @@ const TimelinePage: React.FC = () => {
     }, [dispatch, loading]); // 依赖 dispatch 和 loading 状态
 
     const handleOpenNewUsageLogForm = useCallback(() => {
-        setEditingLog(null); // 确保是新建模式
         setIsUsageLogFormOpen(true);
     }, []);
 
     const handleCloseUsageLogForm = useCallback((success?: boolean) => {
         setIsUsageLogFormOpen(false);
-        setEditingLog(null); // 清除编辑状态
         if (success) {
             // 登记/编辑成功后的操作，例如显示提示或刷新列表
             // 如果 Redux slice 能正确更新列表，通常不需要手动再次 fetchUsageLogs
@@ -263,7 +257,6 @@ const TimelinePage: React.FC = () => {
                     <UsageLogForm
                         open={isUsageLogFormOpen}
                         onClose={handleCloseUsageLogForm}
-                        log={editingLog || undefined} // 传递正在编辑的记录或undefined (新建)
                     />
                 )}
                 <ConfirmDialog

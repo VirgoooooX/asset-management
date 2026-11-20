@@ -1,29 +1,24 @@
 // src/pages/TestProjectsPage.tsx
-import React, { useState, useCallback, useEffect } from 'react'; // useEffect might be needed if fetching at page level
-import { useDispatch } from 'react-redux';
-import { 
-  Box, 
-  Typography, 
+import React, { useState, useCallback } from 'react';
+import {
   Button,
-  Snackbar, // 用于显示操作结果
+  Snackbar,
   Alert
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ScienceIcon from '@mui/icons-material/Science'
-import TestProjectList from '../components/TestProjectList'; // 导入列表组件
-import TestProjectForm from '../components/TestProjectForm'; // 导入表单组件
+import TestProjectList from '../components/TestProjectList';
+import TestProjectForm from '../components/TestProjectForm';
 import PageShell from '../components/PageShell';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TitleWithIcon from '../components/TitleWithIcon'
-import { AppDispatch } from '../store';
+import { useAppDispatch } from '../store/hooks';
 import { TestProject } from '../types';
-// 导入 deleteTestProject。fetchTestProjects 通常在 TestProjectList 中处理，
-// 但如果需要在表单关闭后强制刷新，这里也可以导入。
-import { deleteTestProject, fetchTestProjects } from '../store/testProjectsSlice'; 
+import { deleteTestProject } from '../store/testProjectsSlice';
 import { useI18n } from '../i18n'
 
 const TestProjectsPage: React.FC = () => {
-  const dispatch = useDispatch<AppDispatch>();
+  const dispatch = useAppDispatch();
   const { tr } = useI18n()
 
   // --- State Management ---
@@ -77,7 +72,7 @@ const TestProjectsPage: React.FC = () => {
         handleCloseConfirmDelete();
       }
     }
-  }, [dispatch, deletingTestProjectId, handleCloseConfirmDelete]);
+  }, [dispatch, deletingTestProjectId, handleCloseConfirmDelete, tr]);
 
   const handleCloseSnackbar = (event?: React.SyntheticEvent | Event, reason?: string) => {
     if (reason === 'clickaway') {

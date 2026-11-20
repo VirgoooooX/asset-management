@@ -1,37 +1,36 @@
+import type Database from 'better-sqlite3'
 import { computeCostSnapshot } from './costSnapshot.js'
+import { ASSET_CATEGORY_KEY_SQL } from '../db/sqlHelpers.js'
 
-export const backfillUsageLogCostSnapshots = (db: any, params?: { limit?: number }) => {
+export const backfillUsageLogCostSnapshots = (db: Database.Database, params?: { limit?: number }) => {
   const limit = typeof params?.limit === 'number' && Number.isFinite(params.limit) ? Math.floor(params.limit) : 2000
   const safeLimit = limit > 0 ? Math.min(5000, limit) : 2000
 
   const rows = db
     .prepare(
       `
-      select id, chamber_id, start_time, end_time
-      from usage_logs
+      select
+        u.id,
+        u.chamber_id,
+        u.start_time,
+        u.end_time,
+        coalesce(r.hourly_rate_cents, a.hourly_rate_cents, 0) as rate_cents
+      from usage_logs u
+      left join assets a on a.id = u.chamber_id
+      left join asset_category_rates r on r.category = ${ASSET_CATEGORY_KEY_SQL}
       where
-        status = 'completed'
-        and end_time is not null
+        u.status = 'completed'
+        and u.end_time is not null
         and (
-          hourly_rate_cents_snapshot is null
-          or billable_hours_snapshot is null
-          or cost_cents_snapshot is null
+          u.hourly_rate_cents_snapshot is null
+          or u.billable_hours_snapshot is null
+          or u.cost_cents_snapshot is null
         )
-      order by start_time asc
+      order by u.start_time asc
       limit ?
       `
     )
-    .all(safeLimit) as Array<any>
-
-  const getRateStmt = db.prepare(
-    `
-    select
-      coalesce(r.hourly_rate_cents, a.hourly_rate_cents, 0) as rate_cents
-    from assets a
-    left join asset_category_rates r on r.category = (case when a.category is null or trim(a.category) = '' then '' else a.category end)
-    where a.id = ?
-    `
-  )
+    .all(safeLimit) as Array<{ id: string; chamber_id: string; start_time: string; end_time: string; rate_cents?: number }>
 
   const updateStmt = db.prepare(
     `
@@ -51,8 +50,7 @@ export const backfillUsageLogCostSnapshots = (db: any, params?: { limit?: number
 
   db.transaction(() => {
     for (const r of rows) {
-      const rateRow = getRateStmt.get(r.chamber_id) as { rate_cents?: number } | undefined
-      const hourlyRateCents = typeof rateRow?.rate_cents === 'number' ? rateRow.rate_cents : 0
+      const hourlyRateCents = typeof r.rate_cents === 'number' ? r.rate_cents : 0
       const snapshot = computeCostSnapshot({ startIso: r.start_time, endIso: r.end_time, hourlyRateCents })
       if (!snapshot) continue
       updateStmt.run(hourlyRateCents, snapshot.billableHours, snapshot.costCents, now, 'backfill', r.id)
@@ -62,4 +60,3 @@ export const backfillUsageLogCostSnapshots = (db: any, params?: { limit?: number
 
   return { scanned: rows.length, updated }
 }
-

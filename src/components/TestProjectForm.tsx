@@ -19,32 +19,32 @@ import {
   Alert,
   Stack,
 } from '@mui/material';
-import { TestProject, Project } from '../types'; // 导入 Project 类型
+import { useI18n } from '../i18n';
+import { fetchAssetsByType } from '../store/assetsSlice';
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { fetchProjects } from '../store/projectsSlice';
 import { addTestProject, updateTestProject } from '../store/testProjectsSlice';
-import { fetchProjects } from '../store/projectsSlice'; // 导入用于获取项目列表的 action
-import { fetchAssetsByType } from '../store/assetsSlice'
-import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { TestProject, Project } from '../types';
 
 interface TestProjectFormProps {
   open: boolean;
   onClose: () => void;
-  testProject?: TestProject; // 传入表示编辑模式
+  testProject?: TestProject;
 }
 
 const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testProject }) => {
-  const dispatch = useAppDispatch()
-  const { projects, loading: loadingProjects, error: projectsError } = useAppSelector((state) => state.projects) // 获取项目列表用于关联
-  const { assets: chambers, loading: loadingChambers } = useAppSelector((state) => state.assets)
+  const dispatch = useAppDispatch();
+  const { tr } = useI18n();
+  const { projects, loading: loadingProjects, error: projectsError } = useAppSelector((state) => state.projects);
+  const chambers = useAppSelector((state) => state.assets.assets);
 
-  // 表单字段状态
   const [name, setName] = useState('');
-  const [temperature, setTemperature] = useState<string>(''); // 用字符串处理输入，提交时转换
-  const [humidity, setHumidity] = useState<string>('');     // 用字符串处理输入，提交时转换
-  const [duration, setDuration] = useState<string>('');     // 用字符串处理输入，提交时转换
-  const [projectId, setProjectId] = useState<string>('');   // 关联的项目 ID (可选)
-  const [assetCategoriesInput, setAssetCategoriesInput] = useState<string>('') // 适用设备类型（逗号分隔，可选）
+  const [temperature, setTemperature] = useState<string>('');
+  const [humidity, setHumidity] = useState<string>('');
+  const [duration, setDuration] = useState<string>('');
+  const [projectId, setProjectId] = useState<string>('');
+  const [assetCategoriesInput, setAssetCategoriesInput] = useState<string>('');
 
-  // 错误状态
   const [errors, setErrors] = useState({
     name: '',
     temperature: '',
@@ -53,31 +53,23 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
   });
   const [formSubmitError, setFormSubmitError] = useState<string | null>(null);
 
-  // 获取项目列表 Effect
   useEffect(() => {
-    if (open && projects.length === 0 && !loadingProjects) {
-      dispatch(fetchProjects());
-    }
-  }, [open, dispatch, projects.length, loadingProjects]);
+    if (!open) return;
+    dispatch(fetchProjects());
+    dispatch(fetchAssetsByType({ type: 'chamber' }));
+  }, [open, dispatch]);
 
-  useEffect(() => {
-    if (open && chambers.length === 0 && !loadingChambers) {
-      dispatch(fetchAssetsByType({ type: 'chamber' }))
-    }
-  }, [chambers.length, dispatch, loadingChambers, open])
-
-  // 初始化/重置表单 Effect
   useEffect(() => {
     if (open) {
-      setFormSubmitError(null); // 清除提交错误
-      if (testProject) { // 编辑模式
+      setFormSubmitError(null);
+      if (testProject) {
         setName(testProject.name);
         setTemperature(String(testProject.temperature));
         setHumidity(String(testProject.humidity));
         setDuration(String(testProject.duration));
         setProjectId(testProject.projectId || '');
         setAssetCategoriesInput((testProject.assetCategories || []).join(', '));
-      } else { // 新建模式
+      } else {
         setName('');
         setTemperature('');
         setHumidity('');
@@ -85,23 +77,33 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
         setProjectId('');
         setAssetCategoriesInput('');
       }
-      setErrors({ name: '', temperature: '', humidity: '', duration: '' }); // 重置校验错误
+      setErrors({ name: '', temperature: '', humidity: '', duration: '' });
     }
-  }, [testProject, open]); // 依赖 testProject 和 open
+  }, [testProject, open]);
 
-  // 表单校验函数
   const validateForm = (): boolean => {
     const newErrors = {
-      name: !name.trim() ? '名称不能为空' : '',
-      temperature: !temperature.trim() ? '温度不能为空' : (isNaN(Number(temperature)) ? '温度必须是数字' : ''),
-      humidity: !humidity.trim() ? '湿度不能为空' : (isNaN(Number(humidity)) ? '湿度必须是数字' : ''),
-      duration: !duration.trim() ? '持续时间不能为空' : (isNaN(Number(duration)) ? '持续时间必须是数字' : ''),
+      name: !name.trim() ? tr('名称不能为空', 'Name is required') : '',
+      temperature: !temperature.trim()
+        ? tr('温度不能为空', 'Temperature is required')
+        : isNaN(Number(temperature))
+          ? tr('温度必须是数字', 'Temperature must be a number')
+          : '',
+      humidity: !humidity.trim()
+        ? tr('湿度不能为空', 'Humidity is required')
+        : isNaN(Number(humidity))
+          ? tr('湿度必须是数字', 'Humidity must be a number')
+          : '',
+      duration: !duration.trim()
+        ? tr('持续时间不能为空', 'Duration is required')
+        : isNaN(Number(duration))
+          ? tr('持续时间必须是数字', 'Duration must be a number')
+          : '',
     };
     setErrors(newErrors);
-    return !Object.values(newErrors).some(error => error !== ''); // 检查是否有错误
+    return !Object.values(newErrors).some((error) => error !== '');
   };
 
-  // 提交处理函数
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormSubmitError(null);
@@ -110,7 +112,6 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
       return;
     }
 
-    // 准备提交的数据 (不包含 id 和 createdAt)
     const assetCategories = Array.from(
       new Set(
         assetCategoriesInput
@@ -118,82 +119,79 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
           .map((s) => s.trim())
           .filter(Boolean)
       )
-    )
+    );
     const testProjectData = {
       name: name.trim(),
       temperature: Number(temperature),
       humidity: Number(humidity),
       duration: Number(duration),
-      projectId: projectId || undefined, // 如果为空字符串，则设为 undefined
+      projectId: projectId || undefined,
       assetCategories: assetCategories.length > 0 ? assetCategories : undefined,
     };
 
     try {
-      if (testProject && testProject.id) { // 编辑模式
-        await dispatch(updateTestProject({ 
-          id: testProject.id, 
-          testProject: testProjectData // service 层会忽略 createdAt
-        })).unwrap();
-      } else { // 新建模式
-        // addTestProject thunk 需要 Omit<TestProject, 'id' | 'createdAt'>
+      if (testProject && testProject.id) {
+        await dispatch(
+          updateTestProject({
+            id: testProject.id,
+            testProject: testProjectData,
+          })
+        ).unwrap();
+      } else {
         await dispatch(addTestProject(testProjectData)).unwrap();
       }
-      onClose(); // 成功后关闭
-    } catch (error: any) {
+      onClose();
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error || '');
       console.error('提交测试项目失败:', error);
-      setFormSubmitError(error.message || '操作失败，请检查输入或稍后再试。');
+      setFormSubmitError(msg || tr('操作失败，请检查输入或稍后再试。', 'Operation failed, please check your input or try again.'));
     }
   };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{testProject ? '编辑测试项目' : '添加测试项目'}</DialogTitle>
+      <DialogTitle>{testProject ? tr('编辑测试项目', 'Edit test project') : tr('添加测试项目', 'Add test project')}</DialogTitle>
       <form onSubmit={handleSubmit}>
         <DialogContent dividers>
-          {/* 如果项目列表正在加载，显示提示 */}
           {loadingProjects && open && (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', my: 2 }}>
-              <CircularProgress size={24} sx={{ mr: 1 }} /> 正在加载项目列表...
+              <CircularProgress size={24} sx={{ mr: 1 }} /> {tr('正在加载项目列表...', 'Loading projects...')}
             </Box>
           )}
-           {/* 如果项目列表加载出错，显示提示 */}
           {projectsError && open && (
-             <Alert severity="warning" sx={{ mb: 2 }}>
-                加载关联项目列表失败: {projectsError}。 您仍然可以保存，但无法关联项目。
-             </Alert>
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {tr(
+                `加载关联项目列表失败: ${projectsError}。 您仍然可以保存，但无法关联项目。`,
+                `Failed to load projects: ${projectsError}. You can still save without linking a project.`
+              )}
+            </Alert>
           )}
 
           <Stack spacing={2.5} sx={{ pt: 1 }}>
-            {/* 名称 */}
             <TextField
-              label="名称"
+              label={tr('名称', 'Name')}
               value={name}
               onChange={(e) => setName(e.target.value)}
               fullWidth
               required
               error={!!errors.name}
               helperText={errors.name}
-              autoFocus // 进入时自动聚焦
+              autoFocus
             />
 
-            {/* 温度 */}
             <TextField
-              label="温度 (°C)"
-              type="number" // 使用 number 类型输入，浏览器可能提供 +/- 按钮
+              label={tr('温度 (°C)', 'Temperature (°C)')}
+              type="number"
               value={temperature}
               onChange={(e) => setTemperature(e.target.value)}
               fullWidth
               required
               error={!!errors.temperature}
               helperText={errors.temperature}
-              InputProps={{ // 可以添加 inputProps 来设置步长等（可选）
-                // inputProps: { step: 0.1 } 
-              }}
             />
 
-            {/* 湿度 */}
             <TextField
-              label="湿度 (%)"
+              label={tr('湿度 (%)', 'Humidity (%)')}
               type="number"
               value={humidity}
               onChange={(e) => setHumidity(e.target.value)}
@@ -202,13 +200,12 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
               error={!!errors.humidity}
               helperText={errors.humidity}
               InputProps={{
-                inputProps: { min: 0, max: 100 } // 示例：限制输入范围
+                inputProps: { min: 0, max: 100 },
               }}
             />
 
-            {/* 持续时间 */}
             <TextField
-              label="持续时间 (小时)"
+              label={tr('持续时间 (小时)', 'Duration (hours)')}
               type="number"
               value={duration}
               onChange={(e) => setDuration(e.target.value)}
@@ -216,23 +213,22 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
               required
               error={!!errors.duration}
               helperText={errors.duration}
-               InputProps={{
-                inputProps: { min: 0 } // 示例：限制输入范围
+              InputProps={{
+                inputProps: { min: 0 },
               }}
             />
 
-            {/* 关联项目 */}
             <FormControl fullWidth disabled={loadingProjects || !!projectsError}>
-              <InputLabel id="project-select-label">关联项目 (可选)</InputLabel>
+              <InputLabel id="project-select-label">{tr('关联项目 (可选)', 'Linked project (optional)')}</InputLabel>
               <Select
                 labelId="project-select-label"
                 value={projectId}
-                label="关联项目 (可选)"
+                label={tr('关联项目 (可选)', 'Linked project (optional)')}
                 onChange={(e: SelectChangeEvent<string>) => setProjectId(e.target.value)}
                 displayEmpty
               >
                 <MenuItem value="">
-                  <em>无</em>
+                  <em>{tr('无', 'None')}</em>
                 </MenuItem>
                 {projects.map((project: Project) => (
                   <MenuItem key={project.id} value={project.id}>
@@ -240,18 +236,17 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
                   </MenuItem>
                 ))}
               </Select>
-              {/* 可以添加加载或错误时的提示 */}
-              {loadingProjects && <FormHelperText>正在加载项目列表...</FormHelperText>}
-               {projectsError && <FormHelperText error>无法加载项目列表</FormHelperText>}
+              {loadingProjects && <FormHelperText>{tr('正在加载项目列表...', 'Loading projects...')}</FormHelperText>}
+              {projectsError && <FormHelperText error>{tr('无法加载项目列表', 'Failed to load projects')}</FormHelperText>}
             </FormControl>
 
             <TextField
-              label="适用设备类型（可选）"
+              label={tr('适用设备类型（可选）', 'Asset categories (optional)')}
               value={assetCategoriesInput}
               onChange={(e) => setAssetCategoriesInput(e.target.value)}
               fullWidth
-              helperText="多个类型用逗号分隔；留空表示所有设备都可用"
-              placeholder="例如：T/H Chamber, LH Chamber"
+              helperText={tr('多个类型用逗号分隔；留空表示所有设备都可用', 'Separate multiple categories with commas; leave empty for all assets')}
+              placeholder={tr('例如：T/H Chamber, LH Chamber', 'e.g. T/H Chamber, LH Chamber')}
             />
 
             {chambers.length > 0 ? (
@@ -269,22 +264,21 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
                     size="small"
                     variant="outlined"
                     onClick={() => {
-                      const normalized = c.trim()
-                      if (!normalized) return
+                      const normalized = c.trim();
+                      if (!normalized) return;
                       const current = assetCategoriesInput
                         .split(/[,，]/g)
                         .map((s) => s.trim())
-                        .filter(Boolean)
-                      if (current.includes(normalized)) return
-                      const next = current.concat([normalized]).join(', ')
-                      setAssetCategoriesInput(next)
+                        .filter(Boolean);
+                      if (current.includes(normalized)) return;
+                      const next = current.concat([normalized]).join(', ');
+                      setAssetCategoriesInput(next);
                     }}
                   />
                 ))}
               </Box>
             ) : null}
 
-            {/* 显示提交错误 */}
             {formSubmitError && (
               <Alert severity="error" sx={{ mt: 1 }}>
                 {formSubmitError}
@@ -293,9 +287,9 @@ const TestProjectForm: React.FC<TestProjectFormProps> = ({ open, onClose, testPr
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={onClose}>取消</Button>
+          <Button onClick={onClose}>{tr('取消', 'Cancel')}</Button>
           <Button type="submit" variant="contained">
-            {testProject ? '保存更改' : '添加项目'}
+            {testProject ? tr('保存更改', 'Save changes') : tr('添加项目', 'Create')}
           </Button>
         </DialogActions>
       </form>

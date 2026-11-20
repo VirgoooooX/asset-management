@@ -1,18 +1,14 @@
 import { createSelector } from '@reduxjs/toolkit'
-import { getEffectiveUsageLogStatus } from '../utils/statusHelpers'
-import type { Asset, UsageLog } from '../types'
+import { getEffectiveUsageLogStatus, getUsageLogEndMs } from '../utils/statusHelpers'
+import type { Asset } from '../types'
 import type { RootState } from './index'
 
-const selectAssetsState = (state: RootState) => state.assets
-const selectUsageLogsState = (state: RootState) => state.usageLogs
+export const selectAllAssets = (state: RootState) => state.assets.assets
+export const selectUsageLogs = (state: RootState) => state.usageLogs.usageLogs
 
-export const selectChamberAssets = createSelector([selectAssetsState], (assetsState) =>
-  assetsState.assets.filter((a) => a.type === 'chamber')
+export const selectChamberAssets = createSelector([selectAllAssets], (assets) =>
+  assets.filter((a) => a.type === 'chamber')
 )
-
-export const selectAllAssets = createSelector([selectAssetsState], (assetsState) => assetsState.assets)
-
-export const selectUsageLogs = createSelector([selectUsageLogsState], (usageLogsState) => usageLogsState.usageLogs)
 
 type Interval = { startMs: number; endMs: number }
 
@@ -40,18 +36,6 @@ const mergeIntervals = (intervals: Interval[]): Interval[] => {
 }
 
 const sumIntervalsMs = (intervals: Interval[]): number => intervals.reduce((sum, i) => sum + (i.endMs - i.startMs), 0)
-
-const getUsageLogEndMs = (log: UsageLog, nowMs: number): number => {
-  if (log.endTime) {
-    const end = Date.parse(log.endTime)
-    if (!Number.isNaN(end)) return end
-  }
-  const effective = getEffectiveUsageLogStatus(log)
-  if (effective === 'in-progress' || effective === 'overdue') return nowMs
-  const start = Date.parse(log.startTime)
-  if (Number.isNaN(start)) return nowMs
-  return start + 60 * 60 * 1000
-}
 
 export interface DashboardKpis {
   totalAssets: number
@@ -85,6 +69,7 @@ export const selectDashboardKpis = createSelector(
   ],
   (assets, allAssets, usageLogs, startMs, endMs, daysThreshold, nowMs): DashboardKpis => {
     const rangeMs = Math.max(0, endMs - startMs)
+    const nowDate = new Date(nowMs)
 
     const statusCounts: DashboardKpis['statusCounts'] = {
       available: 0,
@@ -105,11 +90,11 @@ export const selectDashboardKpis = createSelector(
       if (!assetIds.has(log.chamberId)) continue
       const logStart = Date.parse(log.startTime)
       if (Number.isNaN(logStart)) continue
-      const logEnd = getUsageLogEndMs(log, nowMs)
+      const effective = getEffectiveUsageLogStatus(log, nowDate)
+      const logEnd = getUsageLogEndMs(log, effective, nowMs)
       const clipped = clipInterval(logStart, logEnd, startMs, endMs)
       if (!clipped) continue
 
-      const effective = getEffectiveUsageLogStatus(log)
       if (effective === 'overdue') overdueActiveCount++
 
       const list = intervalsByAssetId.get(log.chamberId) ?? []

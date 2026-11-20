@@ -10,8 +10,25 @@ export const getDb = () => {
   fs.mkdirSync(path.dirname(config.dbPath), { recursive: true })
   const db = new Database(config.dbPath)
   db.pragma('journal_mode = WAL')
+  db.pragma('busy_timeout = 5000')
+  db.pragma('synchronous = NORMAL')
+  db.pragma('temp_store = MEMORY')
   db.pragma('foreign_keys = ON')
   dbSingleton = db
   return db
+}
+
+export const closeDb = () => {
+  if (!dbSingleton) return
+  try {
+    dbSingleton.pragma('wal_checkpoint(TRUNCATE)')
+  } catch {
+    // ignore checkpoint errors during shutdown
+  }
+  try {
+    dbSingleton.close()
+  } finally {
+    dbSingleton = null
+  }
 }
 

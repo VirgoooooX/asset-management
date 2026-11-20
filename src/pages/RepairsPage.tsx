@@ -29,30 +29,18 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import PageShell from '../components/PageShell'
 import AppCard from '../components/AppCard'
 import TitleWithIcon from '../components/TitleWithIcon'
+import StatusChip from '../components/StatusChip'
 import { alpha } from '@mui/material/styles'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchAssetsByType } from '../store/assetsSlice'
 import { addRepairTicket, fetchRepairTickets } from '../store/repairTicketsSlice'
-import type { Asset, RepairStatus, RepairTicket } from '../types'
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
-import { DateTimePicker, LocalizationProvider } from '@mui/x-date-pickers'
-import { zhCN } from 'date-fns/locale'
+import type { Asset, RepairStatus } from '../types'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { useI18n } from '../i18n'
 import { useNavigate } from 'react-router-dom'
+import { calcDaysFrom, formatDays } from '../utils/formatters'
 
 type StatusFilter = RepairStatus | 'all' | 'open'
-
-const statusColor: Record<RepairStatus, 'warning' | 'info' | 'success'> = {
-  'quote-pending': 'warning',
-  'repair-pending': 'info',
-  completed: 'success',
-}
-
-const calcDaysFrom = (iso: string) => {
-  const t = new Date(iso).getTime()
-  if (Number.isNaN(t)) return 0
-  return (Date.now() - t) / (24 * 60 * 60 * 1000)
-}
 
 const RepairsPage: React.FC = () => {
   const dispatch = useAppDispatch()
@@ -88,22 +76,6 @@ const RepairsPage: React.FC = () => {
       .slice()
       .sort((a, b) => a.name.localeCompare(b.name, language === 'en' ? 'en' : 'zh-Hans-CN', { sensitivity: 'base' }))
   }, [assetsState.assets, language])
-
-  const statusLabel = useMemo<Record<RepairStatus, string>>(
-    () => ({
-      'quote-pending': tr('未询价', 'Quote pending'),
-      'repair-pending': tr('待维修', 'Repair pending'),
-      completed: tr('已完成', 'Completed'),
-    }),
-    [tr]
-  )
-
-  const formatDays = useMemo(() => {
-    return (value: number) => {
-      const v = Math.max(0, Math.floor(value))
-      return language === 'en' ? `${v} d` : `${v} 天`
-    }
-  }, [language])
 
   const filteredTickets = useMemo(() => {
     if (filter === 'all') return ticketsState.tickets
@@ -261,7 +233,7 @@ const RepairsPage: React.FC = () => {
                       <Typography sx={{ fontWeight: 850 }} noWrap>
                         {asset?.name || tr(`设备 ${t.assetId.slice(0, 8)}`, `Asset ${t.assetId.slice(0, 8)}`)}
                       </Typography>
-                      <Chip size="small" label={statusLabel[t.status]} color={statusColor[t.status]} />
+                      <StatusChip kind="repair" status={t.status} />
                     </Stack>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }} noWrap>
                       {t.problemDesc || '-'}
@@ -275,8 +247,15 @@ const RepairsPage: React.FC = () => {
                     ) : null}
                   </Box>
                   <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end" flexWrap="wrap">
-                    <Chip size="small" variant="outlined" label={tr(`停机: ${formatDays(days)}`, `Downtime: ${formatDays(days)}`)} />
-                    <IconButton size="small" color="primary" onClick={() => navigate(`/repairs/${encodeURIComponent(t.id)}`)}>
+                    <Chip size="small" variant="outlined" label={tr(`停机: ${formatDays(days, language)}`, `Downtime: ${formatDays(days, language)}`)} />
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/repairs/${encodeURIComponent(t.id)}`)
+                      }}
+                    >
                       <OpenInNewIcon fontSize="small" />
                     </IconButton>
                   </Stack>
@@ -287,7 +266,6 @@ const RepairsPage: React.FC = () => {
         </Stack>
       </AppCard>
 
-      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={zhCN}>
         <Dialog open={createOpen} onClose={() => setCreateOpen(false)} fullWidth maxWidth="sm">
           <DialogTitle>{tr('新建维修工单', 'New repair ticket')}</DialogTitle>
           <DialogContent dividers>
@@ -335,14 +313,12 @@ const RepairsPage: React.FC = () => {
             <Button
               variant="contained"
               onClick={handleSubmitCreate}
-              disabled={!createAssetId || !createProblemDesc.trim() || ticketsState.loading}
+              disabled={!createAssetId || !createProblemDesc.trim() || ticketsState.loading || ticketsState.submitting}
             >
               {tr('创建', 'Create')}
             </Button>
           </DialogActions>
         </Dialog>
-
-      </LocalizationProvider>
     </PageShell>
   )
 }

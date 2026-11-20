@@ -1,15 +1,14 @@
 // src/components/UsageLogList.tsx
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Typography, TableContainer, Table, TableHead, TableBody, TableRow, TableCell,
-  IconButton, Tooltip, CircularProgress, Alert, Button, Chip,
+  IconButton, Tooltip, CircularProgress, Alert, Button, Chip, TextField, MenuItem,
+  Stack, TablePagination,
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'; // 新增图标
-import { format, parseISO, isValid as isValidDate } from 'date-fns';
-import type { ChipProps } from '@mui/material';
 
 import { UsageLog, Project, Config as ConfigType } from '../types';
 import { fetchUsageLogs, markLogAsCompleted } from '../store/usageLogsSlice'; // 导入 markLogAsCompleted
@@ -17,9 +16,11 @@ import { fetchAssetsByType } from '../store/assetsSlice'
 import { fetchProjects } from '../store/projectsSlice';
 import { fetchTestProjects } from '../store/testProjectsSlice';
 import { getEffectiveUsageLogStatus } from '../utils/statusHelpers'; // 导入辅助函数
+import { formatDateTimeShort } from '../utils/formatters';
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import ConfirmDialog from './ConfirmDialog';
 import AppCard from './AppCard';
+import StatusChip from './StatusChip';
 import { useI18n } from '../i18n'
 
 interface UsageLogListProps {
@@ -31,6 +32,10 @@ interface UsageLogListProps {
 const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDelete }) => {
   const dispatch = useAppDispatch()
   const [pendingCompleteLogId, setPendingCompleteLogId] = useState<string | null>(null);
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | UsageLog['status']>('all');
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const { tr, dateFnsLocale } = useI18n()
 
   const { usageLogs, loading: loadingUsageLogs, error: usageLogsError } = useAppSelector((state) => state.usageLogs)
@@ -38,52 +43,12 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
   const { projects, loading: loadingProjects, error: projectsError } = useAppSelector((state) => state.projects)
   const { testProjects, loading: loadingTestProjects, error: testProjectsError } = useAppSelector((state) => state.testProjects)
 
-  const dataFetchedRef = useRef({
-    usageLogs: false, chambers: false, projects: false, testProjects: false,
-  });
-
   useEffect(() => {
-    if (!dataFetchedRef.current.usageLogs) {
-      if (usageLogs.length > 0) {
-        dataFetchedRef.current.usageLogs = true;
-      } else if (!loadingUsageLogs) {
-        dispatch(fetchUsageLogs()).finally(() => { dataFetchedRef.current.usageLogs = true; });
-      }
-    }
-    if (!dataFetchedRef.current.chambers) {
-      if (chambers.length > 0) {
-        dataFetchedRef.current.chambers = true;
-      } else if (!loadingChambers) {
-        dispatch(fetchAssetsByType({ type: 'chamber' })).finally(() => {
-          dataFetchedRef.current.chambers = true
-        })
-      }
-    }
-    if (!dataFetchedRef.current.projects) {
-      if (projects.length > 0) {
-        dataFetchedRef.current.projects = true;
-      } else if (!loadingProjects) {
-        dispatch(fetchProjects()).finally(() => { dataFetchedRef.current.projects = true; });
-      }
-    }
-    if (!dataFetchedRef.current.testProjects) {
-      if (testProjects.length > 0) {
-        dataFetchedRef.current.testProjects = true;
-      } else if (!loadingTestProjects) {
-        dispatch(fetchTestProjects()).finally(() => { dataFetchedRef.current.testProjects = true; });
-      }
-    }
-  }, [
-    dispatch,
-    usageLogs.length,
-    chambers.length,
-    projects.length,
-    testProjects.length,
-    loadingUsageLogs,
-    loadingChambers,
-    loadingProjects,
-    loadingTestProjects,
-  ]);
+    dispatch(fetchUsageLogs());
+    dispatch(fetchAssetsByType({ type: 'chamber' }));
+    dispatch(fetchProjects());
+    dispatch(fetchTestProjects());
+  }, [dispatch]);
 
   const chamberNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -114,12 +79,6 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
     return map;
   }, [projects]);
 
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return 'N/A';
-    const date = parseISO(dateString);
-    return isValidDate(date) ? format(date, 'yyyy-MM-dd HH:mm', { locale: dateFnsLocale }) : tr('无效日期', 'Invalid date');
-  };
-
   const getChamberName = (chamberId: string): string => {
     return chamberNameById.get(chamberId) || chamberId;
   };
@@ -134,22 +93,44 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
     return testProjectNameById.get(testProjectId) || testProjectId;
   };
 
-  // 修改 getStatusChipProps 以使用 getEffectiveUsageLogStatus
-  const getStatusChipProperties = (log: UsageLog): { label: string; color: ChipProps['color'] } => {
-    const effectiveStatus = getEffectiveUsageLogStatus(log);
-    switch (effectiveStatus) {
-      case 'completed': return { label: tr('已完成', 'Completed'), color: 'success' };
-      case 'in-progress': return { label: tr('进行中', 'In progress'), color: 'warning' };
-      case 'not-started': return { label: tr('未开始', 'Not started'), color: 'primary' };
-      case 'overdue': return { label: tr('已超时', 'Overdue'), color: 'error' };
-      default: return { label: tr('未知', 'Unknown'), color: 'default' };
-    }
-  };
+  const filteredLogs = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    return usageLogs.filter((log) => {
+      if (statusFilter !== 'all' && getEffectiveUsageLogStatus(log) !== statusFilter) {
+        return false;
+      }
+      if (!query) return true;
+      const chamberName = chamberNameById.get(log.chamberId) ?? '';
+      const project = log.projectId ? projectById.get(log.projectId) : undefined;
+      const projectName = project?.name ?? '';
+      const testProjectName = log.testProjectId ? (testProjectNameById.get(log.testProjectId) ?? '') : '';
+      const configMap = log.projectId ? configByProjectId.get(log.projectId) : undefined;
+      const configNames =
+        log.selectedConfigIds?.map((cid) => configMap?.get(cid)?.name ?? '').join(' ') ?? '';
+      const haystack = [
+        chamberName,
+        log.user,
+        projectName,
+        testProjectName,
+        log.selectedWaterfall ?? '',
+        log.notes ?? '',
+        configNames,
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [chamberNameById, configByProjectId, projectById, searchText, statusFilter, testProjectNameById, usageLogs]);
+
+  const safePage = Math.min(page, Math.max(0, Math.ceil(filteredLogs.length / rowsPerPage) - 1));
+  const paginatedLogs = useMemo(
+    () => filteredLogs.slice(safePage * rowsPerPage, safePage * rowsPerPage + rowsPerPage),
+    [filteredLogs, rowsPerPage, safePage]
+  );
 
   const isLoading = loadingUsageLogs || loadingChambers || loadingProjects || loadingTestProjects;
-  const initialLoadDone = dataFetchedRef.current.usageLogs && dataFetchedRef.current.chambers && dataFetchedRef.current.projects && dataFetchedRef.current.testProjects;
 
-  if (isLoading && !initialLoadDone) {
+  if (isLoading && usageLogs.length === 0) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3 }}>
         <CircularProgress />
@@ -166,11 +147,10 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
         <Button
             size="small"
             onClick={() => {
-                dataFetchedRef.current = { usageLogs: false, chambers: false, projects: false, testProjects: false };
                 dispatch(fetchUsageLogs({ force: true }));
-                dispatch(fetchAssetsByType({ type: 'chamber' }));
-                dispatch(fetchProjects());
-                dispatch(fetchTestProjects());
+                dispatch(fetchAssetsByType({ type: 'chamber', force: true }));
+                dispatch(fetchProjects({ force: true }));
+                dispatch(fetchTestProjects({ force: true }));
             }}
             sx={{ ml: 2 }}
         >
@@ -183,6 +163,44 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
   return (
     <>
       <AppCard contentSx={{ mt: 0 }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.5}
+          alignItems={{ xs: 'stretch', sm: 'center' }}
+          justifyContent="space-between"
+          sx={{ mb: 1.5 }}
+        >
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ flex: 1 }}>
+            <TextField
+              size="small"
+              value={searchText}
+              onChange={(e) => {
+                setSearchText(e.target.value);
+                setPage(0);
+              }}
+              placeholder={tr('搜索设备 / 使用人 / 项目 / 备注', 'Search asset / user / project / notes')}
+              sx={{ minWidth: { sm: 260 }, flex: 1, maxWidth: { sm: 380 } }}
+            />
+            <TextField
+              select
+              size="small"
+              label={tr('状态', 'Status')}
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value as 'all' | UsageLog['status']);
+                setPage(0);
+              }}
+              sx={{ minWidth: 150 }}
+            >
+              <MenuItem value="all">{tr('全部状态', 'All')}</MenuItem>
+              <MenuItem value="not-started">{tr('未开始', 'Not started')}</MenuItem>
+              <MenuItem value="in-progress">{tr('进行中', 'In progress')}</MenuItem>
+              <MenuItem value="completed">{tr('已完成', 'Completed')}</MenuItem>
+              <MenuItem value="overdue">{tr('已逾期', 'Overdue')}</MenuItem>
+            </TextField>
+          </Stack>
+          <Chip size="small" label={tr(`共 ${filteredLogs.length} 条`, `${filteredLogs.length} logs`)} sx={{ fontWeight: 650, alignSelf: { xs: 'flex-start', sm: 'center' } }} />
+        </Stack>
         <TableContainer component={Box} sx={{ border: 'none', boxShadow: 'none', borderRadius: 0 }}>
           <Table aria-label={tr('使用记录列表', 'Usage log list')} size="small">
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
@@ -202,27 +220,26 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
               </TableRow>
             </TableHead>
             <TableBody>
-              {usageLogs.length === 0 && !isLoading && initialLoadDone ? (
+              {filteredLogs.length === 0 && !isLoading ? (
                 <TableRow>
                   <TableCell colSpan={10} align="center">
                     {tr('没有找到使用记录数据。', 'No usage logs found.')}
                   </TableCell>
                 </TableRow>
               ) : (
-                usageLogs.map((log) => {
+                paginatedLogs.map((log) => {
                   const linkedProject = getProject(log.projectId);
                   const configMap = log.projectId ? configByProjectId.get(log.projectId) : undefined;
-                  const statusProps = getStatusChipProperties(log);
                   const effectiveStatus = getEffectiveUsageLogStatus(log);
 
                   return (
                     <TableRow key={log.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
                       <TableCell>{getChamberName(log.chamberId)}</TableCell>
                       <TableCell>{log.user}</TableCell>
-                      <TableCell>{formatDate(log.startTime)}</TableCell>
-                      <TableCell>{formatDate(log.endTime)}</TableCell>
+                      <TableCell>{formatDateTimeShort(log.startTime, { fallback: 'N/A', locale: dateFnsLocale })}</TableCell>
+                      <TableCell>{formatDateTimeShort(log.endTime, { fallback: 'N/A', locale: dateFnsLocale })}</TableCell>
                       <TableCell>
-                        <Chip label={statusProps.label} color={statusProps.color} size="small" />
+                        <StatusChip kind="usage" status={effectiveStatus} />
                       </TableCell>
                       <TableCell>{linkedProject ? linkedProject.name : (log.projectId || tr('无', 'None'))}</TableCell>
                       <TableCell>
@@ -300,6 +317,19 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
             </TableBody>
           </Table>
         </TableContainer>
+        <TablePagination
+          component="div"
+          count={filteredLogs.length}
+          page={safePage}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={(e) => {
+            setRowsPerPage(parseInt(e.target.value, 10));
+            setPage(0);
+          }}
+          rowsPerPageOptions={[10, 25, 50, 100]}
+          labelRowsPerPage={tr('每页行数', 'Rows per page')}
+        />
       </AppCard>
       <ConfirmDialog
         open={Boolean(pendingCompleteLogId)}

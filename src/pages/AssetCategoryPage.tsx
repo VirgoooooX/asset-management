@@ -25,11 +25,8 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchAssetsByType } from '../store/assetsSlice'
 import { fetchAssetCategoryRates, upsertAssetCategoryRate } from '../services/assetCategoryRateService'
 import { fetchProjectCostReport } from '../services/reportService'
-
-const formatMoneyYuan = (cents: number) => {
-  const safe = Number.isFinite(cents) ? cents : 0
-  return (Math.round(safe) / 100).toFixed(2)
-}
+import StatusChip from '../components/StatusChip'
+import { formatMoneyYuan } from '../utils/formatters'
 
 const normalizeCategory = (v: string | undefined) => (v ?? '').trim()
 
@@ -94,11 +91,11 @@ const AssetCategoryPage: React.FC = () => {
       const cents = typeof hit?.hourlyRateCents === 'number' && Number.isFinite(hit.hourlyRateCents) ? hit.hourlyRateCents : 0
       setRateInput((Math.round(cents) / 100).toFixed(2))
     } catch (e: any) {
-      setRateError(e?.message || tr('加载费率失败', 'Failed to load rates'))
+      setRateError(e?.message || 'Failed to load rates')
     } finally {
       setRateLoading(false)
     }
-  }, [category, tr])
+  }, [category])
 
   const [rangePresetDays, setRangePresetDays] = useState<number>(30)
   const [includeInProgress, setIncludeInProgress] = useState(false)
@@ -130,14 +127,14 @@ const AssetCategoryPage: React.FC = () => {
       setRangeTotalCostCents(typeof hit?.costCents === 'number' ? hit.costCents : 0)
       setRangeLogCount(typeof hit?.logCount === 'number' ? hit.logCount : 0)
     } catch (e: any) {
-      setMetricError(e?.message || tr('加载统计失败', 'Failed to load metrics'))
+      setMetricError(e?.message || 'Failed to load metrics')
       setRangeTotalBillableHours(0)
       setRangeTotalCostCents(0)
       setRangeLogCount(0)
     } finally {
       setMetricLoading(false)
     }
-  }, [category, includeInProgress, rangePresetDays, tr])
+  }, [category, includeInProgress, rangePresetDays])
 
   const rangeUtilizationPct = useMemo(() => {
     if (!counts.total || !rangeHours) return 0
@@ -249,17 +246,7 @@ const AssetCategoryPage: React.FC = () => {
                         {a.assetCode || a.id}
                       </Typography>
                     </Box>
-                    <Chip
-                      size="small"
-                      label={
-                        a.status === 'available'
-                          ? tr('可用', 'Available')
-                          : a.status === 'in-use'
-                            ? tr('使用中', 'In use')
-                            : tr('维护中', 'Maintenance')
-                      }
-                      color={a.status === 'available' ? 'success' : a.status === 'in-use' ? 'warning' : 'error'}
-                    />
+                    <StatusChip kind="asset" status={a.status} />
                     <OpenInNewIcon fontSize="small" />
                   </Box>
                 ))}

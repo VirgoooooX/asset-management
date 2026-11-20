@@ -1,7 +1,7 @@
 import { createSelector } from '@reduxjs/toolkit'
 import type { RootState } from './index'
-import type { Asset, UsageLog } from '../types'
-import { getEffectiveUsageLogStatus } from '../utils/statusHelpers'
+import type { Asset } from '../types'
+import { getEffectiveUsageLogStatus, getUsageLogEndMs } from '../utils/statusHelpers'
 
 export type AlertSeverity = 'P1' | 'P2'
 export type AlertType = 'calibration-due' | 'usage-overdue' | 'usage-long'
@@ -20,7 +20,8 @@ export interface DerivedAlert {
 
 const selectAssets = (state: RootState) => state.assets.assets
 const selectUsageLogs = (state: RootState) => state.usageLogs.usageLogs
-const selectSettings = (state: RootState) => state.settings
+const selectCalibrationDaysThreshold = (state: RootState) => state.settings.alerts.calibrationDaysThreshold
+const selectLongOccupancyHoursThreshold = (state: RootState) => state.settings.alerts.longOccupancyHoursThreshold
 
 const parseMs = (value: string | undefined): number | null => {
   if (!value) return null
@@ -29,31 +30,22 @@ const parseMs = (value: string | undefined): number | null => {
   return ms
 }
 
-const getUsageLogEndMs = (log: UsageLog, nowMs: number): number => {
-  const end = parseMs(log.endTime)
-  if (end !== null) return end
-  const effective = getEffectiveUsageLogStatus(log)
-  if (effective === 'in-progress' || effective === 'overdue') return nowMs
-  const start = parseMs(log.startTime)
-  if (start === null) return nowMs
-  return start + 60 * 60 * 1000
-}
-
 export const selectDerivedAlerts = createSelector(
   [
     selectAssets,
     selectUsageLogs,
-    selectSettings,
+    selectCalibrationDaysThreshold,
+    selectLongOccupancyHoursThreshold,
     (_state: RootState, nowMs: number) => nowMs,
   ],
-  (assets, usageLogs, settings, nowMs): DerivedAlert[] => {
+  (assets, usageLogs, calibrationDays, longHours, nowMs): DerivedAlert[] => {
     const chamberAssets = assets.filter((a) => a.type === 'chamber')
     const assetById = new Map<string, Asset>()
     chamberAssets.forEach((a) => assetById.set(a.id, a))
 
     const alerts: DerivedAlert[] = []
+    const nowDate = new Date(nowMs)
 
-    const calibrationDays = settings.alerts.calibrationDaysThreshold
     const calibrationThresholdMs = calibrationDays * 24 * 60 * 60 * 1000
 
     for (const asset of chamberAssets) {
@@ -75,7 +67,6 @@ export const selectDerivedAlerts = createSelector(
       })
     }
 
-    const longHours = settings.alerts.longOccupancyHoursThreshold
     const longThresholdMs = longHours * 60 * 60 * 1000
 
     for (const log of usageLogs) {
@@ -83,8 +74,8 @@ export const selectDerivedAlerts = createSelector(
       if (!asset) continue
       const startMs = parseMs(log.startTime)
       if (startMs === null) continue
-      const endMs = getUsageLogEndMs(log, nowMs)
-      const effective = getEffectiveUsageLogStatus(log)
+      const effective = getEffectiveUsageLogStatus(log, nowDate)
+      const endMs = getUsageLogEndMs(log, effective, nowMs)
 
       if (effective === 'overdue') {
         alerts.push({
@@ -126,4 +117,3 @@ export const selectDerivedAlerts = createSelector(
     })
   }
 )
-

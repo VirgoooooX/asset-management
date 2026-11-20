@@ -27,14 +27,15 @@ import FactCheckIcon from '@mui/icons-material/FactCheck'
 import EditIcon from '@mui/icons-material/Edit'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import RefreshIcon from '@mui/icons-material/Refresh'
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
-import { DateTimePicker, LocalizationProvider } from '@mui/x-date-pickers'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import PageShell from '../components/PageShell'
 import AppCard from '../components/AppCard'
 import TitleWithIcon from '../components/TitleWithIcon'
-import type { Asset, AssetStatus } from '../types'
+import StatusChip from '../components/StatusChip'
+import type { Asset } from '../types'
 import * as assetService from '../services/assetService'
-import { useAppSelector } from '../store/hooks'
+import { updateAsset } from '../store/assetsSlice'
+import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { useI18n } from '../i18n'
 import { useNavigate } from 'react-router-dom'
 
@@ -54,21 +55,10 @@ const getCalibrationState = (calibrationDate: string | undefined, daysThreshold:
   return { state: 'ok', days }
 }
 
-const statusLabel = (status: AssetStatus, tr: (zh: string, en: string) => string) => {
-  if (status === 'available') return tr('可用', 'Available')
-  if (status === 'in-use') return tr('使用中', 'In use')
-  return tr('维护中', 'Maintenance')
-}
-
-const statusColor = (status: AssetStatus) => {
-  if (status === 'available') return 'success' as const
-  if (status === 'in-use') return 'warning' as const
-  return 'error' as const
-}
-
 const AssetCalibrationsPage: React.FC = () => {
+  const dispatch = useAppDispatch()
   const navigate = useNavigate()
-  const { tr, language, dateFnsLocale } = useI18n()
+  const { tr, language } = useI18n()
   const role = useAppSelector((s) => s.auth.user?.role)
   const canManage = role === 'admin' || role === 'manager'
   const daysThreshold = useAppSelector((s) => s.settings.alerts.calibrationDaysThreshold) ?? 30
@@ -95,13 +85,13 @@ const AssetCalibrationsPage: React.FC = () => {
         const items = await assetService.getAssets()
         setAssets(items)
       } catch (e: any) {
-        setError(e?.message || tr('加载设备失败', 'Failed to load assets'))
+        setError(e?.message || 'Failed to load assets')
       } finally {
         setLoading(false)
         setRefreshing(false)
       }
     },
-    [tr]
+    []
   )
 
   useEffect(() => {
@@ -179,12 +169,9 @@ const AssetCalibrationsPage: React.FC = () => {
     setSaving(true)
     setSaveError(null)
     try {
-      await assetService.updateAsset(editing.id, { calibrationDate: editValue ? editValue.toISOString() : null })
-      const refreshed = await assetService.getAssetById(editing.id).catch(() => null)
-      const next = refreshed ?? {
-        ...editing,
-        calibrationDate: editValue ? editValue.toISOString() : undefined,
-      }
+      const next = await dispatch(
+        updateAsset({ id: editing.id, changes: { calibrationDate: editValue ? editValue.toISOString() : null } })
+      ).unwrap()
       setAssets((prev) => prev.map((a) => (a.id === next.id ? next : a)))
       setEditOpen(false)
       setEditing(null)
@@ -194,7 +181,7 @@ const AssetCalibrationsPage: React.FC = () => {
     } finally {
       setSaving(false)
     }
-  }, [editValue, editing, tr])
+  }, [dispatch, editValue, editing, tr])
 
   if (!canManage) {
     return (
@@ -205,7 +192,6 @@ const AssetCalibrationsPage: React.FC = () => {
   }
 
   return (
-    <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={dateFnsLocale}>
       <PageShell
         title={<TitleWithIcon icon={<FactCheckIcon />}>{tr('校验管理', 'Calibration')}</TitleWithIcon>}
         actions={
@@ -336,7 +322,7 @@ const AssetCalibrationsPage: React.FC = () => {
                               </Stack>
                             </TableCell>
                             <TableCell>
-                              <Chip size="small" color={statusColor(asset.status)} label={statusLabel(asset.status, tr)} />
+                              <StatusChip kind="asset" status={asset.status} />
                             </TableCell>
                             <TableCell>{dateLabel}</TableCell>
                             <TableCell>{statusChip}</TableCell>
@@ -399,7 +385,6 @@ const AssetCalibrationsPage: React.FC = () => {
           </DialogActions>
         </Dialog>
       </PageShell>
-    </LocalizationProvider>
   )
 }
 

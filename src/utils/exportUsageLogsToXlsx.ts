@@ -1,24 +1,11 @@
-import * as XLSX from 'xlsx'
-import { format, isValid, parseISO } from 'date-fns'
-import { enUS, zhCN } from 'date-fns/locale'
+import { format } from 'date-fns'
 import type { Asset, Project, TestProject, UsageLog } from '../types'
 import { getEffectiveUsageLogStatus } from './statusHelpers'
 import type { Language } from '../store/settingsSlice'
+import { formatDateTimeShort, parseMs } from './formatters'
 
-const formatDateTime = (value: string | undefined, language: Language) => {
-  if (!value) return ''
-  const date = parseISO(value)
-  if (!isValid(date)) return value
-  return format(date, 'yyyy-MM-dd HH:mm', { locale: language === 'en' ? enUS : zhCN })
-}
-
-const parseMs = (value: string | undefined) => {
-  if (!value) return Number.NaN
-  const d = parseISO(value)
-  const ms = d.getTime()
-  if (!Number.isFinite(ms) || !isValid(d)) return Number.NaN
-  return ms
-}
+const formatExportTime = (value: string | undefined, language: Language) =>
+  formatDateTimeShort(value, { fallback: '', language })
 
 const buildConfigNameMapByProjectId = (projects: Project[]) => {
   const map = new Map<string, Map<string, string>>()
@@ -30,7 +17,7 @@ const buildConfigNameMapByProjectId = (projects: Project[]) => {
   return map
 }
 
-export const exportUsageLogsToXlsx = (params: {
+export const exportUsageLogsToXlsx = async (params: {
   usageLogs: UsageLog[]
   chambers: Asset[]
   projects: Project[]
@@ -40,6 +27,7 @@ export const exportUsageLogsToXlsx = (params: {
   range?: { start: string; end: string }
   includeInProgress?: boolean
 }) => {
+  const XLSX = await import('xlsx')
   const {
     usageLogs,
     chambers,
@@ -57,8 +45,8 @@ export const exportUsageLogsToXlsx = (params: {
   const testProjectNameById = new Map(testProjects.map((tp) => [tp.id, tp.name] as const))
   const configNameByProjectId = buildConfigNameMapByProjectId(projects)
 
-  const rangeStartMs = range ? parseMs(range.start) : Number.NaN
-  const rangeEndMs = range ? parseMs(range.end) : Number.NaN
+  const rangeStartMs = range ? parseMs(range.start) : null
+  const rangeEndMs = range ? parseMs(range.end) : null
   const nowMs = Date.now()
 
   const rows = usageLogs.map((log) => {
@@ -84,12 +72,12 @@ export const exportUsageLogsToXlsx = (params: {
         Configs: configNames,
         WF: log.selectedWaterfall || '',
         User: log.user,
-        'Start Time': formatDateTime(log.startTime, language),
-        'End Time': formatDateTime(log.endTime, language),
+        'Start Time': formatExportTime(log.startTime, language),
+        'End Time': formatExportTime(log.endTime, language),
         'Stored Status': log.status,
         'Effective Status': effectiveStatus,
         Notes: log.notes || '',
-        'Created At': formatDateTime(log.createdAt, language),
+        'Created At': formatExportTime(log.createdAt, language),
       }
     }
 
@@ -101,12 +89,12 @@ export const exportUsageLogsToXlsx = (params: {
       配置: configNames,
       WF: log.selectedWaterfall || '',
       用户: log.user,
-      开始时间: formatDateTime(log.startTime, language),
-      结束时间: formatDateTime(log.endTime, language),
+      开始时间: formatExportTime(log.startTime, language),
+      结束时间: formatExportTime(log.endTime, language),
       存储状态: log.status,
       有效状态: effectiveStatus,
       备注: log.notes || '',
-      创建时间: formatDateTime(log.createdAt, language),
+      创建时间: formatExportTime(log.createdAt, language),
     }
   })
 
@@ -121,15 +109,15 @@ export const exportUsageLogsToXlsx = (params: {
 
   usageLogs.forEach((log) => {
     const rawStartMs = parseMs(log.startTime)
-    if (!Number.isFinite(rawStartMs)) return
+    if (rawStartMs === null) return
     const rawEndMs = parseMs(log.endTime)
-    const endMs = Number.isFinite(rawEndMs) ? rawEndMs : includeInProgress ? nowMs : Number.NaN
-    if (!Number.isFinite(endMs)) return
+    const endMs = rawEndMs ?? (includeInProgress ? nowMs : null)
+    if (endMs === null) return
 
     let startMs = rawStartMs
     let clippedEndMs = endMs
-    if (Number.isFinite(rangeStartMs)) startMs = Math.max(startMs, rangeStartMs)
-    if (Number.isFinite(rangeEndMs)) clippedEndMs = Math.min(clippedEndMs, rangeEndMs)
+    if (rangeStartMs !== null) startMs = Math.max(startMs, rangeStartMs)
+    if (rangeEndMs !== null) clippedEndMs = Math.min(clippedEndMs, rangeEndMs)
     if (!(clippedEndMs > startMs)) return
 
     const asset = chamberById.get(log.chamberId)

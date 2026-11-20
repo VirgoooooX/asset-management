@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import Database from 'better-sqlite3'
-import { queryProjectCostGroups, queryProjectCostSeries, queryProjectCostLines } from './projectCostReport'
+import { queryProjectCostGroups, queryProjectCostSeries, queryProjectCostLines, queryProjectCostReport } from './projectCostReport'
 
 const setupDb = () => {
   const db = new Database(':memory:')
@@ -114,5 +114,52 @@ describe('projectCostReport (db)', () => {
     expect(lines[0].estimated).toBe(true)
     expect(lines[0].billableHours).toBe(3)
     expect(lines[0].costCents).toBe(300)
+  })
+
+  it('preserves millisecond precision when billing and returns combined report in queryProjectCostReport', () => {
+    const db = setupDb()
+    db.prepare('insert into assets (id,name,category,hourly_rate_cents) values (?,?,?,?)').run('c1', 'C-01', 'A', 100)
+    db.prepare('insert into projects (id,name) values (?,?)').run('p1', 'P-01')
+    db.prepare(
+      'insert into usage_logs (id,chamber_id,project_id,start_time,end_time,user,status,hourly_rate_cents_snapshot) values (?,?,?,?,?,?,?,?)'
+    ).run('u1', 'c1', 'p1', '2026-01-01T00:00:00.000Z', '2026-01-01T01:00:00.500Z', 'alice', 'completed', 100)
+
+    const res = queryProjectCostReport(db, {
+      groupBy: 'asset',
+      rangeStartMs: Date.parse('2026-01-01T00:00:00.000Z'),
+      rangeEndMs: Date.parse('2026-01-02T00:00:00.000Z'),
+      projectId: 'all',
+      includeUnlinked: true,
+      includeInProgress: false,
+      nowMs: Date.parse('2026-01-02T00:00:00.000Z'),
+      unlinkedLabel: 'Unlinked',
+      uncategorizedLabel: 'Uncategorized',
+    })
+
+    expect(res.groups).toHaveLength(1)
+    expect(res.groups[0].billableHours).toBe(2)
+    expect(res.groups[0].costCents).toBe(200)
+    expect(res.series[0].costCents).toBe(200)
+  })
+
+  it('uses usage_logs start_time indexes in SQLite query planner', () => {
+    const db = setupDb()
+    db.exec(`
+      create index idx_usage_logs_start_time on usage_logs(start_time);
+      create index idx_usage_logs_project_start on usage_logs(project_id, start_time);
+    `)
+    const planAll = db
+      .prepare(
+        "explain query plan select u.id from usage_logs u where u.start_time < ? and ((u.end_time is not null and u.end_time > ?) or (u.end_time is null and ? = 1 and u.status in ('in-progress','overdue')))"
+      )
+      .all('2026-01-02T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 0) as Array<{ detail: string }>
+    expect(planAll.some((r) => r.detail.includes('idx_usage_logs_start_time'))).toBe(true)
+
+    const planProj = db
+      .prepare(
+        "explain query plan select u.id from usage_logs u where u.start_time < ? and ((u.end_time is not null and u.end_time > ?) or (u.end_time is null and ? = 1 and u.status in ('in-progress','overdue'))) and u.project_id = ?"
+      )
+      .all('2026-01-02T00:00:00.000Z', '2026-01-01T00:00:00.000Z', 0, 'p1') as Array<{ detail: string }>
+    expect(planProj.some((r) => r.detail.includes('idx_usage_logs_project_start'))).toBe(true)
   })
 })

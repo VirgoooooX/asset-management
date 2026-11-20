@@ -1,5 +1,4 @@
 import { configureStore } from '@reduxjs/toolkit';
-import chambersReducer from './chambersSlice';
 import assetsReducer from './assetsSlice';
 import usageLogsReducer from './usageLogsSlice';
 import projectsReducer from './projectsSlice';
@@ -12,7 +11,6 @@ import { listenerMiddleware } from './listeners'
 
 export const store = configureStore({
   reducer: {
-    chambers: chambersReducer,
     assets: assetsReducer,
     usageLogs: usageLogsReducer,
     projects: projectsReducer,

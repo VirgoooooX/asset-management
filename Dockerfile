@@ -17,13 +17,15 @@ RUN npm prune --omit=dev
 FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
-COPY --from=backend-build /app/backend/package.json ./backend/package.json
-COPY --from=backend-build /app/backend/node_modules ./backend/node_modules
-COPY --from=backend-build /app/backend/build ./backend/build
-COPY --from=frontend-build /app/dist ./dist
+RUN mkdir -p /data && chown -R node:node /app /data
+COPY --chown=node:node --from=backend-build /app/backend/package.json ./backend/package.json
+COPY --chown=node:node --from=backend-build /app/backend/node_modules ./backend/node_modules
+COPY --chown=node:node --from=backend-build /app/backend/build ./backend/build
+COPY --chown=node:node --from=frontend-build /app/dist ./dist
 ENV PORT=8080
 ENV DATA_DIR=/data
 ENV FRONTEND_DIST_DIR=/app/dist
+USER node
 VOLUME ["/data"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD ["node","-e","fetch('http://localhost:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

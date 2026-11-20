@@ -23,12 +23,7 @@ import TitleWithIcon from '../components/TitleWithIcon'
 import AppCard from '../components/AppCard'
 import { useI18n } from '../i18n'
 import { exportAuditLogsCsv, getAuditLogs, type AuditLogItem } from '../services/auditLogService'
-
-const formatDateTime = (value: string) => {
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString()
-}
+import { formatDateTime } from '../utils/formatters'
 
 const toPrettyJson = (value: any) => {
   if (value === undefined) return ''
@@ -101,7 +96,7 @@ const AuditLogPage: React.FC = () => {
       })
       .catch((e: any) => {
         if (cancelled) return
-        setError(e?.message || tr('加载失败', 'Failed to load'))
+        setError(e?.message || '__LOAD_FAILED__')
       })
       .finally(() => {
         if (cancelled) return
@@ -110,7 +105,7 @@ const AuditLogPage: React.FC = () => {
     return () => {
       cancelled = true
     }
-  }, [applied.action, applied.actorUsername, applied.entityId, applied.entityType, applied.from, applied.requestId, applied.to, page, tr])
+  }, [applied.action, applied.actorUsername, applied.entityId, applied.entityType, applied.from, applied.requestId, applied.to, page])
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(total / PAGE_SIZE)), [total])
   const hasPrev = page > 0
@@ -158,7 +153,7 @@ const AuditLogPage: React.FC = () => {
       {loading ? <LinearProgress sx={{ mb: 2 }} /> : null}
       {error ? (
         <AppCard sx={{ mb: 2 }}>
-          <Typography color="error">{error}</Typography>
+          <Typography color="error">{error === '__LOAD_FAILED__' ? tr('加载失败', 'Failed to load') : error}</Typography>
         </AppCard>
       ) : null}
 
@@ -285,7 +280,7 @@ const AuditLogPage: React.FC = () => {
               ) : (
                 items.map((it) => {
                   const open = expandedId === it.id
-                  const changedKeys = diffTopLevelKeys(it.before, it.after)
+                  const changedKeys = open ? diffTopLevelKeys(it.before, it.after) : []
                   return (
                     <React.Fragment key={it.id}>
                       <TableRow hover>

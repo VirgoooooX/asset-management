@@ -60,4 +60,31 @@ describe('alertsSelectors', () => {
     expect(types.has('usage-overdue')).toBe(true)
     expect(types.has('usage-long')).toBe(true)
   })
+
+  it('memoizes output reference when state and nowMs are unchanged', () => {
+    const nowMs = new Date('2026-01-10T00:00:00.000Z').getTime()
+    const state: any = {
+      assets: {
+        assets: [
+          {
+            id: 'a1',
+            type: 'chamber',
+            name: 'C-01',
+            status: 'in-use',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            calibrationDate: '2026-01-15T00:00:00.000Z',
+          },
+        ],
+      },
+      usageLogs: { usageLogs: [] },
+      settings: { alerts: { calibrationDaysThreshold: 30, longOccupancyHoursThreshold: 72 } },
+    }
+
+    const first = selectDerivedAlerts(state, nowMs)
+    const second = selectDerivedAlerts(state, nowMs)
+    expect(second).toBe(first)
+
+    const updated = selectDerivedAlerts(state, nowMs + 60_000)
+    expect(updated).not.toBe(first)
+  })
 })

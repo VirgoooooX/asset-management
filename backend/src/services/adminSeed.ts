@@ -1,7 +1,7 @@
 import { getDb } from '../db/db.js'
 import { config } from '../config.js'
-import bcrypt from 'bcryptjs'
 import { randomToken } from '../util/crypto.js'
+import { hashPassword } from '../util/password.js'
 
 export const ensureAdminSeed = async () => {
   const db = getDb()
@@ -14,7 +14,7 @@ export const ensureAdminSeed = async () => {
       .prepare("select id, username from users where role = 'admin' and username = ? limit 1")
       .get(config.adminSeedUser) as { id: string; username: string } | undefined
     const target = preferred ?? anyAdmin
-    const hash = await bcrypt.hash(config.adminSeedPassword, 12)
+    const hash = await hashPassword(config.adminSeedPassword)
     db.prepare('update users set password_hash = ?, updated_at = ? where id = ?').run(hash, new Date().toISOString(), target.id)
     return
   }
@@ -23,8 +23,9 @@ export const ensureAdminSeed = async () => {
     | undefined
   if (exists?.ok === 1) return
   if (!config.adminSeedPassword) return
-  const hash = await bcrypt.hash(config.adminSeedPassword, 12)
+  const hash = await hashPassword(config.adminSeedPassword)
+  const now = new Date().toISOString()
   db.prepare(
     'insert into users (id, username, password_hash, role, status, approved_by, approved_at, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(randomToken(16), config.adminSeedUser, hash, 'admin', 'active', null, new Date().toISOString(), new Date().toISOString())
+  ).run(randomToken(16), config.adminSeedUser, hash, 'admin', 'active', null, now, now)
 }

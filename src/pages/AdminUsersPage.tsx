@@ -78,7 +78,7 @@ const AdminUsersPage: React.FC = () => {
   const [resetUserId, setResetUserId] = useState<string | null>(null)
   const [resetPassword, setResetPassword] = useState('')
 
-  const fetchUsers = async () => {
+  const fetchUsers = React.useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -89,11 +89,11 @@ const AdminUsersPage: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [tr])
 
   useEffect(() => {
     void fetchUsers()
-  }, [])
+  }, [fetchUsers])
 
   const filteredItems = useMemo(() => {
     return items.filter((u) => u.status === tab)

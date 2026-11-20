@@ -1,29 +1,23 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { Router } from 'express'
 import { z } from 'zod'
+import { config } from '../../config.js'
 import { getDb } from '../../db/db.js'
+import { buildPatchSet, type PatchFieldSpec } from '../../db/sqlHelpers.js'
 import { requireAuth } from '../middlewares/requireAuth.js'
 import { requireManager } from '../middlewares/requireManager.js'
+import { asyncHandler } from '../middlewares/asyncHandler.js'
+import { validateBody } from '../middlewares/validate.js'
+import { assetStatusSchema, assetTypeSchema, attachmentSchema } from '../schemas.js'
 import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
-import { syncAssetFolderToPreferred } from '../../services/fileFolders.js'
-import { slugifyCategory } from '../../util/slug.js'
+import { isSubPath } from '../../util/pathSafe.js'
 import { publishAssetStatusChanged, publishAssetUpdated } from '../../services/events.js'
-import { writeAuditLog } from '../../services/auditLog.js'
+import { writeAuditFromReq } from '../../services/auditLog.js'
+import type { AssetRow, AttachmentDto } from '../../types.js'
 
 export const assetsRouter = Router()
-
-const assetTypeSchema = z.enum(['chamber'])
-const assetStatusSchema = z.enum(['available', 'in-use', 'maintenance'])
-
-const attachmentSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  url: z.string(),
-  path: z.string(),
-  contentType: z.string().optional(),
-  size: z.number().optional(),
-  uploadedAt: z.string()
-})
 
 const assetCreateSchema = z.object({
   type: assetTypeSchema,
@@ -42,16 +36,37 @@ const assetCreateSchema = z.object({
   photoUrls: z.array(z.string()).optional(),
   nameplateUrls: z.array(z.string()).optional(),
   attachments: z.array(attachmentSchema).optional(),
-  capabilities: z.any().optional(),
-  calibrationDate: z.string().optional().nullable()
+  capabilities: z.unknown().optional(),
+  calibrationDate: z.string().optional().nullable(),
 })
 
 const assetPatchSchema = assetCreateSchema.partial().extend({
-  capabilities: z.any().optional().nullable(),
-  calibrationDate: z.string().optional().nullable()
+  capabilities: z.unknown().optional().nullable(),
+  calibrationDate: z.string().optional().nullable(),
 })
 
-const mapRowToAsset = (r: any) => ({
+const ASSET_PATCH_SPECS: Record<string, PatchFieldSpec> = {
+  type: { column: 'type' },
+  name: { column: 'name' },
+  status: { column: 'status' },
+  hourlyRateCents: { column: 'hourly_rate_cents' },
+  category: { column: 'category', nullable: true },
+  assetCode: { column: 'asset_code', nullable: true },
+  description: { column: 'description', nullable: true },
+  tags: { column: 'tags', json: true, nullable: true },
+  location: { column: 'location', nullable: true },
+  serialNumber: { column: 'serial_number', nullable: true },
+  manufacturer: { column: 'manufacturer', nullable: true },
+  model: { column: 'model', nullable: true },
+  owner: { column: 'owner', nullable: true },
+  photoUrls: { column: 'photo_urls', json: true, nullable: true },
+  nameplateUrls: { column: 'nameplate_urls', json: true, nullable: true },
+  attachments: { column: 'attachments', json: true, nullable: true },
+  capabilities: { column: 'capabilities', json: true, nullable: true },
+  calibrationDate: { column: 'calibration_date', nullable: true },
+}
+
+const mapRowToAsset = (r: AssetRow) => ({
   id: r.id,
   type: r.type,
   name: r.name,
@@ -60,42 +75,54 @@ const mapRowToAsset = (r: any) => ({
   category: r.category ?? undefined,
   assetCode: r.asset_code ?? undefined,
   description: r.description ?? undefined,
-  tags: parseJson<string[]>(r.tags, undefined as any),
+  tags: parseJson<string[]>(r.tags),
   location: r.location ?? undefined,
   serialNumber: r.serial_number ?? undefined,
   manufacturer: r.manufacturer ?? undefined,
   model: r.model ?? undefined,
   owner: r.owner ?? undefined,
-  photoUrls: parseJson<string[]>(r.photo_urls, undefined as any),
-  nameplateUrls: parseJson<string[]>(r.nameplate_urls, undefined as any),
-  attachments: parseJson<any[]>(r.attachments, undefined as any),
-  capabilities: parseJson<any>(r.capabilities, undefined as any),
+  photoUrls: parseJson<string[]>(r.photo_urls),
+  nameplateUrls: parseJson<string[]>(r.nameplate_urls),
+  attachments: parseJson<AttachmentDto[]>(r.attachments),
+  capabilities: parseJson<unknown>(r.capabilities),
   calibrationDate: r.calibration_date ?? undefined,
   createdAt: r.created_at,
-  updatedAt: r.updated_at ?? undefined
+  updatedAt: r.updated_at ?? undefined,
+})
+
+const auditSnapshot = (row: {
+  name?: string | null
+  category?: string | null
+  status?: string | null
+  hourly_rate_cents?: number | null
+  calibration_date?: string | null
+}) => ({
+  name: row.name ?? null,
+  category: row.category ?? null,
+  status: row.status ?? null,
+  hourlyRateCents: typeof row.hourly_rate_cents === 'number' ? row.hourly_rate_cents : 0,
+  calibrationDate: row.calibration_date ?? null,
 })
 
 assetsRouter.get('/', requireAuth, (req, res) => {
   const type = typeof req.query.type === 'string' ? req.query.type : undefined
   const db = getDb()
   const rows = type
-    ? (db.prepare('select * from assets where type = ? order by created_at desc').all(type) as any[])
-    : (db.prepare('select * from assets order by created_at desc').all() as any[])
+    ? (db.prepare('select * from assets where type = ? order by created_at desc').all(type) as AssetRow[])
+    : (db.prepare('select * from assets order by created_at desc').all() as AssetRow[])
   res.json({ items: rows.map(mapRowToAsset) })
 })
 
 assetsRouter.get('/:id', requireAuth, (req, res) => {
   const id = req.params.id
   const db = getDb()
-  const row = db.prepare('select * from assets where id = ?').get(id) as any | undefined
+  const row = db.prepare('select * from assets where id = ?').get(id) as AssetRow | undefined
   if (!row) return res.status(404).json({ error: 'not_found' })
   res.json({ item: mapRowToAsset(row) })
 })
 
-assetsRouter.post('/', requireAuth, requireManager, (req, res) => {
-  const body = assetCreateSchema.safeParse(req.body)
-  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
-  const d = body.data
+assetsRouter.post('/', requireAuth, requireManager, validateBody(assetCreateSchema), (req, res) => {
+  const d = req.body as z.infer<typeof assetCreateSchema>
   const db = getDb()
   const id = randomToken(16)
   const now = new Date().toISOString()
@@ -104,7 +131,7 @@ assetsRouter.post('/', requireAuth, requireManager, (req, res) => {
     [
       'insert into assets (',
       'id, type, name, status, hourly_rate_cents, category, asset_code, description, tags, location, serial_number, manufacturer, model, owner, photo_urls, nameplate_urls, attachments, capabilities, calibration_date, created_at, updated_at',
-      ') values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+      ') values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     ].join(' ')
   ).run(
     id,
@@ -130,14 +157,10 @@ assetsRouter.post('/', requireAuth, requireManager, (req, res) => {
     now
   )
 
-  writeAuditLog(db, {
-    actor: req.user!,
+  writeAuditFromReq(db, req, {
     action: 'asset.create',
     entityType: 'asset',
     entityId: id,
-    ip: req.ip,
-    userAgent: req.get('user-agent') ?? undefined,
-    requestId: req.requestId,
     after: {
       id,
       type: d.type,
@@ -149,53 +172,29 @@ assetsRouter.post('/', requireAuth, requireManager, (req, res) => {
     },
   })
 
-  res.json({ id })
+  const created = db.prepare('select * from assets where id = ?').get(id) as AssetRow | undefined
+  res.json({ id, item: created ? mapRowToAsset(created) : undefined })
 })
 
-assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
+assetsRouter.patch('/:id', requireAuth, requireManager, validateBody(assetPatchSchema), (req, res) => {
   const id = req.params.id
-  const body = assetPatchSchema.safeParse(req.body)
-  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
-  const d = body.data
+  const d = req.body as z.infer<typeof assetPatchSchema>
   const db = getDb()
-  const before = db.prepare('select name, category, status, hourly_rate_cents, calibration_date from assets where id = ?').get(id) as
-    | { name?: string; category?: string; status?: string; hourly_rate_cents?: number; calibration_date?: string | null }
+  const before = db
+    .prepare('select name, category, status, hourly_rate_cents, calibration_date from assets where id = ?')
+    .get(id) as
+    | { name?: string | null; category?: string | null; status?: string | null; hourly_rate_cents?: number | null; calibration_date?: string | null }
     | undefined
   if (!before) return res.status(404).json({ error: 'not_found' })
-  const beforeCategory = typeof before?.category === 'string' ? before.category : ''
-  const beforeCategorySlug = slugifyCategory(beforeCategory)
-  const beforeStatus = typeof before?.status === 'string' ? before.status : undefined
-
-  const updates: string[] = []
-  const params: any[] = []
-  const add = (sql: string, val: any) => {
-    updates.push(sql)
-    params.push(val)
-  }
-
-  if (d.type !== undefined) add('type = ?', d.type)
-  if (d.name !== undefined) add('name = ?', d.name)
-  if (d.status !== undefined) add('status = ?', d.status)
-  if (d.hourlyRateCents !== undefined) add('hourly_rate_cents = ?', d.hourlyRateCents)
-  if (d.category !== undefined) add('category = ?', d.category ?? null)
-  if (d.assetCode !== undefined) add('asset_code = ?', d.assetCode ?? null)
-  if (d.description !== undefined) add('description = ?', d.description ?? null)
-  if (d.tags !== undefined) add('tags = ?', d.tags ? JSON.stringify(d.tags) : null)
-  if (d.location !== undefined) add('location = ?', d.location ?? null)
-  if (d.serialNumber !== undefined) add('serial_number = ?', d.serialNumber ?? null)
-  if (d.manufacturer !== undefined) add('manufacturer = ?', d.manufacturer ?? null)
-  if (d.model !== undefined) add('model = ?', d.model ?? null)
-  if (d.owner !== undefined) add('owner = ?', d.owner ?? null)
-  if (d.photoUrls !== undefined) add('photo_urls = ?', d.photoUrls ? JSON.stringify(d.photoUrls) : null)
-  if (d.nameplateUrls !== undefined) add('nameplate_urls = ?', d.nameplateUrls ? JSON.stringify(d.nameplateUrls) : null)
-  if (d.attachments !== undefined) add('attachments = ?', d.attachments ? JSON.stringify(d.attachments) : null)
-  if (d.capabilities !== undefined) add('capabilities = ?', d.capabilities === null ? null : JSON.stringify(d.capabilities))
-  if (d.calibrationDate !== undefined) add('calibration_date = ?', d.calibrationDate ?? null)
+  const beforeStatus = typeof before.status === 'string' ? before.status : undefined
 
   const now = new Date().toISOString()
-  add('updated_at = ?', now)
+  const { sets, params } = buildPatchSet(d as Record<string, unknown>, ASSET_PATCH_SPECS, [
+    { column: 'updated_at', value: now },
+  ])
+  db.prepare(`update assets set ${sets.join(', ')} where id = ?`).run(...params, id)
 
-  db.prepare(`update assets set ${updates.join(', ')} where id = ?`).run(...params, id)
+  const afterRow = db.prepare('select * from assets where id = ?').get(id) as AssetRow | undefined
 
   const shouldAudit =
     d.name !== undefined ||
@@ -205,33 +204,12 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
     d.calibrationDate !== undefined
 
   if (shouldAudit) {
-    const after = db.prepare('select name, category, status, hourly_rate_cents, calibration_date from assets where id = ?').get(id) as
-      | { name?: string; category?: string; status?: string; hourly_rate_cents?: number; calibration_date?: string | null }
-      | undefined
-    writeAuditLog(db, {
-      actor: req.user!,
+    writeAuditFromReq(db, req, {
       action: 'asset.update',
       entityType: 'asset',
       entityId: id,
-      ip: req.ip,
-      userAgent: req.get('user-agent') ?? undefined,
-      requestId: req.requestId,
-      before: {
-        name: before?.name ?? null,
-        category: before?.category ?? null,
-        status: before?.status ?? null,
-        hourlyRateCents: typeof before?.hourly_rate_cents === 'number' ? before.hourly_rate_cents : 0,
-        calibrationDate: before?.calibration_date ?? null,
-      },
-      after: after
-        ? {
-            name: after.name ?? null,
-            category: after.category ?? null,
-            status: after.status ?? null,
-            hourlyRateCents: typeof after.hourly_rate_cents === 'number' ? after.hourly_rate_cents : 0,
-            calibrationDate: after.calibration_date ?? null,
-          }
-        : null,
+      before: auditSnapshot(before),
+      after: afterRow ? auditSnapshot(afterRow) : null,
     })
   }
 
@@ -239,36 +217,34 @@ assetsRouter.patch('/:id', requireAuth, requireManager, async (req, res) => {
     publishAssetStatusChanged(id, d.status, now)
   }
   publishAssetUpdated(id, now)
-  if (d.name !== undefined || d.category !== undefined) {
-    await syncAssetFolderToPreferred(id, beforeCategorySlug).catch(() => undefined)
-  }
-  res.json({ ok: true })
+  res.json({ ok: true, item: afterRow ? mapRowToAsset(afterRow) : undefined })
 })
 
-assetsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
-  const id = req.params.id
-  const db = getDb()
-  const before = db.prepare('select name, category, status, hourly_rate_cents, calibration_date from assets where id = ?').get(id) as
-    | { name?: string; category?: string; status?: string; hourly_rate_cents?: number; calibration_date?: string | null }
-    | undefined
-  db.prepare('delete from assets where id = ?').run(id)
-  if (before) {
-    writeAuditLog(db, {
-      actor: req.user!,
-      action: 'asset.delete',
-      entityType: 'asset',
-      entityId: id,
-      ip: req.ip,
-      userAgent: req.get('user-agent') ?? undefined,
-      requestId: req.requestId,
-      before: {
-        name: before.name ?? null,
-        category: before.category ?? null,
-        status: before.status ?? null,
-        hourlyRateCents: typeof before.hourly_rate_cents === 'number' ? before.hourly_rate_cents : 0,
-        calibrationDate: before.calibration_date ?? null,
-      },
-    })
-  }
-  res.json({ ok: true })
-})
+assetsRouter.delete(
+  '/:id',
+  requireAuth,
+  requireManager,
+  asyncHandler(async (req, res) => {
+    const id = req.params.id
+    const db = getDb()
+    const before = db
+      .prepare('select name, category, status, hourly_rate_cents, calibration_date from assets where id = ?')
+      .get(id) as
+      | { name?: string; category?: string; status?: string; hourly_rate_cents?: number; calibration_date?: string | null }
+      | undefined
+    db.prepare('delete from assets where id = ?').run(id)
+    if (before) {
+      writeAuditFromReq(db, req, {
+        action: 'asset.delete',
+        entityType: 'asset',
+        entityId: id,
+        before: auditSnapshot(before),
+      })
+      const assetFilesDir = path.join(config.filesDir, 'by-asset', id)
+      if (isSubPath(config.filesDir, assetFilesDir)) {
+        await fs.promises.rm(assetFilesDir, { recursive: true, force: true }).catch(() => undefined)
+      }
+    }
+    res.json({ ok: true })
+  })
+)

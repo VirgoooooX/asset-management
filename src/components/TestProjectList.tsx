@@ -1,5 +1,5 @@
 // src/components/TestProjectList.tsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -13,17 +13,17 @@ import {
   Tooltip,
   CircularProgress,
   Alert,
-  Button, // <--- 新增导入 Button 组件
+  Button,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import AppCard from './AppCard';
-import { format, parseISO, isValid } from 'date-fns';
 import { TestProject } from '../types';
 import { fetchTestProjects } from '../store/testProjectsSlice';
-import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { useI18n } from '../i18n'
-import { useNavigate } from 'react-router-dom'
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { useI18n } from '../i18n';
+import { useNavigate } from 'react-router-dom';
+import { formatDateTimeShort } from '../utils/formatters';
 
 // 定义 Props 接口
 interface TestProjectListProps {
@@ -32,33 +32,20 @@ interface TestProjectListProps {
 }
 
 const TestProjectList: React.FC<TestProjectListProps> = ({ onEdit, onDelete }) => {
-  const dispatch = useAppDispatch()
-  const navigate = useNavigate()
-  const { 
-    testProjects, 
-    loading, 
-    error 
-  } = useAppSelector((state) => state.testProjects)
-  const { tr, dateFnsLocale } = useI18n()
-
-  const dataFetchedRef = useRef(false);
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
+  const {
+    testProjects,
+    loading,
+    error,
+  } = useAppSelector((state) => state.testProjects);
+  const { tr, dateFnsLocale } = useI18n();
 
   useEffect(() => {
-    if (!loading && !dataFetchedRef.current) {
-      dispatch(fetchTestProjects()).finally(() => {
-        dataFetchedRef.current = true;
-      });
-    }
-  }, [dispatch, loading]); 
+    dispatch(fetchTestProjects());
+  }, [dispatch]);
 
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return 'N/A';
-    const date = parseISO(dateString);
-    if (!isValid(date)) return tr('无效日期', 'Invalid date');
-    return format(date, 'yyyy-MM-dd HH:mm', { locale: dateFnsLocale });
-  };
-
-  if (loading && !dataFetchedRef.current) { 
+  if (loading && testProjects.length === 0) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3 }}>
         <CircularProgress />
@@ -71,15 +58,14 @@ const TestProjectList: React.FC<TestProjectListProps> = ({ onEdit, onDelete }) =
     return (
       <Alert severity="error" sx={{ m: 2 }}>
         {tr(`加载测试项目列表失败: ${error}`, `Failed to load test projects: ${error}`)}
-        <Button // 现在 Button 组件应该能被正确识别了
-            size="small" 
-            onClick={() => {
-                dataFetchedRef.current = false; 
-                dispatch(fetchTestProjects());
-            }} 
-            sx={{ ml: 2 }}
+        <Button
+          size="small"
+          onClick={() => {
+            dispatch(fetchTestProjects({ force: true }));
+          }}
+          sx={{ ml: 2 }}
         >
-            {tr('重试', 'Retry')}
+          {tr('重试', 'Retry')}
         </Button>
       </Alert>
     );
@@ -101,7 +87,7 @@ const TestProjectList: React.FC<TestProjectListProps> = ({ onEdit, onDelete }) =
             </TableRow>
           </TableHead>
           <TableBody>
-            {testProjects.length === 0 && !loading && dataFetchedRef.current ? (
+            {testProjects.length === 0 && !loading ? (
               <TableRow>
                 <TableCell colSpan={7} align="center">
                   {tr('没有找到测试项目数据。', 'No test projects found.')}
@@ -122,13 +108,13 @@ const TestProjectList: React.FC<TestProjectListProps> = ({ onEdit, onDelete }) =
                   <TableCell align="right">{tp.humidity}</TableCell>
                   <TableCell align="right">{tp.duration}</TableCell>
                   <TableCell>{tp.projectId || tr('无', 'None')}</TableCell>
-                  <TableCell>{formatDate(tp.createdAt)}</TableCell>
+                  <TableCell>{formatDateTimeShort(tp.createdAt, { fallback: 'N/A', locale: dateFnsLocale })}</TableCell>
                   <TableCell align="center">
                     <Tooltip title={tr('编辑', 'Edit')}>
                       <IconButton
                         onClick={(e) => {
-                          e.stopPropagation()
-                          onEdit(tp)
+                          e.stopPropagation();
+                          onEdit(tp);
                         }}
                         size="small"
                         color="primary"
@@ -139,8 +125,8 @@ const TestProjectList: React.FC<TestProjectListProps> = ({ onEdit, onDelete }) =
                     <Tooltip title={tr('删除', 'Delete')}>
                       <IconButton
                         onClick={(e) => {
-                          e.stopPropagation()
-                          onDelete(tp.id)
+                          e.stopPropagation();
+                          onDelete(tp.id);
                         }}
                         size="small"
                         color="error"

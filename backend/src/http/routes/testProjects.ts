@@ -2,9 +2,12 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth } from '../middlewares/requireAuth.js'
 import { requireManager } from '../middlewares/requireManager.js'
+import { validateBody } from '../middlewares/validate.js'
 import { getDb } from '../../db/db.js'
+import { buildPatchSet, type PatchFieldSpec } from '../../db/sqlHelpers.js'
 import { randomToken } from '../../util/crypto.js'
 import { parseJson } from '../../util/json.js'
+import type { TestProjectRow, TestStageDto } from '../../types.js'
 
 export const testProjectsRouter = Router()
 
@@ -16,41 +19,50 @@ const testProjectCreateSchema = z.object({
   projectId: z.string().optional(),
   assetCategories: z.array(z.string()).optional(),
   procedure: z.string().optional(),
-  stages: z.array(z.any()).optional()
+  stages: z.array(z.unknown()).optional(),
 })
 
 const testProjectPatchSchema = testProjectCreateSchema.partial()
 
-const mapRow = (r: any) => ({
+const TEST_PROJECT_PATCH_SPECS: Record<string, PatchFieldSpec> = {
+  name: { column: 'name' },
+  temperature: { column: 'temperature' },
+  humidity: { column: 'humidity' },
+  duration: { column: 'duration' },
+  projectId: { column: 'project_id', nullable: true },
+  assetCategories: { column: 'asset_categories', json: true, nullable: true },
+  procedure: { column: 'procedure', nullable: true },
+  stages: { column: 'stages', json: true, nullable: true },
+}
+
+const mapRow = (r: TestProjectRow) => ({
   id: r.id,
   name: r.name,
   temperature: r.temperature,
   humidity: r.humidity,
   duration: r.duration,
   projectId: r.project_id ?? undefined,
-  assetCategories: parseJson<string[]>(r.asset_categories, undefined as any),
+  assetCategories: parseJson<string[]>(r.asset_categories),
   procedure: r.procedure ?? undefined,
-  stages: parseJson<any[]>(r.stages, undefined as any),
-  createdAt: r.created_at
+  stages: parseJson<TestStageDto[]>(r.stages),
+  createdAt: r.created_at,
 })
 
 testProjectsRouter.get('/', requireAuth, (_req, res) => {
   const db = getDb()
-  const rows = db.prepare('select * from test_projects order by created_at desc').all() as any[]
+  const rows = db.prepare('select * from test_projects order by created_at desc').all() as TestProjectRow[]
   res.json({ items: rows.map(mapRow) })
 })
 
 testProjectsRouter.get('/:id', requireAuth, (req, res) => {
   const db = getDb()
-  const row = db.prepare('select * from test_projects where id = ?').get(req.params.id) as any | undefined
+  const row = db.prepare('select * from test_projects where id = ?').get(req.params.id) as TestProjectRow | undefined
   if (!row) return res.status(404).json({ error: 'not_found' })
   res.json({ item: mapRow(row) })
 })
 
-testProjectsRouter.post('/', requireAuth, requireManager, (req, res) => {
-  const body = testProjectCreateSchema.safeParse(req.body)
-  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
-  const d = body.data
+testProjectsRouter.post('/', requireAuth, requireManager, validateBody(testProjectCreateSchema), (req, res) => {
+  const d = req.body as z.infer<typeof testProjectCreateSchema>
   const db = getDb()
   const id = randomToken(16)
   const now = new Date().toISOString()
@@ -68,37 +80,22 @@ testProjectsRouter.post('/', requireAuth, requireManager, (req, res) => {
     d.stages ? JSON.stringify(d.stages) : null,
     now
   )
-  res.json({ id })
+  const created = db.prepare('select * from test_projects where id = ?').get(id) as TestProjectRow | undefined
+  res.json({ id, item: created ? mapRow(created) : undefined })
 })
 
-testProjectsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
+testProjectsRouter.patch('/:id', requireAuth, requireManager, validateBody(testProjectPatchSchema), (req, res) => {
   const id = req.params.id
-  const body = testProjectPatchSchema.safeParse(req.body)
-  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
-  const d = body.data
+  const d = req.body as z.infer<typeof testProjectPatchSchema>
   const db = getDb()
-  const exists = db.prepare('select 1 as ok from test_projects where id = ?').get(id) as { ok: 1 } | undefined
-  if (!exists) return res.status(404).json({ error: 'not_found' })
+  const existing = db.prepare('select * from test_projects where id = ?').get(id) as TestProjectRow | undefined
+  if (!existing) return res.status(404).json({ error: 'not_found' })
 
-  const updates: string[] = []
-  const params: any[] = []
-  const add = (sql: string, val: any) => {
-    updates.push(sql)
-    params.push(val)
-  }
-
-  if (d.name !== undefined) add('name = ?', d.name)
-  if (d.temperature !== undefined) add('temperature = ?', d.temperature)
-  if (d.humidity !== undefined) add('humidity = ?', d.humidity)
-  if (d.duration !== undefined) add('duration = ?', d.duration)
-  if (d.projectId !== undefined) add('project_id = ?', d.projectId ?? null)
-  if (d.assetCategories !== undefined) add('asset_categories = ?', d.assetCategories ? JSON.stringify(d.assetCategories) : null)
-  if (d.procedure !== undefined) add('procedure = ?', d.procedure ?? null)
-  if (d.stages !== undefined) add('stages = ?', d.stages ? JSON.stringify(d.stages) : null)
-
-  if (!updates.length) return res.json({ ok: true })
-  db.prepare(`update test_projects set ${updates.join(', ')} where id = ?`).run(...params, id)
-  res.json({ ok: true })
+  const { sets, params } = buildPatchSet(d as Record<string, unknown>, TEST_PROJECT_PATCH_SPECS)
+  if (!sets.length) return res.json({ ok: true, item: mapRow(existing) })
+  db.prepare(`update test_projects set ${sets.join(', ')} where id = ?`).run(...params, id)
+  const updated = db.prepare('select * from test_projects where id = ?').get(id) as TestProjectRow | undefined
+  res.json({ ok: true, item: updated ? mapRow(updated) : undefined })
 })
 
 testProjectsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {

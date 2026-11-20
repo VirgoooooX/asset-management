@@ -22,6 +22,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import ConfirmDialog from './ConfirmDialog';
 import AppCard from './AppCard';
+import StatusChip from './StatusChip';
+import { formatDateOnly } from '../utils/formatters';
 import { useI18n } from '../i18n'
 import { useNavigate } from 'react-router-dom'
 
@@ -35,6 +37,8 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const { assets: chambers, loading, error } = useAppSelector((state) => state.assets)
+  const role = useAppSelector((state) => state.auth.user?.role)
+  const canManage = role === 'admin' || role === 'manager'
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const { tr } = useI18n()
 
@@ -135,9 +139,11 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
       <AppCard
         title={tr('设备列表', 'Asset list')}
         actions={
-          <Button variant="contained" color="primary" onClick={onAddNew} startIcon={<AddIcon />}>
-            {tr('新增设备', 'Add asset')}
-          </Button>
+          canManage ? (
+            <Button variant="contained" color="primary" onClick={onAddNew} startIcon={<AddIcon />}>
+              {tr('新增设备', 'Add asset')}
+            </Button>
+          ) : undefined
         }
         contentSx={{ mx: -2.5, mb: -2.5 }}
       >
@@ -153,13 +159,15 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
               <TableCell sx={{ fontWeight: 600 }}>{tr('型号', 'Model')}</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>{tr('校验日期', 'Calibration date')}</TableCell>
               <TableCell sx={{ fontWeight: 600 }}>{tr('创建时间', 'Created')}</TableCell>
-              <TableCell sx={{ fontWeight: 600 }} align="center">{tr('操作', 'Actions')}</TableCell>
+              {canManage ? (
+                <TableCell sx={{ fontWeight: 600 }} align="center">{tr('操作', 'Actions')}</TableCell>
+              ) : null}
             </TableRow>
           </TableHead>
           <TableBody>
             {chambers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} align="center">
+                <TableCell colSpan={canManage ? 9 : 8} align="center">
                   {tr('暂无数据', 'No data')}
                 </TableCell>
               </TableRow>
@@ -174,47 +182,37 @@ const ChamberList: React.FC<ChamberListProps> = ({ onView, onEdit, onAddNew }) =
                   <TableCell sx={{ fontWeight: 650 }}>{chamber.assetCode || '-'}</TableCell>
                   <TableCell>{chamber.name}</TableCell>
                   <TableCell>
-                    <Chip 
-                      label={
-                        chamber.status === 'available'
-                          ? tr('可用', 'Available')
-                          : chamber.status === 'in-use'
-                            ? tr('使用中', 'In use')
-                            : tr('维护中', 'Maintenance')
-                      } 
-                      color={chamber.status === 'available' ? 'success' : chamber.status === 'in-use' ? 'warning' : 'error'} 
-                      size="small"
-                    />
+                    <StatusChip kind="asset" status={chamber.status} />
                   </TableCell>
                   <TableCell>{chamber.location || '-'}</TableCell>
                   <TableCell>{chamber.manufacturer || '-'}</TableCell>
                   <TableCell>{chamber.model || '-'}</TableCell>
-                  <TableCell>
-                    {chamber.calibrationDate ? new Date(chamber.calibrationDate).toLocaleDateString() : '-'}
-                  </TableCell>
-                  <TableCell>{new Date(chamber.createdAt).toLocaleDateString()}</TableCell>
-                  <TableCell align="center">
-                    <IconButton
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onEdit(chamber.id)
-                      }}
-                      size="small"
-                      color="primary"
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleDeleteClick(chamber.id)
-                      }}
-                      size="small"
-                      color="error"
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
+                  <TableCell>{formatDateOnly(chamber.calibrationDate)}</TableCell>
+                  <TableCell>{formatDateOnly(chamber.createdAt)}</TableCell>
+                  {canManage ? (
+                    <TableCell align="center">
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          onEdit(chamber.id)
+                        }}
+                        size="small"
+                        color="primary"
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <IconButton
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleDeleteClick(chamber.id)
+                        }}
+                        size="small"
+                        color="error"
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  ) : null}
                 </TableRow>
               ))
             )}

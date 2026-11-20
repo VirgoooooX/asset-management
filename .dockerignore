@@ -8,6 +8,10 @@ backend/build
 backend/data
 data
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+tmp
 
 coverage
 .nyc_output
@@ -15,3 +19,4 @@ coverage
 .vscode
 .idea
 .trae
+.codegraph

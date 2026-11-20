@@ -2,9 +2,16 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { getDb } from '../../db/db.js'
 import { requireAuth } from '../middlewares/requireAuth.js'
-import { queryProjectCostGroups, queryProjectCostLines, queryProjectCostLinesFiltered, queryProjectCostSeries } from '../../services/projectCostReport.js'
+import { requireManager } from '../middlewares/requireManager.js'
+import {
+  queryProjectCostLines,
+  queryProjectCostLinesFiltered,
+  queryProjectCostReport,
+} from '../../services/projectCostReport.js'
 
 export const reportsRouter = Router()
+
+const MAX_REPORT_RANGE_MS = 366 * 5 * 24 * 60 * 60 * 1000
 
 const parseBool = (v: unknown) => {
   if (typeof v !== 'string') return false
@@ -20,17 +27,18 @@ const projectCostQuerySchema = z.object({
   includeInProgress: z.string().optional(),
 })
 
-reportsRouter.get('/project-cost', requireAuth, (req, res) => {
+reportsRouter.get('/project-cost', requireAuth, requireManager, (req, res) => {
   const parsed = projectCostQuerySchema.safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
   const q = parsed.data
   if (q.rangeEndMs < q.rangeStartMs) return res.status(400).json({ error: 'invalid_range' })
+  if (q.rangeEndMs - q.rangeStartMs > MAX_REPORT_RANGE_MS) return res.status(400).json({ error: 'range_too_large' })
 
   const db = getDb()
   const nowMs = Date.now()
   const includeUnlinked = parseBool(q.includeUnlinked)
   const includeInProgress = parseBool(q.includeInProgress)
-  const groups = queryProjectCostGroups(db, {
+  const { groups, series } = queryProjectCostReport(db, {
     groupBy: q.groupBy,
     rangeStartMs: q.rangeStartMs,
     rangeEndMs: q.rangeEndMs,
@@ -40,14 +48,6 @@ reportsRouter.get('/project-cost', requireAuth, (req, res) => {
     nowMs,
     unlinkedLabel: 'Unlinked',
     uncategorizedLabel: 'Uncategorized',
-  })
-  const series = queryProjectCostSeries(db, {
-    rangeStartMs: q.rangeStartMs,
-    rangeEndMs: q.rangeEndMs,
-    projectId: q.projectId,
-    includeUnlinked,
-    includeInProgress,
-    nowMs,
   })
 
   const totalCostCents = groups.reduce((sum, g) => sum + g.costCents, 0)
@@ -68,11 +68,12 @@ reportsRouter.get('/project-cost', requireAuth, (req, res) => {
   })
 })
 
-reportsRouter.get('/project-cost/lines', requireAuth, (req, res) => {
+reportsRouter.get('/project-cost/lines', requireAuth, requireManager, (req, res) => {
   const parsed = projectCostQuerySchema.safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
   const q = parsed.data
   if (q.rangeEndMs < q.rangeStartMs) return res.status(400).json({ error: 'invalid_range' })
+  if (q.rangeEndMs - q.rangeStartMs > MAX_REPORT_RANGE_MS) return res.status(400).json({ error: 'range_too_large' })
 
   const db = getDb()
   const nowMs = Date.now()
@@ -91,11 +92,12 @@ reportsRouter.get('/project-cost/lines', requireAuth, (req, res) => {
   res.json({ items: lines })
 })
 
-reportsRouter.get('/project-cost/group-lines', requireAuth, (req, res) => {
+reportsRouter.get('/project-cost/group-lines', requireAuth, requireManager, (req, res) => {
   const parsed = projectCostQuerySchema.extend({ key: z.string().min(1) }).safeParse(req.query)
   if (!parsed.success) return res.status(400).json({ error: 'invalid_query' })
   const q = parsed.data
   if (q.rangeEndMs < q.rangeStartMs) return res.status(400).json({ error: 'invalid_range' })
+  if (q.rangeEndMs - q.rangeStartMs > MAX_REPORT_RANGE_MS) return res.status(400).json({ error: 'range_too_large' })
 
   const db = getDb()
   const nowMs = Date.now()

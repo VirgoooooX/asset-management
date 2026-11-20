@@ -40,3 +40,4 @@ task_plan.md
 backend/.data/db.sqlite-wal
 backend/.data/db.sqlite-shm
 .kiro
+.codegraph/

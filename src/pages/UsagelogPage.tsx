@@ -38,8 +38,7 @@ import PageShell from '../components/PageShell'
 import ConfirmDialog from '../components/ConfirmDialog'
 import TitleWithIcon from '../components/TitleWithIcon'
 import { useI18n } from '../i18n'
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
-import { DateTimePicker, LocalizationProvider } from '@mui/x-date-pickers'
+import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 
 const UsageLogPage: React.FC = () => {
   const dispatch = useAppDispatch()
@@ -47,7 +46,7 @@ const UsageLogPage: React.FC = () => {
   const { assets: chambers, loading: loadingChambers } = useAppSelector((state) => state.assets)
   const { projects, loading: loadingProjects } = useAppSelector((state) => state.projects)
   const { testProjects, loading: loadingTestProjects } = useAppSelector((state) => state.testProjects)
-  const { tr, language, dateFnsLocale } = useI18n()
+  const { tr, language } = useI18n()
 
   // --- State Management ---
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -130,7 +129,7 @@ const UsageLogPage: React.FC = () => {
         handleCloseConfirmDelete();
       }
     }
-  }, [dispatch, deletingLogId, handleCloseConfirmDelete]);
+  }, [dispatch, deletingLogId, handleCloseConfirmDelete, tr]);
 
   const handleCloseSnackbar = (event?: React.SyntheticEvent | Event, reason?: string) => {
     if (reason === 'clickaway') {
@@ -162,7 +161,7 @@ const UsageLogPage: React.FC = () => {
     return Number.isFinite(ms) ? ms : Number.NaN
   }
 
-  const computeRange = () => {
+  const computeRange = useCallback(() => {
     if (exportMode === 'year') {
       const start = new Date(exportYear, 0, 1, 0, 0, 0, 0)
       const end = new Date(exportYear + 1, 0, 1, 0, 0, 0, 0)
@@ -179,9 +178,9 @@ const UsageLogPage: React.FC = () => {
     }
     if (!exportCustomStart || !exportCustomEnd) return null
     return { start: exportCustomStart, end: exportCustomEnd }
-  }
+  }, [exportCustomEnd, exportCustomStart, exportMode, exportMonth, exportYear])
 
-  const handleExport = useCallback(() => {
+  const handleExport = useCallback(async () => {
     const anyLoading = loadingUsageLogs || loadingChambers || loadingProjects || loadingTestProjects
     if (anyLoading) return
     const range = computeRange()
@@ -226,7 +225,7 @@ const UsageLogPage: React.FC = () => {
           : exportMode === 'month'
             ? `usage-logs_${exportMonth}`
             : 'usage-logs_custom'
-      exportUsageLogsToXlsx({
+      await exportUsageLogsToXlsx({
         usageLogs: filtered,
         chambers,
         projects,
@@ -247,6 +246,7 @@ const UsageLogPage: React.FC = () => {
     }
   }, [
     chambers,
+    computeRange,
     exportAssetIds,
     exportIncludeInProgress,
     exportMode,
@@ -310,8 +310,7 @@ const UsageLogPage: React.FC = () => {
           onConfirm={handleConfirmDelete}
         />
 
-        <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={dateFnsLocale}>
-          <Dialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} fullWidth maxWidth="sm">
+        <Dialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} fullWidth maxWidth="sm">
             <DialogTitle>{tr('导出与统计', 'Export')}</DialogTitle>
             <DialogContent dividers>
               <Stack spacing={2} sx={{ pt: 1 }}>
@@ -406,7 +405,6 @@ const UsageLogPage: React.FC = () => {
               </Button>
             </DialogActions>
           </Dialog>
-        </LocalizationProvider>
 
         {/* 操作结果提示 */}
         <Snackbar

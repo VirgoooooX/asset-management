@@ -23,6 +23,8 @@ import { fetchAssetsByType } from '../store/assetsSlice'
 import { fetchUsageLogs } from '../store/usageLogsSlice'
 import { AlertSeverity, AlertType, selectDerivedAlerts } from '../store/alertsSelectors'
 import { useI18n } from '../i18n'
+import { useMinuteClock } from '../hooks/useMinuteClock'
+import { getLocalizedAlertContent } from '../utils/alertsI18n'
 
 const severityColor: Record<AlertSeverity, 'error' | 'warning'> = {
   P1: 'error',
@@ -31,7 +33,7 @@ const severityColor: Record<AlertSeverity, 'error' | 'warning'> = {
 
 const AlertsPage: React.FC = () => {
   const dispatch = useAppDispatch()
-  const settings = useAppSelector((s) => s.settings)
+  const refreshSeconds = useAppSelector((s) => s.settings.refreshSeconds)
   const { tr } = useI18n()
 
   const [severityFilter, setSeverityFilter] = useState<AlertSeverity | 'all'>('all')
@@ -43,15 +45,15 @@ const AlertsPage: React.FC = () => {
   }, [dispatch])
 
   useEffect(() => {
-    if (!settings.refreshSeconds || settings.refreshSeconds <= 0) return
+    if (!refreshSeconds || refreshSeconds <= 0) return
     const id = window.setInterval(() => {
       dispatch(fetchAssetsByType({ type: 'chamber', force: true }))
       dispatch(fetchUsageLogs({ force: true }))
-    }, settings.refreshSeconds * 1000)
+    }, refreshSeconds * 1000)
     return () => window.clearInterval(id)
-  }, [dispatch, settings.refreshSeconds])
+  }, [dispatch, refreshSeconds])
 
-  const nowMs = useMemo(() => Date.now(), [settings.alerts.calibrationDaysThreshold, settings.alerts.longOccupancyHoursThreshold])
+  const nowMs = useMinuteClock()
   const alerts = useAppSelector((state) => selectDerivedAlerts(state, nowMs))
   const typeLabel = useMemo<Record<AlertType, string>>(
     () => ({
@@ -110,7 +112,7 @@ const AlertsPage: React.FC = () => {
             <Typography component="span" sx={{ fontWeight: 750 }}>
               {tr('当前异常', 'Current exceptions')}
             </Typography>
-            <Chip size="small" label={settings.language === 'en' ? `${filtered.length}` : `${filtered.length} 条`} sx={{ fontWeight: 650 }} />
+            <Chip size="small" label={tr(`${filtered.length} 条`, `${filtered.length}`)} sx={{ fontWeight: 650 }} />
           </Stack>
         }
       >
@@ -134,18 +136,21 @@ const AlertsPage: React.FC = () => {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((a) => (
-                  <TableRow key={a.id} hover>
-                    <TableCell>
-                      <Chip size="small" label={a.severity} color={severityColor[a.severity]} />
-                    </TableCell>
-                    <TableCell>{typeLabel[a.type]}</TableCell>
-                    <TableCell sx={{ fontWeight: 650 }}>{a.assetName}</TableCell>
-                    <TableCell>{a.title}</TableCell>
-                    <TableCell>{a.detail}</TableCell>
-                    <TableCell>{a.relatedLogId ? a.relatedLogId.slice(0, 8) : '-'}</TableCell>
-                  </TableRow>
-                ))
+                filtered.map((a) => {
+                  const localized = getLocalizedAlertContent(a, tr)
+                  return (
+                    <TableRow key={a.id} hover>
+                      <TableCell>
+                        <Chip size="small" label={a.severity} color={severityColor[a.severity]} />
+                      </TableCell>
+                      <TableCell>{typeLabel[a.type]}</TableCell>
+                      <TableCell sx={{ fontWeight: 650 }}>{a.assetName}</TableCell>
+                      <TableCell>{localized.title}</TableCell>
+                      <TableCell>{localized.detail}</TableCell>
+                      <TableCell>{a.relatedLogId ? a.relatedLogId.slice(0, 8) : '-'}</TableCell>
+                    </TableRow>
+                  )
+                })
               )}
             </TableBody>
           </Table>

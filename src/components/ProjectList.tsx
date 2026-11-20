@@ -24,6 +24,7 @@ import { useAppDispatch, useAppSelector } from '../store/hooks'
 import ConfirmDialog from './ConfirmDialog';
 import AppCard from './AppCard';
 import { useI18n } from '../i18n'
+import { formatDateOnly } from '../utils/formatters';
 
 interface ProjectListProps {
   onEdit: (id: string) => void;
@@ -100,7 +101,7 @@ const ProjectList: React.FC<ProjectListProps> = ({ onEdit, onAddNew, onViewDetai
                       size="small" 
                     />
                   </TableCell>
-                  <TableCell>{new Date(project.createdAt).toLocaleDateString()}</TableCell>
+                  <TableCell>{formatDateOnly(project.createdAt)}</TableCell>
                   <TableCell align="center">
                     <Tooltip title={tr('详情', 'Details')}>
                       <IconButton size="small" color="info" onClick={() => onViewDetails(project.id)}>

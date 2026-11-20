@@ -57,6 +57,18 @@ function parseArgs(argv) {
   return options
 }
 
+function validateOptions(options) {
+  if (options.version !== undefined && !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(options.version)) {
+    throw new Error(`Invalid --version value: ${options.version}. Expected semver like 1.2.3 or 1.2.3-rc.1.`)
+  }
+  if (!['major', 'minor', 'patch'].includes(options.bump)) {
+    throw new Error(`Unsupported --bump value: ${options.bump}. Use major, minor, or patch.`)
+  }
+  if (!Number.isInteger(options.changelogCount) || options.changelogCount <= 0) {
+    throw new Error(`Invalid --changelog-count value: ${options.changelogCount}. Expected a positive integer.`)
+  }
+}
+
 function isWindowsShellCommand(command) {
   return process.platform === 'win32' && ['npm', 'npx'].includes(command)
 }
@@ -193,9 +205,11 @@ async function getGitChangelog(count) {
 }
 
 function buildInfoModule({ version, commit, builtAt, changelog }) {
-  const changelogJson = JSON.stringify(changelog, null, 2)
-  const escaped = safeTsString(changelogJson)
-  return `export type ChangelogEntry = { hash: string; date: string; message: string }\n\nexport type BuildInfo = {\n  version: string\n  commit: string\n  builtAt: string\n  changelog: ChangelogEntry[]\n}\n\nexport const buildInfo: BuildInfo = {\n  version: '${safeTsString(version)}',\n  commit: '${safeTsString(commit)}',\n  builtAt: '${safeTsString(builtAt)}',\n  changelog: JSON.parse(\`${escaped}\`) as ChangelogEntry[],\n}\n`
+  const indentedChangelog = JSON.stringify(changelog, null, 2)
+    .split('\n')
+    .map((line, index) => (index === 0 ? line : `  ${line}`))
+    .join('\n')
+  return `export type ChangelogEntry = { hash: string; date: string; message: string }\n\nexport type BuildInfo = {\n  version: string\n  commit: string\n  builtAt: string\n  changelog: ChangelogEntry[]\n}\n\nexport const buildInfo: BuildInfo = {\n  version: '${safeTsString(version)}',\n  commit: '${safeTsString(commit)}',\n  builtAt: '${safeTsString(builtAt)}',\n  changelog: ${indentedChangelog},\n}\n`
 }
 
 async function writeBuildInfo(version, changelogCount) {
@@ -220,6 +234,13 @@ async function getRepoSlug() {
 
 async function ensureCommand(command, args) {
   await run(command, args, { capture: true })
+}
+
+async function assertCleanWorkingTree() {
+  const { stdout } = await run('git', ['status', '--porcelain'], { capture: true })
+  if (stdout.trim()) {
+    throw new Error('Working tree is not clean. Commit or stash changes before running release.')
+  }
 }
 
 async function ensureTagDoesNotExist(tagName) {
@@ -271,7 +292,9 @@ async function runChecks(options) {
     return
   }
 
+  await run('npm', ['run', 'lint', '--', '--max-warnings=0'])
   await run('npm', ['run', 'typecheck'])
+  await run('npm', ['--prefix', 'backend', 'run', 'typecheck'])
   await run('npm', ['run', 'test'])
   await run('npm', ['run', 'build'])
   await run('npm', ['--prefix', 'backend', 'run', 'build'])
@@ -375,6 +398,7 @@ async function createGitHubRelease({ tagName, targetVersion, imageName, changelo
 
 async function main() {
   const options = parseArgs(process.argv.slice(2))
+  validateOptions(options)
   const currentVersion = await readVersionFile()
   await assertVersionConsistency(currentVersion)
   const targetVersion = options.version ?? bumpVersion(currentVersion, options.bump)
@@ -387,6 +411,9 @@ async function main() {
   await ensureCommand('gh', ['--version'])
   await run('gh', ['auth', 'status'], { capture: true })
   await ensureTagDoesNotExist(tagName)
+  if (!options.dryRun) {
+    await assertCleanWorkingTree()
+  }
 
   const repoSlug = await getRepoSlug()
   const imageName = `ghcr.io/${repoSlug.toLowerCase()}`

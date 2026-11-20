@@ -6,11 +6,11 @@ import {
   Paper, Tooltip, Alert,
 } from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import type { ChipProps } from '@mui/material';
 import { UsageLog, Project, TestProject, Config as ConfigType } from '../types';
-import { format, parseISO, isValid as isValidDate } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
 import { useI18n } from '../i18n'
+import StatusChip from './StatusChip';
+import ConfirmDialog from './ConfirmDialog';
+import { formatDateTimeShort } from '../utils/formatters';
 
 import { fetchAssetsByType } from '../store/assetsSlice'
 import { fetchProjects } from '../store/projectsSlice';
@@ -28,6 +28,7 @@ interface UsageLogDetailsProps {
 const UsageLogDetails: React.FC<UsageLogDetailsProps> = ({ open, onClose, logId }) => {
   const dispatch = useAppDispatch()
   const { tr, dateFnsLocale } = useI18n()
+  const [confirmCompleteOpen, setConfirmCompleteOpen] = useState(false)
 
   const { usageLogs, loading: loadingUsageLogsGlobal, error: errorUsageLogs } = useAppSelector((state) => state.usageLogs)
   const { assets: chambers, loading: loadingChambersGlobal, error: errorChambers } = useAppSelector((state) => state.assets)
@@ -43,33 +44,13 @@ const UsageLogDetails: React.FC<UsageLogDetailsProps> = ({ open, onClose, logId 
   const [effectiveStatus, setEffectiveStatus] = useState<UsageLog['status'] | null>(null);
   const [displayError, setDisplayError] = useState<string | null>(null);
 
-  // Effect 1: Trigger data fetching for the specific log and auxiliary data
   useEffect(() => {
-    if (open && logId) {
-      const logExistsInStore = usageLogs.some(l => l.id === logId);
-
-      if ((usageLogs.length === 0 || !logExistsInStore) && !loadingUsageLogsGlobal) {
-        dispatch(fetchUsageLogs());
-      }
-
-      if (chambers.length === 0 && !loadingChambersGlobal) {
-        dispatch(fetchAssetsByType({ type: 'chamber' }));
-      }
-      if (projects.length === 0 && !loadingProjectsGlobal) {
-        dispatch(fetchProjects());
-      }
-      if (testProjects.length === 0 && !loadingTestProjectsGlobal) {
-        dispatch(fetchTestProjects());
-      }
-    }
-  }, [
-    open,
-    logId,
-    dispatch,
-    usageLogs, // Keep usageLogs to re-check logExistsInStore if usageLogs array changes
-    chambers.length, projects.length, testProjects.length, // Check if empty
-    loadingUsageLogsGlobal, loadingChambersGlobal, loadingProjectsGlobal, loadingTestProjectsGlobal
-  ]);
+    if (!open || !logId) return
+    dispatch(fetchUsageLogs())
+    dispatch(fetchAssetsByType({ type: 'chamber' }))
+    dispatch(fetchProjects())
+    dispatch(fetchTestProjects())
+  }, [open, logId, dispatch])
 
   // Effect 2: Process data and set local state
   useEffect(() => {
@@ -142,56 +123,40 @@ const UsageLogDetails: React.FC<UsageLogDetailsProps> = ({ open, onClose, logId 
   }, [
     open, logId,
     usageLogs, chambers, projects, testProjects, // Data arrays themselves
-    loadingUsageLogsGlobal, loadingChambersGlobal, loadingProjectsGlobal, loadingTestProjectsGlobal
+    loadingUsageLogsGlobal, loadingChambersGlobal, loadingProjectsGlobal, loadingTestProjectsGlobal, tr
   ]);
-
-  // ... (formatDate, getStatusChipProperties, handleMarkAsCompleted)
-  const formatDate = (dateString: string | undefined): string => {
-    if (!dateString) return 'N/A';
-    const date = parseISO(dateString);
-    return isValidDate(date) ? format(date, 'yyyy-MM-dd HH:mm', { locale: dateFnsLocale }) : tr('无效日期', 'Invalid date');
-  };
-
-  const getStatusChipProperties = (status: UsageLog['status'] | null): { label: string; color: ChipProps['color'] } => {
-    if (!status && open && internalProcessing) return { label: tr('处理中...', 'Processing...'), color: 'default' };
-    if (!status) return {label: '', color: 'default'};
-    switch (status) {
-      case 'completed': return { label: tr('已完成', 'Completed'), color: 'success' };
-      case 'in-progress': return { label: tr('进行中', 'In progress'), color: 'warning' };
-      case 'not-started': return { label: tr('未开始', 'Not started'), color: 'primary' };
-      case 'overdue': return { label: tr('已超时', 'Overdue'), color: 'error' };
-      default: return { label: tr('未知', 'Unknown'), color: 'default' };
-    }
-  };
 
   const handleMarkAsCompleted = () => {
     if (currentLog && currentLog.id) {
-      if (window.confirm(tr('确定要将此记录标记为 "已完成" 吗？', 'Mark this log as "Completed"?'))) {
-        dispatch(markLogAsCompleted(currentLog.id));
-      }
+      setConfirmCompleteOpen(true);
     }
+  };
+
+  const handleConfirmComplete = () => {
+    if (currentLog && currentLog.id) {
+      dispatch(markLogAsCompleted(currentLog.id));
+    }
+    setConfirmCompleteOpen(false);
   };
 
   const anyGlobalError = errorUsageLogs || errorChambers || errorProjects || errorTestProjects;
   const showLoadingSpinner = open && (loadingUsageLogsGlobal || loadingChambersGlobal || loadingProjectsGlobal || loadingTestProjectsGlobal || internalProcessing);
 
   let dialogInnerContent;
-    // ... (render logic for dialogInnerContent based on showLoadingSpinner, anyGlobalError, displayError, currentLog - kept similar to your last version)
    if (showLoadingSpinner) {
-    dialogInnerContent = ( <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}> <CircularProgress /> <Typography sx={{ ml: 2 }}>正在加载详情...</Typography> </Box> );
+    dialogInnerContent = ( <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}> <CircularProgress /> <Typography sx={{ ml: 2 }}>{tr('正在加载详情...', 'Loading details...')}</Typography> </Box> );
   } else if (open && (anyGlobalError || displayError)) {
-    dialogInnerContent = ( <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '300px', p:2, textAlign: 'center' }}> <Alert severity="error" sx={{mb: 2}}>加载详情时出错。</Alert> <Typography variant="body2" color="text.secondary"> {anyGlobalError || displayError} </Typography> </Box> );
+    dialogInnerContent = ( <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '300px', p:2, textAlign: 'center' }}> <Alert severity="error" sx={{mb: 2}}>{tr('加载详情时出错。', 'Failed to load details.')}</Alert> <Typography variant="body2" color="text.secondary"> {anyGlobalError || displayError} </Typography> </Box> );
   } else if (open && !currentLog && logId) {
-    dialogInnerContent = ( <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}> <Typography color="text.secondary">未找到指定的记录 (ID: {logId})。</Typography> </Box> );
+    dialogInnerContent = ( <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '300px' }}> <Typography color="text.secondary">{tr(`未找到指定的记录 (ID: ${logId})。`, `Record not found (ID: ${logId}).`)}</Typography> </Box> );
   } else if (currentLog && effectiveStatus) {
-    const statusProps = getStatusChipProperties(effectiveStatus)
     dialogInnerContent = (
       <Box p={2}>
         <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
           <Typography variant="h5" component="div">
             {chamberName}
           </Typography>
-          <Chip label={statusProps.label} color={statusProps.color} />
+          <StatusChip kind="usage" status={effectiveStatus} size="medium" />
         </Box>
 
         <Divider sx={{ mb: 2 }} />
@@ -206,7 +171,7 @@ const UsageLogDetails: React.FC<UsageLogDetailsProps> = ({ open, onClose, logId 
             {tr('使用时间', 'Time')}
           </Typography>
           <Typography variant="body1">
-            {formatDate(currentLog?.startTime)} → {formatDate(currentLog?.endTime)}
+            {formatDateTimeShort(currentLog?.startTime, { fallback: 'N/A', locale: dateFnsLocale })} → {formatDateTimeShort(currentLog?.endTime, { fallback: 'N/A', locale: dateFnsLocale })}
           </Typography>
         </Paper>
 
@@ -300,8 +265,8 @@ const UsageLogDetails: React.FC<UsageLogDetailsProps> = ({ open, onClose, logId 
       </Box>
     )
   } else {
-    if (open && !logId) { dialogInnerContent = <Typography sx={{p:2}}>错误：未提供记录ID。</Typography>; }
-    else if (open) { dialogInnerContent = <Typography sx={{p:2}}>数据准备中或记录不存在...</Typography>; }
+    if (open && !logId) { dialogInnerContent = <Typography sx={{p:2}}>{tr('错误：未提供记录ID。', 'Error: missing log ID.')}</Typography>; }
+    else if (open) { dialogInnerContent = <Typography sx={{p:2}}>{tr('数据准备中或记录不存在...', 'Preparing data or record not found...')}</Typography>; }
     else { dialogInnerContent = null; }
   }
 
@@ -309,24 +274,35 @@ const UsageLogDetails: React.FC<UsageLogDetailsProps> = ({ open, onClose, logId 
   if (!open) return null;
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-         使用记录详情
-         {currentLog && (effectiveStatus === 'in-progress' || effectiveStatus === 'overdue') && (
-            <Tooltip title="标记为已完成">
-              <Button variant="outlined" color="success" startIcon={<CheckCircleOutlineIcon />} onClick={handleMarkAsCompleted} size="small" >
-                标记完成
-              </Button>
-            </Tooltip>
-          )}
-       </DialogTitle>
-       <DialogContent dividers>
-         {dialogInnerContent}
-       </DialogContent>
-       <DialogActions>
-         <Button onClick={onClose} color="primary">关闭</Button>
-       </DialogActions>
-    </Dialog>
+    <>
+      <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+           {tr('使用记录详情', 'Usage log details')}
+           {currentLog && (effectiveStatus === 'in-progress' || effectiveStatus === 'overdue') && (
+              <Tooltip title={tr('标记为已完成', 'Mark as completed')}>
+                <Button variant="outlined" color="success" startIcon={<CheckCircleOutlineIcon />} onClick={handleMarkAsCompleted} size="small" >
+                  {tr('标记完成', 'Complete')}
+                </Button>
+              </Tooltip>
+            )}
+         </DialogTitle>
+         <DialogContent dividers>
+           {dialogInnerContent}
+         </DialogContent>
+         <DialogActions>
+           <Button onClick={onClose} color="primary">{tr('关闭', 'Close')}</Button>
+         </DialogActions>
+      </Dialog>
+      <ConfirmDialog
+        open={confirmCompleteOpen}
+        title={tr('确认完成', 'Mark completed')}
+        description={tr('确定要将此记录标记为 "已完成" 吗？', 'Mark this log as "Completed"?')}
+        confirmText={tr('确认完成', 'Complete')}
+        confirmColor="success"
+        onClose={() => setConfirmCompleteOpen(false)}
+        onConfirm={handleConfirmComplete}
+      />
+    </>
   );
 };
 

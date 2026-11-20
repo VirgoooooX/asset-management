@@ -1,32 +1,26 @@
-import { Router } from 'express'
+import { Router, type Request } from 'express'
 import { z } from 'zod'
+import type Database from 'better-sqlite3'
 import { requireAuth } from '../middlewares/requireAuth.js'
 import { requireManager } from '../middlewares/requireManager.js'
+import { validateBody, validateQuery } from '../middlewares/validate.js'
+import { attachmentSchema, paginationQueryShape, repairStatusSchema } from '../schemas.js'
 import { getDb } from '../../db/db.js'
+import { buildPatchSet, type PatchFieldSpec } from '../../db/sqlHelpers.js'
 import { randomToken } from '../../util/crypto.js'
-import { parseJson } from '../../util/json.js'
+import { parseJson, parseJsonOr } from '../../util/json.js'
+import { recomputeChamberStatus } from '../../services/assetStatus.js'
 import { publishAssetStatusChanged, publishRepairTicketChanged } from '../../services/events.js'
-import { writeAuditLog } from '../../services/auditLog.js'
+import { writeAuditFromReq } from '../../services/auditLog.js'
+import type { AttachmentDto, RepairStatus, RepairTicketRow, RepairTimelineEntry } from '../../types.js'
 
 export const repairTicketsRouter = Router()
-
-const statusSchema = z.enum(['quote-pending', 'repair-pending', 'completed'])
-
-const attachmentSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  url: z.string(),
-  path: z.string(),
-  contentType: z.string().optional(),
-  size: z.number().optional(),
-  uploadedAt: z.string()
-})
 
 const createSchema = z.object({
   assetId: z.string().min(1),
   problemDesc: z.string().min(1),
   startedAt: z.string().optional(),
-  expectedReturnAt: z.string().optional()
+  expectedReturnAt: z.string().optional(),
 })
 
 const patchSchema = z.object({
@@ -35,17 +29,43 @@ const patchSchema = z.object({
   vendorName: z.string().optional().nullable(),
   quoteAmount: z.number().optional().nullable(),
   expectedReturnAt: z.string().optional().nullable(),
-  attachments: z.array(attachmentSchema).optional().nullable()
+  attachments: z.array(attachmentSchema).optional().nullable(),
 })
 
 const transitionSchema = z.object({
-  to: statusSchema,
+  to: repairStatusSchema,
   note: z.string().optional(),
   vendorName: z.string().optional(),
-  quoteAmount: z.number().optional()
+  quoteAmount: z.number().optional(),
 })
 
-const mapRow = (r: any) => ({
+const PATCH_SPECS: Record<string, PatchFieldSpec> = {
+  problemDesc: { column: 'problem_desc' },
+  startedAt: { column: 'started_at', nullable: true },
+  vendorName: { column: 'vendor_name', nullable: true },
+  quoteAmount: { column: 'quote_amount', nullable: true },
+  expectedReturnAt: { column: 'expected_return_at', nullable: true },
+  attachments: { column: 'attachments', json: true, nullable: true },
+}
+
+interface RepairTicketDto {
+  id: string
+  assetId: string
+  status: RepairStatus
+  problemDesc: string
+  startedAt?: string
+  vendorName?: string
+  quoteAmount?: number
+  quoteAt?: string
+  expectedReturnAt?: string
+  completedAt?: string
+  createdAt: string
+  updatedAt?: string
+  timeline?: RepairTimelineEntry[]
+  attachments?: AttachmentDto[]
+}
+
+const mapRow = (r: RepairTicketRow): RepairTicketDto => ({
   id: r.id,
   assetId: r.asset_id,
   status: r.status,
@@ -58,61 +78,94 @@ const mapRow = (r: any) => ({
   completedAt: r.completed_at ?? undefined,
   createdAt: r.created_at,
   updatedAt: r.updated_at ?? undefined,
-  timeline: parseJson<any[]>(r.timeline, undefined as any),
-  attachments: parseJson<any[]>(r.attachments, undefined as any)
+  timeline: parseJson<RepairTimelineEntry[]>(r.timeline),
+  attachments: parseJson<AttachmentDto[]>(r.attachments),
 })
 
-const stripSensitive = (t: any) => {
-  delete t.vendorName
-  delete t.quoteAmount
-  delete t.quoteAt
-  delete t.attachments
-  return t
+const canViewSensitive = (req: Request) => req.user?.role === 'admin' || req.user?.role === 'manager'
+
+const serializeTicket = (row: RepairTicketRow, includeSensitive: boolean) => {
+  const mapped = mapRow(row)
+  if (includeSensitive) return mapped
+  delete mapped.vendorName
+  delete mapped.quoteAmount
+  delete mapped.quoteAt
+  delete mapped.attachments
+  return mapped
 }
 
-const computeAnyOtherOpen = (db: any, assetId: string, excludeId?: string) => {
-  const rows = db.prepare('select id, status from repair_tickets where asset_id = ?').all(assetId) as {
-    id: string
-    status: string
-  }[]
-  return rows.some((r) => r.id !== excludeId && r.status !== 'completed')
+const auditTicketSnapshot = (r: RepairTicketRow) => ({
+  status: r.status,
+  problemDesc: r.problem_desc,
+  startedAt: r.started_at ?? null,
+  vendorName: r.vendor_name ?? null,
+  quoteAmount: r.quote_amount ?? null,
+  expectedReturnAt: r.expected_return_at ?? null,
+  completedAt: r.completed_at ?? null,
+})
+
+const computeAnyOtherOpen = (db: Database.Database, assetId: string, excludeId?: string) => {
+  const row = excludeId
+    ? (db
+        .prepare("select 1 as ok from repair_tickets where asset_id = ? and status <> 'completed' and id <> ? limit 1")
+        .get(assetId, excludeId) as { ok: 1 } | undefined)
+    : (db
+        .prepare("select 1 as ok from repair_tickets where asset_id = ? and status <> 'completed' limit 1")
+        .get(assetId) as { ok: 1 } | undefined)
+  return row?.ok === 1
 }
 
-repairTicketsRouter.get('/', requireAuth, (req, res) => {
-  const canViewSensitive = req.user?.role === 'admin' || req.user?.role === 'manager'
-  const status = typeof req.query.status === 'string' ? req.query.status : undefined
-  const assetId = typeof req.query.assetId === 'string' ? req.query.assetId : undefined
+const repairTicketListQuerySchema = z.object({
+  status: repairStatusSchema.optional(),
+  assetId: z.string().min(1).optional(),
+  ...paginationQueryShape,
+})
+
+repairTicketsRouter.get('/', requireAuth, validateQuery(repairTicketListQuerySchema), (req, res) => {
+  const includeSensitive = canViewSensitive(req)
+  const q = (req.validatedQuery ?? {}) as z.infer<typeof repairTicketListQuerySchema>
   const db = getDb()
   const clauses: string[] = []
-  const params: any[] = []
-  if (status) {
+  const params: unknown[] = []
+  if (q.status) {
     clauses.push('status = ?')
-    params.push(status)
+    params.push(q.status)
   }
-  if (assetId) {
+  if (q.assetId) {
     clauses.push('asset_id = ?')
-    params.push(assetId)
+    params.push(q.assetId)
   }
   const whereSql = clauses.length ? `where ${clauses.join(' and ')}` : ''
-  const rows = db.prepare(`select * from repair_tickets ${whereSql}`).all(...params) as any[]
-  const items = rows
-    .map((r) => (canViewSensitive ? mapRow(r) : stripSensitive(mapRow(r))))
-    .sort((a, b) => Date.parse(b.updatedAt ?? b.createdAt) - Date.parse(a.updatedAt ?? a.createdAt))
-  res.json({ items })
+  const countRow = db
+    .prepare(`select count(*) as total from repair_tickets ${whereSql}`)
+    .get(...params) as { total: number }
+
+  let limitSql = ''
+  const rowParams = [...params]
+  if (q.limit !== undefined) {
+    limitSql = ' limit ? offset ?'
+    rowParams.push(q.limit, q.offset ?? 0)
+  } else if (q.offset !== undefined) {
+    limitSql = ' limit -1 offset ?'
+    rowParams.push(q.offset)
+  }
+
+  const rows = db
+    .prepare(`select * from repair_tickets ${whereSql} order by coalesce(updated_at, created_at) desc${limitSql}`)
+    .all(...rowParams) as RepairTicketRow[]
+  const items = rows.map((r) => serializeTicket(r, includeSensitive))
+  res.json({ items, total: countRow.total })
 })
 
 repairTicketsRouter.get('/:id', requireAuth, (req, res) => {
-  const canViewSensitive = req.user?.role === 'admin' || req.user?.role === 'manager'
   const db = getDb()
-  const row = db.prepare('select * from repair_tickets where id = ?').get(req.params.id) as any | undefined
+  const row = db.prepare('select * from repair_tickets where id = ?').get(req.params.id) as RepairTicketRow | undefined
   if (!row) return res.status(404).json({ error: 'not_found' })
-  res.json({ item: canViewSensitive ? mapRow(row) : stripSensitive(mapRow(row)) })
+  res.json({ item: serializeTicket(row, canViewSensitive(req)) })
 })
 
-repairTicketsRouter.post('/', requireAuth, (req, res) => {
-  const body = createSchema.safeParse(req.body)
-  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
-  const d = body.data
+repairTicketsRouter.post('/', requireAuth, validateBody(createSchema), (req, res) => {
+  const d = req.body as z.infer<typeof createSchema>
   const db = getDb()
   const asset = db.prepare('select id, status from assets where id = ?').get(d.assetId) as
     | { id: string; status: string }
@@ -120,8 +173,7 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
   if (!asset) return res.status(400).json({ error: 'asset_not_found' })
   if (asset.status === 'in-use') return res.status(400).json({ error: 'asset_in_use' })
 
-  const hasOpen = computeAnyOtherOpen(db, d.assetId)
-  if (hasOpen) return res.status(400).json({ error: 'open_ticket_exists' })
+  if (computeAnyOtherOpen(db, d.assetId)) return res.status(400).json({ error: 'open_ticket_exists' })
 
   const id = randomToken(16)
   const now = new Date().toISOString()
@@ -133,7 +185,7 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
       [
         'insert into repair_tickets (',
         'id, asset_id, status, problem_desc, started_at, vendor_name, quote_amount, quote_at, expected_return_at, completed_at, created_at, updated_at, timeline, attachments',
-        ') values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+        ') values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       ].join(' ')
     ).run(
       id,
@@ -152,18 +204,15 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
       null
     )
     db.prepare('update assets set status = ?, updated_at = ? where id = ?').run('maintenance', now, d.assetId)
-    publishAssetStatusChanged(d.assetId, 'maintenance', now)
-    publishRepairTicketChanged(id, d.assetId, now)
   })()
 
-  writeAuditLog(db, {
-    actor: req.user!,
+  publishAssetStatusChanged(d.assetId, 'maintenance', now)
+  publishRepairTicketChanged(id, d.assetId, now)
+
+  writeAuditFromReq(db, req, {
     action: 'repair_ticket.create',
     entityType: 'repair_ticket',
     entityId: id,
-    ip: req.ip,
-    userAgent: req.get('user-agent') ?? undefined,
-    requestId: req.requestId,
     after: {
       id,
       assetId: d.assetId,
@@ -174,92 +223,61 @@ repairTicketsRouter.post('/', requireAuth, (req, res) => {
     },
   })
 
-  res.json({ id })
+  const created = db.prepare('select * from repair_tickets where id = ?').get(id) as RepairTicketRow | undefined
+  res.json({ id, item: created ? serializeTicket(created, canViewSensitive(req)) : undefined })
 })
 
-repairTicketsRouter.patch('/:id', requireAuth, requireManager, (req, res) => {
+repairTicketsRouter.patch('/:id', requireAuth, requireManager, validateBody(patchSchema), (req, res) => {
   const id = req.params.id
-  const body = patchSchema.safeParse(req.body)
-  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
-  const d = body.data
+  const d = req.body as z.infer<typeof patchSchema>
   const db = getDb()
-  const before = db.prepare('select * from repair_tickets where id = ?').get(id) as any | undefined
+  const before = db.prepare('select * from repair_tickets where id = ?').get(id) as RepairTicketRow | undefined
   if (!before) return res.status(404).json({ error: 'not_found' })
 
-  const updates: string[] = []
-  const params: any[] = []
-  const add = (sql: string, val: any) => {
-    updates.push(sql)
-    params.push(val)
-  }
-
-  if (d.problemDesc !== undefined) add('problem_desc = ?', d.problemDesc)
-  if (d.startedAt !== undefined) add('started_at = ?', d.startedAt ?? null)
-  if (d.vendorName !== undefined) add('vendor_name = ?', d.vendorName ?? null)
-  if (d.quoteAmount !== undefined) add('quote_amount = ?', d.quoteAmount ?? null)
-  if (d.expectedReturnAt !== undefined) add('expected_return_at = ?', d.expectedReturnAt ?? null)
-  if (d.attachments !== undefined) add('attachments = ?', d.attachments === null ? null : JSON.stringify(d.attachments))
   const updatedAt = new Date().toISOString()
-  add('updated_at = ?', updatedAt)
-  db.prepare(`update repair_tickets set ${updates.join(', ')} where id = ?`).run(...params, id)
-  const ticket = db.prepare('select asset_id from repair_tickets where id = ?').get(id) as { asset_id: string } | undefined
-  if (ticket?.asset_id) publishRepairTicketChanged(id, ticket.asset_id, updatedAt)
+  const { sets, params } = buildPatchSet(d as Record<string, unknown>, PATCH_SPECS, [
+    { column: 'updated_at', value: updatedAt },
+  ])
+  db.prepare(`update repair_tickets set ${sets.join(', ')} where id = ?`).run(...params, id)
 
-  const after = db.prepare('select * from repair_tickets where id = ?').get(id) as any | undefined
-  writeAuditLog(db, {
-    actor: req.user!,
+  const after = db.prepare('select * from repair_tickets where id = ?').get(id) as RepairTicketRow | undefined
+  if (after?.asset_id) publishRepairTicketChanged(id, after.asset_id, updatedAt)
+
+  writeAuditFromReq(db, req, {
     action: 'repair_ticket.update',
     entityType: 'repair_ticket',
     entityId: id,
-    ip: req.ip,
-    userAgent: req.get('user-agent') ?? undefined,
-    requestId: req.requestId,
-    before: {
-      status: before.status,
-      problemDesc: before.problem_desc,
-      startedAt: before.started_at ?? null,
-      vendorName: before.vendor_name ?? null,
-      quoteAmount: before.quote_amount ?? null,
-      expectedReturnAt: before.expected_return_at ?? null,
-      completedAt: before.completed_at ?? null,
-    },
-    after: after
-      ? {
-          status: after.status,
-          problemDesc: after.problem_desc,
-          startedAt: after.started_at ?? null,
-          vendorName: after.vendor_name ?? null,
-          quoteAmount: after.quote_amount ?? null,
-          expectedReturnAt: after.expected_return_at ?? null,
-          completedAt: after.completed_at ?? null,
-        }
-      : null,
+    before: auditTicketSnapshot(before),
+    after: after ? auditTicketSnapshot(after) : null,
   })
-  res.json({ ok: true })
+
+  res.json({ ok: true, item: after ? serializeTicket(after, canViewSensitive(req)) : undefined })
 })
 
-repairTicketsRouter.post('/:id/transition', requireAuth, requireManager, (req, res) => {
+repairTicketsRouter.post('/:id/transition', requireAuth, requireManager, validateBody(transitionSchema), (req, res) => {
   const id = req.params.id
-  const body = transitionSchema.safeParse(req.body)
-  if (!body.success) return res.status(400).json({ error: 'invalid_body' })
-  const d = body.data
+  const d = req.body as z.infer<typeof transitionSchema>
   const db = getDb()
-  const current = db.prepare('select * from repair_tickets where id = ?').get(id) as any | undefined
+  const current = db.prepare('select * from repair_tickets where id = ?').get(id) as RepairTicketRow | undefined
   if (!current) return res.status(404).json({ error: 'not_found' })
+  if (current.status === 'completed' || current.status === d.to) {
+    return res.status(400).json({ error: 'invalid_transition' })
+  }
 
   const now = new Date().toISOString()
-  const timeline = parseJson<any[]>(current.timeline, []).concat([
+  const timeline = parseJsonOr<RepairTimelineEntry[]>(current.timeline, []).concat([
     {
       at: now,
       from: current.status,
       to: d.to,
-      note: d.note
-    }
+      note: d.note,
+    },
   ])
 
+  let publishedAssetStatus: string | null = null
   db.transaction(() => {
     const updates: string[] = ['status = ?', 'updated_at = ?', 'timeline = ?']
-    const params: any[] = [d.to, now, JSON.stringify(timeline)]
+    const params: unknown[] = [d.to, now, JSON.stringify(timeline)]
 
     if (d.to === 'repair-pending' && current.status === 'quote-pending') {
       updates.push('quote_at = ?')
@@ -282,67 +300,68 @@ repairTicketsRouter.post('/:id/transition', requireAuth, requireManager, (req, r
     db.prepare(`update repair_tickets set ${updates.join(', ')} where id = ?`).run(...params, id)
 
     const anyOtherOpen = d.to === 'completed' ? computeAnyOtherOpen(db, current.asset_id, id) : true
-    const nextAssetStatus = d.to === 'completed' ? (anyOtherOpen ? 'maintenance' : 'available') : 'maintenance'
-    db.prepare('update assets set status = ?, updated_at = ? where id = ?').run(nextAssetStatus, now, current.asset_id)
-    publishAssetStatusChanged(current.asset_id, nextAssetStatus, now)
-    publishRepairTicketChanged(id, current.asset_id, now)
+    const baseAssetStatus = d.to === 'completed' ? (anyOtherOpen ? 'maintenance' : 'available') : 'maintenance'
+    db.prepare('update assets set status = ?, updated_at = ? where id = ?').run(baseAssetStatus, now, current.asset_id)
+    if (baseAssetStatus === 'available') {
+      const recomputed = recomputeChamberStatus(db, current.asset_id)
+      publishedAssetStatus = recomputed.targetStatus ?? baseAssetStatus
+    } else {
+      publishedAssetStatus = baseAssetStatus
+    }
   })()
 
-  const after = db.prepare('select * from repair_tickets where id = ?').get(id) as any | undefined
-  writeAuditLog(db, {
-    actor: req.user!,
+  if (publishedAssetStatus) {
+    publishAssetStatusChanged(current.asset_id, publishedAssetStatus, now)
+  }
+  publishRepairTicketChanged(id, current.asset_id, now)
+
+  const after = db.prepare('select * from repair_tickets where id = ?').get(id) as RepairTicketRow | undefined
+  writeAuditFromReq(db, req, {
     action: 'repair_ticket.transition',
     entityType: 'repair_ticket',
     entityId: id,
-    ip: req.ip,
-    userAgent: req.get('user-agent') ?? undefined,
-    requestId: req.requestId,
     before: { status: current.status },
     after: after ? { status: after.status } : { status: d.to },
   })
 
-  res.json({ ok: true })
+  res.json({ ok: true, item: after ? serializeTicket(after, canViewSensitive(req)) : undefined })
 })
 
 repairTicketsRouter.delete('/:id', requireAuth, requireManager, (req, res) => {
   const id = req.params.id
   const db = getDb()
-  const ticket = db.prepare('select id, asset_id from repair_tickets where id = ?').get(id) as
-    | { id: string; asset_id: string }
-    | undefined
-  if (!ticket) return res.json({ ok: true })
+  const before = db.prepare('select * from repair_tickets where id = ?').get(id) as RepairTicketRow | undefined
+  if (!before) return res.json({ ok: true })
 
-  const before = db.prepare('select * from repair_tickets where id = ?').get(id) as any | undefined
-
+  const now = new Date().toISOString()
+  let publishedAssetStatus: string | null = null
   db.transaction(() => {
     db.prepare('delete from repair_tickets where id = ?').run(id)
-    const hasOtherOpen = computeAnyOtherOpen(db, ticket.asset_id)
-    const status = hasOtherOpen ? 'maintenance' : 'available'
-    const now = new Date().toISOString()
-    db.prepare('update assets set status = ?, updated_at = ? where id = ?').run(
-      status,
-      now,
-      ticket.asset_id
-    )
-    publishAssetStatusChanged(ticket.asset_id, status, now)
-    publishRepairTicketChanged(id, ticket.asset_id, now)
+    const hasOtherOpen = computeAnyOtherOpen(db, before.asset_id)
+    const baseStatus = hasOtherOpen ? 'maintenance' : 'available'
+    db.prepare('update assets set status = ?, updated_at = ? where id = ?').run(baseStatus, now, before.asset_id)
+    if (baseStatus === 'available') {
+      const recomputed = recomputeChamberStatus(db, before.asset_id)
+      publishedAssetStatus = recomputed.targetStatus ?? baseStatus
+    } else {
+      publishedAssetStatus = baseStatus
+    }
   })()
 
-  writeAuditLog(db, {
-    actor: req.user!,
+  if (publishedAssetStatus) {
+    publishAssetStatusChanged(before.asset_id, publishedAssetStatus, now)
+  }
+  publishRepairTicketChanged(id, before.asset_id, now)
+
+  writeAuditFromReq(db, req, {
     action: 'repair_ticket.delete',
     entityType: 'repair_ticket',
     entityId: id,
-    ip: req.ip,
-    userAgent: req.get('user-agent') ?? undefined,
-    requestId: req.requestId,
-    before: before
-      ? {
-          assetId: before.asset_id,
-          status: before.status,
-          problemDesc: before.problem_desc,
-        }
-      : { assetId: ticket.asset_id },
+    before: {
+      assetId: before.asset_id,
+      status: before.status,
+      problemDesc: before.problem_desc,
+    },
   })
 
   res.json({ ok: true })

@@ -1,107 +1,38 @@
-// src/components/ScrollingTimeline.tsx
-import React, { useMemo, useState, useEffect, useRef, useCallback, useLayoutEffect, useTransition } from 'react';
-import { UsageLog, Project, TestProject } from '../types';
-import { fetchAssetsByType } from '../store/assetsSlice'
-import { fetchProjects } from '../store/projectsSlice';
-import { fetchTestProjects } from '../store/testProjectsSlice';
-import { useAppDispatch, useAppSelector } from '../store/hooks'
-import styles from './ScrollingTimeline.module.css';
-import { alpha, useTheme } from '@mui/material/styles';
-import type { Theme } from '@mui/material/styles';
-import {
-  format, addDays, eachDayOfInterval, startOfDay as dateFnsStartOfDay,
-  differenceInMinutes, max, min, getDay, parseISO, isEqual, getYear, differenceInCalendarDays,
-  setHours, setMinutes, setSeconds, setMilliseconds, addHours, addMonths,
-} from 'date-fns';
-import { zhCN } from 'date-fns/locale';
-import { getEffectiveUsageLogStatus } from '../utils/statusHelpers';
-import { Box, Typography, Tooltip, CircularProgress, Alert, Menu, MenuItem } from '@mui/material';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { addDays, addMonths, differenceInCalendarDays, getYear, isEqual } from 'date-fns'
+import { Alert, Box, CircularProgress, Menu, MenuItem, Typography } from '@mui/material'
+import { alpha, useTheme, type Theme } from '@mui/material/styles'
+import type { UsageLog } from '../types'
+import { fetchAssetsByType } from '../store/assetsSlice'
+import { fetchProjects } from '../store/projectsSlice'
+import { fetchTestProjects } from '../store/testProjectsSlice'
+import { useAppDispatch, useAppSelector } from '../store/hooks'
+import { loadHolidayCalendar, type HolidayDetail } from '../services/holidayService'
+import {
+  CHAMBER_NAME_WIDTH_PX,
+  DAY_WIDTH_PX,
+  DEFAULT_SHIFT_START_MINUTES,
+  MIN_ROW_HEIGHT_PX,
+  assignTracksToLogs,
+  calculateBarPositionAndWidth,
+  classifyDay,
+  generateDateHeadersFromRange,
+  getTimelineBaseDate,
+  getTimelineDisplayData,
+  type TimelineUsageLogDisplayData,
+} from '../utils/timelineLayout'
+import TimelineHeader from './timeline/TimelineHeader'
+import TimelineBar from './timeline/TimelineBar'
+import { useI18n } from '../i18n'
+import styles from './ScrollingTimeline.module.css'
 
-export const CUSTOM_DAY_START_HOUR = 7;
-export const DEFAULT_SHIFT_START_MINUTES = CUSTOM_DAY_START_HOUR * 60
-
-interface HolidayDetail {
-  holiday: boolean;
-  name: string;
-  wage: number;
-  date: string;
-  rest?: number;
-  after?: boolean;
-  target?: string;
-}
-
-interface ApiHolidayResponse {
-  code: number;
-  holiday?: {
-    [monthDayOrFullDate: string]: HolidayDetail;
-  };
-}
-
-interface ScrollingTimelineProps {
-  usageLogs: UsageLog[];
-  onViewUsageLog: (logId: string) => void;
-  onDeleteUsageLog?: (logId: string, configId: string) => void;
-  regionCode?: 'cn' | 'tw';
-  dayWidthPx?: number;
-  scrollToTodaySignal?: number;
-  minRowHeightPx?: number;
-  itemBarHeightPx?: number;
-  itemBarGapPx?: number;
-  getMinRowHeightPx?: (chamberId: string) => number;
-  showConfigCountBadge?: boolean;
-}
-
-export const DAY_WIDTH_PX = 200;
-export const MIN_ROW_HEIGHT_PX = 80;
-export const HEADER_HEIGHT_PX = 70;
-export const CHAMBER_NAME_WIDTH_PX = 150;
-
-const DEFAULT_ITEM_BAR_HEIGHT_PX = 44;
-const DEFAULT_ITEM_BAR_GAP_PX = 2;
-const MAX_CONFIG_PILLS = 4;
-
-export interface TimelineUsageLogDisplayData extends Omit<UsageLog, 'id' | 'selectedConfigIds'> {
-  displayId: string;
-  originalLogId: string;
-  projectName?: string;
-  testProjectName?: string;
-  configIds: string[];
-  configNames: string[];
-  effectiveStatus: UsageLog['status'];
-}
-
-interface StatusStyling {
-  backgroundColor: string;
-  borderColor: string;
-  textColor: string;
-}
-
-const getBarStylingByEffectiveStatus = (theme: Theme, status: UsageLog['status']): StatusStyling => {
-  const main =
-    status === 'completed' ? theme.palette.success.main :
-    status === 'in-progress' ? theme.palette.warning.main :
-    status === 'not-started' ? theme.palette.info.main :
-    status === 'overdue' ? theme.palette.error.main :
-    alpha(theme.palette.text.primary, 0.32);
-
-  const dark =
-    status === 'completed' ? theme.palette.success.dark :
-    status === 'in-progress' ? theme.palette.warning.dark :
-    status === 'not-started' ? theme.palette.info.dark :
-    status === 'overdue' ? theme.palette.error.dark :
-    main;
-
-  return {
-    backgroundColor: alpha(main, 0.16),
-    borderColor: alpha(main, 0.32),
-    textColor: dark,
-  };
-};
+const DEFAULT_ITEM_BAR_HEIGHT_PX = 44
+const DEFAULT_ITEM_BAR_GAP_PX = 2
 
 const buildTimelineCssVars = (theme: Theme) => {
-  const headerGlass = `linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.18)} 0%, ${alpha(theme.palette.primary.main, 0.08)} 100%), ${alpha(theme.palette.background.paper, 0.58)}`;
-  const stickyGlass = `linear-gradient(180deg, ${alpha(theme.palette.secondary.main, 0.16)} 0%, ${alpha(theme.palette.secondary.main, 0.06)} 100%), ${alpha(theme.palette.background.paper, 0.62)}`;
+  const headerGlass = `linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.18)} 0%, ${alpha(theme.palette.primary.main, 0.08)} 100%), ${alpha(theme.palette.background.paper, 0.58)}`
+  const stickyGlass = `linear-gradient(180deg, ${alpha(theme.palette.secondary.main, 0.16)} 0%, ${alpha(theme.palette.secondary.main, 0.06)} 100%), ${alpha(theme.palette.background.paper, 0.62)}`
   const vars: Record<string, string> = {
     ['--timeline-bg']: alpha(theme.palette.background.paper, 0.95),
     ['--timeline-header-bg']: headerGlass,
@@ -112,256 +43,30 @@ const buildTimelineCssVars = (theme: Theme) => {
     ['--timeline-weekend-bg']: alpha(theme.palette.text.primary, 0.03),
     ['--timeline-holiday-bg']: alpha(theme.palette.error.main, 0.08),
     ['--timeline-workday-override-bg']: alpha(theme.palette.text.primary, 0.02),
-    ['--timeline-today-bg']: alpha(theme.palette.info.main, 0.10),
+    ['--timeline-today-bg']: alpha(theme.palette.info.main, 0.1),
     ['--timeline-today-text']: theme.palette.info.main,
     ['--timeline-bar-shadow']: `0 1px 2px ${alpha(theme.palette.text.primary, 0.18)}`,
     ['--timeline-bar-shadow-hover']: `0 6px 14px ${alpha(theme.palette.text.primary, 0.22)}`,
     ['--timeline-scrollbar-thumb']: alpha(theme.palette.text.primary, 0.32),
     ['--timeline-scrollbar-thumb-hover']: alpha(theme.palette.text.primary, 0.44),
     ['--timeline-scrollbar-track']: alpha(theme.palette.text.primary, 0.08),
-  };
-  return vars as unknown as React.CSSProperties;
-};
-
-export const generateDateHeaders = (currentDate: Date, monthsBefore: number, monthsAfter: number, shiftStartMinutes: number) => {
-  const h = Math.floor(shiftStartMinutes / 60)
-  const m = shiftStartMinutes % 60
-  let baseDateForCurrentView = setMilliseconds(setSeconds(setMinutes(setHours(dateFnsStartOfDay(currentDate), h), m), 0), 0)
-  const minutesIntoDay = currentDate.getHours() * 60 + currentDate.getMinutes()
-  if (minutesIntoDay < shiftStartMinutes) baseDateForCurrentView = addDays(baseDateForCurrentView, -1)
-  
-  const viewStartDate = addMonths(baseDateForCurrentView, -monthsBefore);
-  const viewEndDate = addMonths(baseDateForCurrentView, monthsAfter);
-  
-  const intervalCalendarDays = eachDayOfInterval({ 
-    start: dateFnsStartOfDay(viewStartDate),
-    end: dateFnsStartOfDay(viewEndDate)
-  });
-  
-  return intervalCalendarDays.map((calendarDay) => {
-    return setMilliseconds(setSeconds(setMinutes(setHours(calendarDay, h), m), 0), 0)
-  })
-};
-
-const getTimelineBaseDate = (currentDate: Date, shiftStartMinutes: number) => {
-  const h = Math.floor(shiftStartMinutes / 60)
-  const m = shiftStartMinutes % 60
-  let baseDate = setMilliseconds(setSeconds(setMinutes(setHours(dateFnsStartOfDay(currentDate), h), m), 0), 0)
-  const minutesIntoDay = currentDate.getHours() * 60 + currentDate.getMinutes()
-  if (minutesIntoDay < shiftStartMinutes) baseDate = addDays(baseDate, -1)
-  return baseDate
-};
-
-const generateDateHeadersFromRange = (rangeStart: Date, rangeEnd: Date, shiftStartMinutes: number) => {
-  const h = Math.floor(shiftStartMinutes / 60)
-  const m = shiftStartMinutes % 60
-  const intervalCalendarDays = eachDayOfInterval({
-    start: dateFnsStartOfDay(rangeStart),
-    end: dateFnsStartOfDay(rangeEnd),
-  });
-
-  return intervalCalendarDays.map((calendarDay) => {
-    return setMilliseconds(setSeconds(setMinutes(setHours(calendarDay, h), m), 0), 0)
-  });
-};
-
-// --- calculateBarPositionAndWidth (修改为计算单个连续条) ---
-const calculateBarPositionAndWidth = (
-  log: UsageLog,
-  timelineViewActualStart: Date, // 整个可见时间轴的起始点 (例如 dateHeaders[0])
-  timelineViewActualEnd: Date,   // 整个可见时间轴的结束点 (例如 addDays(dateHeaders[last], 1))
-  effectiveStatus: UsageLog['status'],
-  dayWidthPx: number
-) => {
-  const logStartTime = parseISO(log.startTime);
-  let logEndTimeDate;
-
-  if (log.endTime) {
-    logEndTimeDate = parseISO(log.endTime);
-  } else {
-    if (effectiveStatus === 'in-progress' || effectiveStatus === 'overdue') {
-      logEndTimeDate = new Date();
-    } else {
-      logEndTimeDate = addHours(logStartTime, 1); // 默认1小时，以便显示
-    }
   }
-  if (!logEndTimeDate || isNaN(logEndTimeDate.valueOf())) {
-    logEndTimeDate = addHours(logStartTime, 1);
-  }
+  return vars as unknown as React.CSSProperties
+}
 
-  // 检查日志是否在整个可见时间轴范围之外
-  if (logEndTimeDate <= timelineViewActualStart || logStartTime >= timelineViewActualEnd) {
-    return { left: 0, width: 0, display: false };
-  }
-
-  // 确定条在屏幕上的实际显示开始和结束时间
-  const displayStartTime = max([logStartTime, timelineViewActualStart]);
-  const displayEndTime = min([logEndTimeDate, timelineViewActualEnd]);
-
-  if (displayStartTime >= displayEndTime) {
-    return { left: 0, width: 0, display: false };
-  }
-
-  // left: 是 displayStartTime 相对于 timelineViewActualStart (7点) 的偏移
-  const leftOffsetMinutes = differenceInMinutes(displayStartTime, timelineViewActualStart);
-  // width: 是 displayEndTime 和 displayStartTime 之间的时长
-  const displayDurationMinutes = differenceInMinutes(displayEndTime, displayStartTime);
-
-  const minutesInDay = 24 * 60; // DAY_WIDTH_PX 代表的是24小时
-  const finalLeft = (leftOffsetMinutes / minutesInDay) * dayWidthPx;
-  const finalWidth = (displayDurationMinutes / minutesInDay) * dayWidthPx;
-  
-  return { left: finalLeft, width: Math.max(finalWidth, 2), display: true };
-};
-
-
-export const formatDateHeader = (date: Date): string => {
-  const dayOfWeekNames = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  return `${format(date, 'M/d', { locale: zhCN })} ${dayOfWeekNames[getDay(date)]}`;
-};
-
-const isWeekend = (date: Date): boolean => {
-  const dayOfWeek = getDay(date);
-  return dayOfWeek === 0 || dayOfWeek === 6;
-};
-
-export const getTimelineDisplayData = ( /* ... (保持不变) ... */
-    passedUsageLogs: UsageLog[] = [],
-    projectsFromStore: Project[] = [],
-    testProjectsFromStore: TestProject[] = [],
-): TimelineUsageLogDisplayData[] => {
-    const displayDataList: TimelineUsageLogDisplayData[] = [];
-    const now = new Date();
-    if (!passedUsageLogs) return [];
-
-    const projectById = new Map<string, Project>();
-    projectsFromStore.forEach((p) => projectById.set(p.id, p));
-    const testProjectById = new Map<string, TestProject>();
-    testProjectsFromStore.forEach((tp) => testProjectById.set(tp.id, tp));
-    const projectConfigByIdCache = new Map<string, Map<string, { name: string }>>();
-
-    passedUsageLogs.forEach(log => {
-        const project = log.projectId ? projectById.get(log.projectId) : undefined;
-        const testProject = log.testProjectId ? testProjectById.get(log.testProjectId) : undefined;
-        const effectiveStatus = getEffectiveUsageLogStatus(log, now);
-        
-        const { id: originalLogIdFromLog, selectedConfigIds: logSelectedConfigIds, ...restOfLogBase } = log;
-        const restOfLog = restOfLogBase as Omit<UsageLog, 'id' | 'selectedConfigIds'>;
-
-        const configIds = logSelectedConfigIds ? logSelectedConfigIds.slice() : [];
-        let configNames: string[] = [];
-        if (configIds.length > 0) {
-            let configById: Map<string, { name: string }> | undefined;
-            if (project) {
-                configById = projectConfigByIdCache.get(project.id);
-                if (!configById) {
-                    configById = new Map<string, { name: string }>();
-                    project.configs?.forEach((c) => configById!.set(c.id, { name: c.name }));
-                    projectConfigByIdCache.set(project.id, configById);
-                }
-            }
-            configNames = configIds.map((configId) => configById?.get(configId)?.name || configId);
-        }
-
-        displayDataList.push({
-            ...restOfLog,
-            chamberId: log.chamberId,
-            user: log.user,
-            startTime: log.startTime,
-            endTime: log.endTime,
-            status: log.status,
-            notes: log.notes,
-            projectId: log.projectId,
-            testProjectId: log.testProjectId,
-            createdAt: log.createdAt,
-            selectedWaterfall: log.selectedWaterfall,
-            displayId: originalLogIdFromLog,
-            originalLogId: originalLogIdFromLog,
-            projectName: project?.name,
-            testProjectName: testProject?.name,
-            configIds,
-            configNames,
-            effectiveStatus: effectiveStatus,
-        });
-    });
-    return displayDataList;
-};
-const assignTracksToLogs = (logs: TimelineUsageLogDisplayData[]): (TimelineUsageLogDisplayData & { trackIndex: number })[] => { /* ... (保持不变) ... */
-    if (!logs || logs.length === 0) return [];
-
-    const sortedLogs = [...logs].sort((a, b) => {
-        const aStartTime = parseISO(a.startTime);
-        const bStartTime = parseISO(b.startTime);
-        const startTimeDiff = aStartTime.getTime() - bStartTime.getTime();
-        if (startTimeDiff !== 0) return startTimeDiff;
-
-        const aEndTimeVal = a.endTime ? parseISO(a.endTime).getTime() : addDays(aStartTime, 1).getTime();
-        const bEndTimeVal = b.endTime ? parseISO(b.endTime).getTime() : addDays(bStartTime, 1).getTime();
-        
-        const aDuration = aEndTimeVal - aStartTime.getTime();
-        const bDuration = bEndTimeVal - bStartTime.getTime();
-        return aDuration - bDuration;
-    });
-
-    const layout: (TimelineUsageLogDisplayData & { trackIndex: number })[] = [];
-    const tracks: { logs: TimelineUsageLogDisplayData[] }[] = [];
-
-    for (const log of sortedLogs) {
-        let assignedTrackIndex = -1;
-        const logStartTimeDt = parseISO(log.startTime);
-        let logEndTimeDt: Date;
-        if (log.endTime) {
-            logEndTimeDt = parseISO(log.endTime);
-        } else {
-            if (log.effectiveStatus === 'in-progress' || log.effectiveStatus === 'overdue') {
-                logEndTimeDt = new Date();
-            } else {
-                logEndTimeDt = addDays(logStartTimeDt, 1);
-            }
-        }
-        if (isNaN(logEndTimeDt.valueOf())) logEndTimeDt = addDays(logStartTimeDt, 1);
-
-        for (let i = 0; i < tracks.length; i++) {
-            const overlaps = tracks[i].logs.some(existingLog => {
-                const existingLogStartTimeDt = parseISO(existingLog.startTime);
-                let existingLogEndTimeDt: Date;
-                if (existingLog.endTime) {
-                    existingLogEndTimeDt = parseISO(existingLog.endTime);
-                } else {
-                    if (existingLog.effectiveStatus === 'in-progress' || existingLog.effectiveStatus === 'overdue') {
-                        existingLogEndTimeDt = new Date();
-                    } else {
-                        existingLogEndTimeDt = addDays(existingLogStartTimeDt, 1);
-                    }
-                }
-                if (isNaN(existingLogEndTimeDt.valueOf())) existingLogEndTimeDt = addDays(existingLogStartTimeDt, 1);
-
-                return logStartTimeDt < existingLogEndTimeDt && existingLogStartTimeDt < logEndTimeDt;
-            });
-
-            if (!overlaps) {
-                assignedTrackIndex = i;
-                break;
-            }
-        }
-
-        if (assignedTrackIndex === -1) {
-            assignedTrackIndex = tracks.length;
-            tracks.push({ logs: [] });
-        }
-
-        tracks[assignedTrackIndex].logs.push(log);
-        layout.push({ ...log, trackIndex: assignedTrackIndex });
-    }
-    return layout;
-};
-
-const DeleteIconSvg: React.FC<React.SVGProps<SVGSVGElement>> = (props) => ( /* ... (保持不变) ... */
-  <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <line x1="18" y1="6" x2="6" y2="18"></line>
-    <line x1="6" y1="6" x2="18" y2="18"></line>
-  </svg>
-);
+interface ScrollingTimelineProps {
+  usageLogs: UsageLog[]
+  onViewUsageLog: (logId: string) => void
+  onDeleteUsageLog?: (logId: string, configId: string) => void
+  regionCode?: 'cn' | 'tw'
+  dayWidthPx?: number
+  scrollToTodaySignal?: number
+  minRowHeightPx?: number
+  itemBarHeightPx?: number
+  itemBarGapPx?: number
+  getMinRowHeightPx?: (chamberId: string) => number
+  showConfigCountBadge?: boolean
+}
 
 const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   usageLogs: propsUsageLogs = [],
@@ -378,83 +83,82 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
 }) => {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
-  const theme = useTheme();
-  const timelineCssVars = useMemo(() => buildTimelineCssVars(theme), [theme]);
-  const dayWidthPx = propsDayWidthPx ?? DAY_WIDTH_PX;
-  const minRowHeightPx = propsMinRowHeightPx ?? MIN_ROW_HEIGHT_PX;
-  const itemBarHeightPx = propsItemBarHeightPx ?? DEFAULT_ITEM_BAR_HEIGHT_PX;
-  const itemBarGapPx = propsItemBarGapPx ?? DEFAULT_ITEM_BAR_GAP_PX;
-  const itemBarTotalHeightPx = itemBarHeightPx + itemBarGapPx;
-  const showConfigCountBadge = propsShowConfigCountBadge ?? true;
+  const theme = useTheme()
+  const { tr } = useI18n()
+
+  const timelineCssVars = useMemo(() => buildTimelineCssVars(theme), [theme])
+  const dayWidthPx = propsDayWidthPx ?? DAY_WIDTH_PX
+  const minRowHeightPx = propsMinRowHeightPx ?? MIN_ROW_HEIGHT_PX
+  const itemBarHeightPx = propsItemBarHeightPx ?? DEFAULT_ITEM_BAR_HEIGHT_PX
+  const itemBarGapPx = propsItemBarGapPx ?? DEFAULT_ITEM_BAR_GAP_PX
+  const itemBarTotalHeightPx = itemBarHeightPx + itemBarGapPx
+  const showConfigCountBadge = propsShowConfigCountBadge ?? true
+
   const shiftStartMinutes = useAppSelector((state) => state.settings.timeline.shiftStartMinutes) ?? DEFAULT_SHIFT_START_MINUTES
   const { assets: chambers, loading: chambersLoading, error: chambersError } = useAppSelector((state) => state.assets)
   const { projects, loading: projectsLoading, error: projectsError } = useAppSelector((state) => state.projects)
   const { testProjects, loading: testProjectsLoading, error: testProjectsError } = useAppSelector((state) => state.testProjects)
   const { loading: usageLogsDataLoading } = useAppSelector((state) => state.usageLogs)
 
-  const initialTimelineBaseDate = useMemo(() => getTimelineBaseDate(new Date(), shiftStartMinutes), [shiftStartMinutes]);
-  const [rangeStart, setRangeStart] = useState(() => addMonths(initialTimelineBaseDate, -1));
-  const [rangeEnd, setRangeEnd] = useState(() => addMonths(initialTimelineBaseDate, 1));
-
+  const initialTimelineBaseDate = useMemo(() => getTimelineBaseDate(new Date(), shiftStartMinutes), [shiftStartMinutes])
+  const [rangeStart, setRangeStart] = useState(() => addMonths(initialTimelineBaseDate, -1))
+  const [rangeEnd, setRangeEnd] = useState(() => addMonths(initialTimelineBaseDate, 1))
   const [configDeleteMenu, setConfigDeleteMenu] = useState<{
-    anchorEl: HTMLElement;
-    logId: string;
-    items: Array<{ id: string; name: string }>;
-  } | null>(null);
+    anchorEl: HTMLElement
+    logId: string
+    items: Array<{ id: string; name: string }>
+  } | null>(null)
 
-  const [processedHolidays, setProcessedHolidays] = useState<Map<string, HolidayDetail>>(new Map());
-  const [holidaysLoading, setHolidaysLoading] = useState(true);
-  const [holidaysError, setHolidaysError] = useState<string | null>(null);
-  const loadedHolidayYearsRef = useRef<Set<number>>(new Set());
+  const [processedHolidays, setProcessedHolidays] = useState<Map<string, HolidayDetail>>(new Map())
+  const holidayRequestsRef = useRef(new Map<string, Promise<Map<string, HolidayDetail>>>())
+  const startYear = getYear(rangeStart)
+  const endYear = getYear(rangeEnd)
 
-  const dateHeaders = useMemo(() => generateDateHeadersFromRange(rangeStart, rangeEnd, shiftStartMinutes), [rangeStart, rangeEnd, shiftStartMinutes]);
-  const totalTimelineWidth = useMemo(() => dateHeaders.length * dayWidthPx, [dateHeaders.length, dayWidthPx]);
+  const dateHeaders = useMemo(
+    () => generateDateHeadersFromRange(rangeStart, rangeEnd, shiftStartMinutes),
+    [rangeStart, rangeEnd, shiftStartMinutes]
+  )
+  const totalTimelineWidth = useMemo(() => dateHeaders.length * dayWidthPx, [dateHeaders.length, dayWidthPx])
 
-  const timelineContainerRef = useRef<HTMLDivElement>(null);
-  const initialScrollPerformedForCurrentViewRef = useRef(false);
-  const desiredScrollLeftAfterPrependRef = useRef<number | null>(null);
-  const isExtendingLeftRef = useRef(false);
-  const isExtendingRightRef = useRef(false);
-  const [, startTransition] = useTransition();
+  const timelineContainerRef = useRef<HTMLDivElement>(null)
+  const initialScrollPerformedForCurrentViewRef = useRef(false)
+  const desiredScrollLeftAfterPrependRef = useRef<number | null>(null)
+  const isExtendingLeftRef = useRef(false)
+  const isExtendingRightRef = useRef(false)
+  const lastHandledTodaySignalRef = useRef(0)
+  const rafUpdateVisibleRangeRef = useRef<number | null>(null)
+  const [, startTransition] = useTransition()
 
   useEffect(() => {
     const base = getTimelineBaseDate(new Date(), shiftStartMinutes)
     setRangeStart(addMonths(base, -1))
     setRangeEnd(addMonths(base, 1))
     initialScrollPerformedForCurrentViewRef.current = false
-  }, [shiftStartMinutes]);
+  }, [shiftStartMinutes])
 
   const [visibleDayIndexRange, setVisibleDayIndexRange] = useState<{ startIndex: number; endIndexExclusive: number }>({
     startIndex: 0,
     endIndexExclusive: 0,
-  });
-  const rafUpdateVisibleRangeRef = useRef<number | null>(null);
+  })
 
   const updateVisibleDayIndexRange = useCallback(() => {
-    const container = timelineContainerRef.current;
-    const totalDays = dateHeaders.length;
+    const container = timelineContainerRef.current
+    const totalDays = dateHeaders.length
     if (!container || totalDays === 0) {
-      setVisibleDayIndexRange({ startIndex: 0, endIndexExclusive: 0 });
-      return;
+      setVisibleDayIndexRange({ startIndex: 0, endIndexExclusive: 0 })
+      return
     }
-
-    const visibleGridWidth = Math.max(0, container.clientWidth - CHAMBER_NAME_WIDTH_PX);
-    const gridScrollLeft = Math.max(0, container.scrollLeft);
-
-    const overscanDays = 20;
-    const startIndex = Math.max(0, Math.floor(gridScrollLeft / dayWidthPx) - overscanDays);
-    const endIndexExclusive = Math.min(
-      totalDays,
-      Math.ceil((gridScrollLeft + visibleGridWidth) / dayWidthPx) + overscanDays
-    );
+    const visibleGridWidth = Math.max(0, container.clientWidth - CHAMBER_NAME_WIDTH_PX)
+    const gridScrollLeft = Math.max(0, container.scrollLeft)
+    const overscanDays = 20
+    const startIndex = Math.max(0, Math.floor(gridScrollLeft / dayWidthPx) - overscanDays)
+    const endIndexExclusive = Math.min(totalDays, Math.ceil((gridScrollLeft + visibleGridWidth) / dayWidthPx) + overscanDays)
 
     setVisibleDayIndexRange((prev) => {
-      if (prev.startIndex === startIndex && prev.endIndexExclusive === endIndexExclusive) return prev;
-      return { startIndex, endIndexExclusive };
-    });
-  }, [dateHeaders.length, dayWidthPx]);
-
-  const closeConfigDeleteMenu = useCallback(() => setConfigDeleteMenu(null), []);
+      if (prev.startIndex === startIndex && prev.endIndexExclusive === endIndexExclusive) return prev
+      return { startIndex, endIndexExclusive }
+    })
+  }, [dateHeaders.length, dayWidthPx])
 
   useEffect(() => {
     const container = timelineContainerRef.current
@@ -470,7 +174,6 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     }
 
     schedule()
-
     let ro: ResizeObserver | null = null
     if (typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(() => schedule())
@@ -482,408 +185,272 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
       window.removeEventListener('resize', schedule)
       if (ro) ro.disconnect()
       if (rafId !== null) window.cancelAnimationFrame(rafId)
+      if (rafUpdateVisibleRangeRef.current !== null) {
+        window.cancelAnimationFrame(rafUpdateVisibleRangeRef.current)
+        rafUpdateVisibleRangeRef.current = null
+      }
     }
   }, [updateVisibleDayIndexRange])
 
   const handleTimelineScroll = useCallback(() => {
-    const container = timelineContainerRef.current;
-    if (!container) return;
+    const container = timelineContainerRef.current
+    if (!container) return
 
-    const thresholdPx = dayWidthPx * 10;
+    const thresholdPx = dayWidthPx * 10
     if (container.scrollLeft < thresholdPx && !isExtendingLeftRef.current) {
-      isExtendingLeftRef.current = true;
-      const beforeExtendScrollLeft = container.scrollLeft;
+      isExtendingLeftRef.current = true
+      const beforeExtendScrollLeft = container.scrollLeft
       startTransition(() => {
         setRangeStart((prevStart) => {
-          const nextStart = addMonths(prevStart, -1);
-          const addedDays = differenceInCalendarDays(prevStart, nextStart);
-          desiredScrollLeftAfterPrependRef.current = beforeExtendScrollLeft + addedDays * dayWidthPx;
-          return nextStart;
-        });
-      });
+          const nextStart = addMonths(prevStart, -1)
+          const addedDays = differenceInCalendarDays(prevStart, nextStart)
+          desiredScrollLeftAfterPrependRef.current = beforeExtendScrollLeft + addedDays * dayWidthPx
+          return nextStart
+        })
+      })
     }
 
     if (
       container.scrollLeft + container.clientWidth > container.scrollWidth - thresholdPx &&
       !isExtendingRightRef.current
     ) {
-      isExtendingRightRef.current = true;
+      isExtendingRightRef.current = true
       startTransition(() => {
-        setRangeEnd((prevEnd) => addMonths(prevEnd, 1));
-      });
+        setRangeEnd((prevEnd) => addMonths(prevEnd, 1))
+      })
     }
 
     if (rafUpdateVisibleRangeRef.current === null) {
       rafUpdateVisibleRangeRef.current = window.requestAnimationFrame(() => {
-        rafUpdateVisibleRangeRef.current = null;
-        updateVisibleDayIndexRange();
-      });
+        rafUpdateVisibleRangeRef.current = null
+        updateVisibleDayIndexRange()
+      })
     }
-  }, [dayWidthPx, startTransition, updateVisibleDayIndexRange]);
+  }, [dayWidthPx, startTransition, updateVisibleDayIndexRange])
 
   useLayoutEffect(() => {
-    const container = timelineContainerRef.current;
+    const container = timelineContainerRef.current
     if (container && desiredScrollLeftAfterPrependRef.current !== null) {
-      container.scrollLeft = desiredScrollLeftAfterPrependRef.current;
-      desiredScrollLeftAfterPrependRef.current = null;
+      container.scrollLeft = desiredScrollLeftAfterPrependRef.current
+      desiredScrollLeftAfterPrependRef.current = null
     }
-    isExtendingLeftRef.current = false;
-    isExtendingRightRef.current = false;
-    updateVisibleDayIndexRange();
-  }, [dateHeaders.length, updateVisibleDayIndexRange]);
+    isExtendingLeftRef.current = false
+    isExtendingRightRef.current = false
+    updateVisibleDayIndexRange()
+  }, [dateHeaders.length, updateVisibleDayIndexRange])
 
   useEffect(() => {
-    if (!scrollToTodaySignal) return;
-    const container = timelineContainerRef.current;
-    if (!container || dateHeaders.length === 0) return;
+    if (!scrollToTodaySignal || scrollToTodaySignal === lastHandledTodaySignalRef.current) return
+    const container = timelineContainerRef.current
+    if (!container || dateHeaders.length === 0) return
 
     const todayByShift = getTimelineBaseDate(new Date(), shiftStartMinutes)
     const todayIndex = dateHeaders.findIndex((d) => isEqual(d, todayByShift))
-    if (todayIndex < 0) return;
+    if (todayIndex < 0) return
 
+    lastHandledTodaySignalRef.current = scrollToTodaySignal
     const desiredTodayCellOffset = 2
-    const targetGridScrollLeft = Math.max(0, (todayIndex - desiredTodayCellOffset) * dayWidthPx);
-    const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
-    const clampedScrollLeft = Math.min(targetGridScrollLeft, maxScroll);
+    const targetGridScrollLeft = Math.max(0, (todayIndex - desiredTodayCellOffset) * dayWidthPx)
+    const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth)
+    const clampedScrollLeft = Math.min(targetGridScrollLeft, maxScroll)
 
-    (container as any).scrollTo?.({ left: clampedScrollLeft, behavior: 'smooth' });
-    if (!(container as any).scrollTo) container.scrollLeft = clampedScrollLeft;
-  }, [dateHeaders, dayWidthPx, scrollToTodaySignal, shiftStartMinutes]);
-
-  const fetchAndProcessHolidaysForYearInternal = useCallback(async (year: number, region: string): Promise<Map<string, HolidayDetail>> => { /* ... (保持不变) ... */
-    const yearHolidaysMap = new Map<string, HolidayDetail>();
-    if (year === 2025 && region === 'cn') {
-      const apiResponse: ApiHolidayResponse = {"code":0,"holiday":{"01-01":{"holiday":true,"name":"元旦","wage":3,"date":"2025-01-01","rest":17},"01-26":{"holiday":false,"name":"春节前补班","wage":1,"after":false,"target":"春节","date":"2025-01-26","rest":7},"01-28":{"holiday":true,"name":"除夕","wage":2,"date":"2025-01-28","rest":9},"01-29":{"holiday":true,"name":"初一","wage":3,"date":"2025-01-29","rest":1},"01-30":{"holiday":true,"name":"初二","wage":3,"date":"2025-01-30","rest":1},"01-31":{"holiday":true,"name":"初三","wage":3,"date":"2025-01-31","rest":1},"02-01":{"holiday":true,"name":"初四","wage":2,"date":"2025-02-01","rest":1},"02-02":{"holiday":true,"name":"初五","wage":2,"date":"2025-02-02","rest":1},"02-03":{"holiday":true,"name":"初六","wage":2,"date":"2025-02-03","rest":1},"02-04":{"holiday":true,"name":"初七","wage":2,"date":"2025-02-04","rest":1},"02-08":{"holiday":false,"name":"春节后补班","wage":1,"target":"春节","after":true,"date":"2025-02-08","rest":4},"04-04":{"holiday":true,"name":"清明节","wage":3,"date":"2025-04-04","rest":19},"04-05":{"holiday":true,"name":"清明节","wage":2,"date":"2025-04-05","rest":1},"04-06":{"holiday":true,"name":"清明节","wage":2,"date":"2025-04-06","rest":1},"04-27":{"holiday":false,"name":"劳动节前补班","wage":1,"target":"劳动节","after":false,"date":"2025-04-27","rest":17},"05-01":{"holiday":true,"name":"劳动节","wage":3,"date":"2025-05-01","rest":4},"05-02":{"holiday":true,"name":"劳动节","wage":2,"date":"2025-05-02","rest":1},"05-03":{"holiday":true,"name":"劳动节","wage":3,"date":"2025-05-03","rest":1},"05-04":{"holiday":true,"name":"劳动节","wage":3,"date":"2025-05-04","rest":1},"05-05":{"holiday":true,"name":"劳动节","wage":3,"date":"2025-05-05","rest":1},"05-31":{"holiday":true,"name":"端午节","wage":3,"date":"2025-05-31","rest":23},"06-01":{"holiday":true,"name":"端午节","wage":2,"date":"2025-06-01","rest":1},"06-02":{"holiday":true,"name":"端午节","wage":2,"date":"2025-06-02","rest":1},"09-28":{"holiday":false,"name":"国庆节前补班","after":false,"wage":1,"target":"国庆节","date":"2025-09-28","rest":89},"10-01":{"holiday":true,"name":"国庆节","wage":3,"date":"2025-10-01","rest":92},"10-02":{"holiday":true,"name":"国庆节","wage":3,"date":"2025-10-02","rest":1},"10-03":{"holiday":true,"name":"国庆节","wage":3,"date":"2025-10-03","rest":1},"10-04":{"holiday":true,"name":"国庆节","wage":2,"date":"2025-10-04","rest":1},"10-05":{"holiday":true,"name":"国庆节","wage":2,"date":"2025-10-05","rest":1},"10-06":{"holiday":true,"name":"中秋节","wage":2,"date":"2025-10-06","rest":1},"10-07":{"holiday":true,"name":"国庆节","wage":2,"date":"2025-10-07","rest":1},"10-08":{"holiday":true,"name":"国庆节","wage":2,"date":"2025-10-08","rest":1},"10-11":{"holiday":false,"after":true,"wage":1,"name":"国庆节后补班","target":"国庆节","date":"2025-10-11"}}};
-      const holidayData = apiResponse.holiday;
-      if (apiResponse.code === 0 && holidayData !== undefined) {
-        Object.values(holidayData!).forEach(detail => {
-          yearHolidaysMap.set(detail.date, detail);
-        });
-      } else {
-         console.warn(`Hardcoded holiday data for ${year} (${region}) issue or no holiday object.`);
-      }
-      return yearHolidaysMap;
-    }
-    try {
-      const response = await fetch(`/holidays/${region.toLowerCase()}/${year}.json`);
-      if (!response.ok) {
-        if (response.status === 404) {
-          console.warn(`Holiday data file not found for year ${year}, region ${region}.`);
-          return yearHolidaysMap;
-        }
-        throw new Error(`Failed to fetch holiday data for ${year} (${region}): ${response.statusText}`);
-      }
-      const fetchedData: ApiHolidayResponse = await response.json();
-      const holidayData = fetchedData.holiday;
-      if (fetchedData.code === 0 && holidayData !== undefined) {
-        Object.values(holidayData).forEach(detail => {
-          yearHolidaysMap.set(detail.date, detail);
-        });
-      } else {
-        console.warn(`Invalid data format or error code in holiday data for ${year} (${region}).`);
-      }
-    } catch (err: any) {
-      console.error(`Error fetching or processing holiday data for ${year} (${region}):`, err);
-      throw err;
-    }
-    return yearHolidaysMap;
-  }, []);
-  useEffect(() => {
-    loadedHolidayYearsRef.current = new Set();
-    setProcessedHolidays(new Map());
-    setHolidaysLoading(true);
-    setHolidaysError(null);
-  }, [regionCode]);
+    ;(container as any).scrollTo?.({ left: clampedScrollLeft, behavior: 'smooth' })
+    if (!(container as any).scrollTo) container.scrollLeft = clampedScrollLeft
+  }, [dateHeaders, dayWidthPx, scrollToTodaySignal, shiftStartMinutes])
 
   useEffect(() => {
-    if (dateHeaders.length === 0) {
-      setHolidaysLoading(false);
-      return;
-    }
+    setProcessedHolidays(new Map())
+  }, [regionCode])
 
-    const yearsInView: number[] = [];
-    const startYear = getYear(dateHeaders[0]);
-    const endYear = getYear(dateHeaders[dateHeaders.length - 1]);
-    for (let y = startYear; y <= endYear; y++) yearsInView.push(y);
-
-    const missingYears = yearsInView.filter((y) => !loadedHolidayYearsRef.current.has(y));
-    if (missingYears.length === 0) {
-      if (processedHolidays.size === 0) setHolidaysLoading(false);
-      return;
-    }
-
-    const shouldToggleLoading = processedHolidays.size === 0;
-    if (shouldToggleLoading) {
-      setHolidaysLoading(true);
-      setHolidaysError(null);
-    }
-
-    const loadMissingYears = async () => {
-      try {
-        for (const year of missingYears) {
-          try {
-            const yearDataMap = await fetchAndProcessHolidaysForYearInternal(year, regionCode);
-            loadedHolidayYearsRef.current.add(year);
-            if (yearDataMap.size > 0) {
-              setProcessedHolidays((prev) => {
-                const next = new Map(prev);
-                yearDataMap.forEach((value, key) => next.set(key, value));
-                return next;
-              });
-            }
-          } catch (err: any) {
-            console.error(`Error processing holidays for year ${year}:`, err);
-            setHolidaysError((prev) => prev ?? (err.message || `Failed to load holiday data for ${year}.`));
-          }
-        }
-      } finally {
-        if (shouldToggleLoading) setHolidaysLoading(false);
+  useEffect(() => {
+    let active = true
+    const requests = holidayRequestsRef.current
+    for (let year = startYear; year <= endYear; year++) {
+      const key = `${regionCode}-${year}`
+      let request = requests.get(key)
+      if (!request) {
+        request = loadHolidayCalendar(year, regionCode)
+        requests.set(key, request)
       }
-    };
-
-    loadMissingYears();
-  }, [dateHeaders, regionCode, fetchAndProcessHolidaysForYearInternal, processedHolidays.size]);
-
-  const getDayClassification = useCallback((date: Date): { /* ... (保持不变) ... */
-    type: 'weekday' | 'weekendRest' | 'publicHolidayLowWage' | 'publicHolidayHighWage' | 'workdayOverride',
-    name?: string
-  } => {
-    if (holidaysLoading && processedHolidays.size === 0 && dateHeaders.length > 0) {
-        return { type: 'weekday' };
-    }
-    const dateStr = format(date, 'yyyy-MM-dd'); 
-    const holidayInfo = processedHolidays.get(dateStr);
-
-    if (holidayInfo) {
-      if (holidayInfo.holiday) {
-        if (holidayInfo.wage === 3) {
-          return { type: 'publicHolidayHighWage', name: holidayInfo.name };
+      void request.then((calendar) => {
+        if (active && calendar.size > 0) {
+          setProcessedHolidays((previous) => new Map([...previous, ...calendar]))
         }
-        return { type: 'publicHolidayLowWage', name: holidayInfo.name };
-      } else {
-        return { type: 'workdayOverride', name: holidayInfo.name };
-      }
+      })
     }
-    if (isWeekend(date)) {
-      return { type: 'weekendRest', name: '周末' };
+    return () => {
+      active = false
     }
-    return { type: 'weekday', name: '工作日' };
-  }, [processedHolidays, holidaysLoading, dateHeaders.length]);
+  }, [startYear, endYear, regionCode])
 
-  useEffect(() => { /* ... (data fetching useEffect - 保持不变) ... */
-    if (!chambersLoading && (!chambers || chambers.length === 0)) {
-        dispatch(fetchAssetsByType({ type: 'chamber' }));
-    }
-    if (!projectsLoading && (!projects || projects.length === 0)) {
-        dispatch(fetchProjects());
-    }
-    if (!testProjectsLoading && (!testProjects || testProjects.length === 0)) {
-        dispatch(fetchTestProjects());
-    }
-  }, [
-    dispatch,
-    chambers, projects, testProjects,
-    chambersLoading, projectsLoading, testProjectsLoading,
-  ]);
+  useEffect(() => {
+    dispatch(fetchAssetsByType({ type: 'chamber' }))
+    dispatch(fetchProjects())
+    dispatch(fetchTestProjects())
+  }, [dispatch])
 
-  // 定义整个可见时间轴的开始和结束 (都是7AM的标记)
-  const timelineViewActualStart = useMemo(() => {
-    return dateHeaders.length > 0 ? dateHeaders[0] : getTimelineBaseDate(new Date(), shiftStartMinutes)
-  }, [dateHeaders, shiftStartMinutes]);
+  const timelineViewActualStart = useMemo(
+    () => (dateHeaders.length > 0 ? dateHeaders[0] : getTimelineBaseDate(new Date(), shiftStartMinutes)),
+    [dateHeaders, shiftStartMinutes]
+  )
 
   const timelineViewActualEnd = useMemo(() => {
     const fallback = addDays(getTimelineBaseDate(new Date(), shiftStartMinutes), 1)
     return dateHeaders.length > 0 ? addDays(dateHeaders[dateHeaders.length - 1], 1) : fallback
-  }, [dateHeaders, shiftStartMinutes]);
+  }, [dateHeaders, shiftStartMinutes])
 
   const usageLogById = useMemo(() => {
-    const map = new Map<string, UsageLog>();
-    (propsUsageLogs || []).forEach((l) => map.set(l.id, l));
-    return map;
-  }, [propsUsageLogs]);
+    const map = new Map<string, UsageLog>()
+    ;(propsUsageLogs || []).forEach((l) => map.set(l.id, l))
+    return map
+  }, [propsUsageLogs])
 
-  const timelineDisplayItems = useMemo(() => { /* ... (保持不变) ... */
-      if (propsUsageLogs && projects && testProjects) {
-          return getTimelineDisplayData(propsUsageLogs, projects, testProjects);
-      }
-      return [];
-  }, [propsUsageLogs, projects, testProjects]);
+  const timelineDisplayItems = useMemo(
+    () => (propsUsageLogs && projects && testProjects ? getTimelineDisplayData(propsUsageLogs, projects, testProjects) : []),
+    [propsUsageLogs, projects, testProjects]
+  )
 
   const timelineItemsByChamberId = useMemo(() => {
-    const map = new Map<string, TimelineUsageLogDisplayData[]>();
+    const map = new Map<string, TimelineUsageLogDisplayData[]>()
     timelineDisplayItems.forEach((item) => {
-      const existing = map.get(item.chamberId);
-      if (existing) {
-        existing.push(item);
-      } else {
-        map.set(item.chamberId, [item]);
-      }
-    });
-    return map;
-  }, [timelineDisplayItems]);
+      const existing = map.get(item.chamberId)
+      if (existing) existing.push(item)
+      else map.set(item.chamberId, [item])
+    })
+    return map
+  }, [timelineDisplayItems])
 
-  const chamberLayouts = useMemo(() => { /* ... (保持不变) ... */
-    const layouts = new Map<string, { logsWithTracks: (TimelineUsageLogDisplayData & { trackIndex: number })[], maxTracks: number }>();
-    if (chambers && chambers.length > 0 && timelineDisplayItems) {
-        chambers.forEach(chamber => {
-            const chamberLogs = timelineItemsByChamberId.get(chamber.id) || [];
-            const logsWithTracksData = assignTracksToLogs(chamberLogs);
-            const maxTracks = logsWithTracksData.reduce((maxVal, log) => Math.max(maxVal, log.trackIndex + 1), 0);
-            layouts.set(chamber.id, { logsWithTracks: logsWithTracksData, maxTracks });
-        });
+  const chamberLayouts = useMemo(() => {
+    const layouts = new Map<string, { logsWithTracks: (TimelineUsageLogDisplayData & { trackIndex: number })[]; maxTracks: number }>()
+    if (chambers && chambers.length > 0) {
+      chambers.forEach((chamber) => {
+        const chamberLogs = timelineItemsByChamberId.get(chamber.id) || []
+        const logsWithTracksData = assignTracksToLogs(chamberLogs)
+        const maxTracks = logsWithTracksData.reduce((maxVal, log) => Math.max(maxVal, log.trackIndex + 1), 0)
+        layouts.set(chamber.id, { logsWithTracks: logsWithTracksData, maxTracks })
+      })
     }
-    return layouts;
-  }, [chambers, timelineDisplayItems, timelineItemsByChamberId]);
-  const getChamberRowHeight = useCallback((chamberId: string): number => { /* ... (保持不变) ... */
-      const layout = chamberLayouts.get(chamberId);
-      const chamberMinRowHeightPx = getMinRowHeightPx?.(chamberId) ?? minRowHeightPx;
+    return layouts
+  }, [chambers, timelineItemsByChamberId])
+
+  const getChamberRowHeight = useCallback(
+    (chamberId: string): number => {
+      const layout = chamberLayouts.get(chamberId)
+      const chamberMinRowHeightPx = getMinRowHeightPx?.(chamberId) ?? minRowHeightPx
       if (layout && layout.maxTracks > 0) {
-          return Math.max(chamberMinRowHeightPx, layout.maxTracks * itemBarTotalHeightPx + itemBarGapPx * 2);
+        return Math.max(chamberMinRowHeightPx, layout.maxTracks * itemBarTotalHeightPx + itemBarGapPx * 2)
       }
-      return chamberMinRowHeightPx;
-  }, [chamberLayouts, getMinRowHeightPx, itemBarGapPx, itemBarTotalHeightPx, minRowHeightPx]);
-  const totalTimelineGridHeight = useMemo(() => { /* ... (保持不变) ... */
-    if (!chambers || chambers.length === 0) return minRowHeightPx * 3;
-    return chambers.reduce((sum, chamber) => sum + getChamberRowHeight(chamber.id), 0);
-  }, [chambers, getChamberRowHeight, minRowHeightPx]);
+      return chamberMinRowHeightPx
+    },
+    [chamberLayouts, getMinRowHeightPx, itemBarGapPx, itemBarTotalHeightPx, minRowHeightPx]
+  )
+
+  const totalTimelineGridHeight = useMemo(() => {
+    if (!chambers || chambers.length === 0) return minRowHeightPx * 3
+    return chambers.reduce((sum, chamber) => sum + getChamberRowHeight(chamber.id), 0)
+  }, [chambers, getChamberRowHeight, minRowHeightPx])
 
   const chamberRowTopById = useMemo(() => {
-    const map = new Map<string, number>();
-    if (!chambers || chambers.length === 0) return map;
-    let topOffset = 0;
+    const map = new Map<string, number>()
+    if (!chambers || chambers.length === 0) return map
+    let topOffset = 0
     chambers.forEach((chamber) => {
-      map.set(chamber.id, topOffset);
-      topOffset += getChamberRowHeight(chamber.id);
-    });
-    return map;
-  }, [chambers, getChamberRowHeight]);
+      map.set(chamber.id, topOffset)
+      topOffset += getChamberRowHeight(chamber.id)
+    })
+    return map
+  }, [chambers, getChamberRowHeight])
 
   useEffect(() => {
-    const container = timelineContainerRef.current;
-    const allDataLoaded = !chambersLoading && !projectsLoading && !testProjectsLoading && !usageLogsDataLoading && !holidaysLoading;
-
+    const container = timelineContainerRef.current
+    const allDataLoaded = !chambersLoading && !projectsLoading && !testProjectsLoading && !usageLogsDataLoading
     if (!container || !allDataLoaded || !(dateHeaders.length > 0) || !(totalTimelineWidth > 0) || !(container.clientWidth > 0)) {
-      return;
+      return
     }
 
-    let targetScrollPosition = 0;
+    let targetScrollPosition = 0
     const todayByShift = getTimelineBaseDate(new Date(), shiftStartMinutes)
-    const todayIndex = dateHeaders.findIndex((dh) => isEqual(dh, todayByShift));
+    const todayIndex = dateHeaders.findIndex((dh) => isEqual(dh, todayByShift))
+    const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth)
 
     if (todayIndex !== -1) {
-      const desiredTodayCellOffset = 2
-      targetScrollPosition = Math.max(0, (todayIndex - desiredTodayCellOffset) * dayWidthPx);
-      const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
-      targetScrollPosition = Math.min(targetScrollPosition, maxScroll);
+      targetScrollPosition = Math.min(Math.max(0, (todayIndex - 2) * dayWidthPx), maxScroll)
     } else {
       const visibleGridWidth = Math.max(0, container.clientWidth - CHAMBER_NAME_WIDTH_PX)
-      targetScrollPosition = Math.max(0, (totalTimelineWidth / 2) - (visibleGridWidth / 2));
-      const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth);
-      targetScrollPosition = Math.min(targetScrollPosition, maxScroll);
+      targetScrollPosition = Math.min(Math.max(0, totalTimelineWidth / 2 - visibleGridWidth / 2), maxScroll)
     }
 
     if (!initialScrollPerformedForCurrentViewRef.current) {
       if (container.scrollLeft !== targetScrollPosition) {
-        container.scrollLeft = targetScrollPosition;
+        container.scrollLeft = targetScrollPosition
       }
-      initialScrollPerformedForCurrentViewRef.current = true;
+      initialScrollPerformedForCurrentViewRef.current = true
     }
-  }, [
-    dateHeaders, 
-    totalTimelineWidth, 
-    dayWidthPx,
-    shiftStartMinutes,
-    chambersLoading, projectsLoading, testProjectsLoading, usageLogsDataLoading, holidaysLoading,
-  ]);
-  // *** SCROLL LOGIC END ***
+  }, [dateHeaders, totalTimelineWidth, dayWidthPx, shiftStartMinutes, chambersLoading, projectsLoading, testProjectsLoading, usageLogsDataLoading])
+
+  const handleOpenDeleteConfig = useCallback(
+    (anchorEl: HTMLElement, logDisplayItem: TimelineUsageLogDisplayData) => {
+      const items = logDisplayItem.configIds.map((id, idx) => ({
+        id,
+        name: logDisplayItem.configNames[idx] || id,
+      }))
+      if (items.length === 1) {
+        onDeleteUsageLog?.(logDisplayItem.originalLogId, items[0].id)
+        return
+      }
+      setConfigDeleteMenu({ anchorEl, logId: logDisplayItem.originalLogId, items })
+    },
+    [onDeleteUsageLog]
+  )
 
   const shouldBlockOnPrimaryLoading =
     (chambersLoading && chambers.length === 0) ||
     (projectsLoading && projects.length === 0) ||
     (testProjectsLoading && testProjects.length === 0) ||
-    (usageLogsDataLoading && propsUsageLogs.length === 0);
+    (usageLogsDataLoading && propsUsageLogs.length === 0)
 
-  if (shouldBlockOnPrimaryLoading || (holidaysLoading && processedHolidays.size === 0 && dateHeaders.length > 0) ) {
+  if (shouldBlockOnPrimaryLoading) {
     return (
-        <Box sx={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', p: 3}}>
-            <CircularProgress />
-            <Typography sx={{ml: 2}}>加载数据中，请稍候...</Typography>
-        </Box>
-    );
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', p: 3 }}>
+        <CircularProgress />
+        <Typography sx={{ ml: 2 }}>{tr('加载数据中，请稍候...', 'Loading data, please wait...')}</Typography>
+      </Box>
+    )
   }
-  const anyCoreDataError = chambersError || projectsError || testProjectsError;
+
+  const anyCoreDataError = chambersError || projectsError || testProjectsError
   if (anyCoreDataError) {
     return (
-        <Box sx={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', p: 3}}>
-            <Alert severity="error" sx={{width: '100%', maxWidth: '600px'}}>
-                加载核心依赖数据失败: {anyCoreDataError}
-            </Alert>
-        </Box>
-    );
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', p: 3 }}>
+        <Alert severity="error" sx={{ width: '100%', maxWidth: '600px' }}>
+          {tr('加载核心依赖数据失败:', 'Failed to load core data:')} {anyCoreDataError}
+        </Alert>
+      </Box>
+    )
   }
-  if (holidaysError && processedHolidays.size === 0 && dateHeaders.length > 0) {
-      return (
-        <Box sx={{display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 120px)', p: 3}}>
-            <Alert severity="warning" sx={{width: '100%', maxWidth: '600px'}}>
-                加载节假日数据失败: {holidaysError} (时间轴背景可能不准确)
-            </Alert>
-        </Box>
-      );
-  }
+
   const todayByShift = getTimelineBaseDate(new Date(), shiftStartMinutes)
+  const dayLabels = { weekend: tr('周末', 'Weekend'), weekday: tr('工作日', 'Workday') }
+  const visibleDays = dateHeaders.slice(visibleDayIndexRange.startIndex, visibleDayIndexRange.endIndexExclusive)
+  const visibleDayClassifications = visibleDays.map((d) => classifyDay(d, processedHolidays, dayLabels))
+  const visibleLeftPx = visibleDayIndexRange.startIndex * dayWidthPx
+  const visibleRightPx = visibleDayIndexRange.endIndexExclusive * dayWidthPx
 
   return (
     <div className={styles.timelinePageContainer} style={timelineCssVars}>
-      <div
-        ref={timelineContainerRef}
-        className={styles.timelineScrollContainer}
-        onScroll={handleTimelineScroll}
-      >
-        <div
-          className={styles.timelineHeaderRow}
-          style={{ width: `${CHAMBER_NAME_WIDTH_PX + totalTimelineWidth}px`, height: `${HEADER_HEIGHT_PX}px` }}
-        >
-          <div
-            className={styles.timelineHeaderChamberCell}
-            style={{ width: `${CHAMBER_NAME_WIDTH_PX}px`, height: `${HEADER_HEIGHT_PX}px` }}
-          >
-            环境箱
-          </div>
-          <div className={styles.timelineHeaderDates} style={{ width: `${totalTimelineWidth}px` }}>
-            {dateHeaders
-              .slice(visibleDayIndexRange.startIndex, visibleDayIndexRange.endIndexExclusive)
-              .map((dateHeaderItem, offset) => {
-              const index = visibleDayIndexRange.startIndex + offset;
-              const classification = getDayClassification(dateHeaderItem);
-              let headerClassName = styles.timelineDateHeader;
-              if (classification.type === 'publicHolidayHighWage') { headerClassName += ` ${styles.publicHolidayStrongRedHeader}`; }
-              else if (classification.type === 'publicHolidayLowWage') { headerClassName += ` ${styles.publicHolidaySoftRedHeader}`; }
-              else if (classification.type === 'weekendRest') { headerClassName += ` ${styles.weekendHeader}`; }
-              else if (classification.type === 'workdayOverride') { headerClassName += ` ${styles.workdayOnWeekendHeader}`; }
-              if (isEqual(dateHeaderItem, todayByShift)) {
-                headerClassName += ` ${styles.todayHeader}`;
-              }
-              return (
-                <div
-                  key={index}
-                  className={headerClassName}
-                  style={{ left: `${index * dayWidthPx}px`, minWidth: `${dayWidthPx}px`, width: `${dayWidthPx}px`, position: 'absolute', top: 0 }}
-                  title={classification.name || ''}
-                >
-                  <div className={styles.dateDisplay}>{formatDateHeader(dateHeaderItem)}</div>
-                  <div className={styles.shiftContainer}>
-                    <div className={styles.dayShift}>白班</div>
-                    <div className={styles.nightShift}>夜班</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      <div ref={timelineContainerRef} className={styles.timelineScrollContainer} onScroll={handleTimelineScroll}>
+        <TimelineHeader
+          totalTimelineWidth={totalTimelineWidth}
+          dayWidthPx={dayWidthPx}
+          visibleDays={visibleDays}
+          visibleStartIndex={visibleDayIndexRange.startIndex}
+          visibleDayClassifications={visibleDayClassifications}
+          todayByShift={todayByShift}
+        />
 
         <div className={styles.timelineBodyRow} style={{ width: `${CHAMBER_NAME_WIDTH_PX + totalTimelineWidth}px` }}>
           <div className={styles.timelineChamberColumn} style={{ width: `${CHAMBER_NAME_WIDTH_PX}px` }}>
-            {chambers && chambers.map((chamber) => (
+            {chambers.map((chamber) => (
               <div
                 key={chamber.id}
                 className={styles.chamberRowName}
@@ -898,68 +465,67 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                 {chamber.name}
               </div>
             ))}
-            {(!chambers || chambers.length === 0) && !chambersLoading && (
+            {chambers.length === 0 && !chambersLoading && (
               <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 1, textAlign: 'center' }}>
-                <Typography variant="caption" color="textSecondary">暂无环境箱</Typography>
+                <Typography variant="caption" color="textSecondary">
+                  {tr('暂无环境箱', 'No chambers')}
+                </Typography>
               </Box>
             )}
           </div>
 
           <div className={styles.timelineGridContent} style={{ width: `${totalTimelineWidth}px`, minHeight: `${totalTimelineGridHeight}px` }}>
-            {dateHeaders
-              .slice(visibleDayIndexRange.startIndex, visibleDayIndexRange.endIndexExclusive)
-              .map((dayCellStartTime, offset) => {
-              const dayIndex = visibleDayIndexRange.startIndex + offset;
-              const classification = getDayClassification(dayCellStartTime);
-              let dayBgClass = styles.timelineDayBackground;
+            {visibleDays.map((_dayCellStartTime, offset) => {
+              const dayIndex = visibleDayIndexRange.startIndex + offset
+              const classification = visibleDayClassifications[offset]
+              let dayBgClass = styles.timelineDayBackground
               if (classification.type === 'publicHolidayHighWage') {
-                dayBgClass += ` ${styles.publicHolidayStrongRedBackground}`;
+                dayBgClass += ` ${styles.publicHolidayStrongRedBackground}`
               } else if (classification.type === 'publicHolidayLowWage' || classification.type === 'weekendRest') {
-                dayBgClass += ` ${styles.weekendSoftRedBackground}`;
+                dayBgClass += ` ${styles.weekendSoftRedBackground}`
               } else if (classification.type === 'workdayOverride') {
-                dayBgClass += ` ${styles.workdayOnWeekendBackground}`;
+                dayBgClass += ` ${styles.workdayOnWeekendBackground}`
               }
               return (
                 <div
                   key={`day-bg-${dayIndex}`}
                   className={dayBgClass}
-                  style={{
-                    left: `${dayIndex * dayWidthPx}px`,
-                    width: `${dayWidthPx}px`,
-                    height: `${totalTimelineGridHeight}px`,
-                  }}
+                  style={{ left: `${dayIndex * dayWidthPx}px`, width: `${dayWidthPx}px`, height: `${totalTimelineGridHeight}px` }}
                   title={classification.name || ''}
                 />
-              );
+              )
             })}
 
-            {chambers && chambers.map((chamber) => {
-              const topOffset = chamberRowTopById.get(chamber.id) || 0;
+            {chambers.map((chamber) => (
+              <div
+                key={`row-bg-${chamber.id}`}
+                className={styles.timelineRowBackground}
+                style={{
+                  top: `${chamberRowTopById.get(chamber.id) || 0}px`,
+                  height: `${getChamberRowHeight(chamber.id)}px`,
+                  width: `${totalTimelineWidth}px`,
+                }}
+              />
+            ))}
+
+            {chambers.map((chamber) => {
+              const layoutInfo = chamberLayouts.get(chamber.id)
+              const logsToRender = layoutInfo ? layoutInfo.logsWithTracks : []
+              const rowTopOffset = chamberRowTopById.get(chamber.id) || 0
+              const rowHeight = getChamberRowHeight(chamber.id)
+              const totalTracks = layoutInfo ? layoutInfo.maxTracks : 0
+              const tracksHeight = totalTracks > 0 ? totalTracks * itemBarTotalHeightPx : 0
+              const baseTrackOffset = Math.max(itemBarGapPx, Math.floor((rowHeight - tracksHeight) / 2))
+
               return (
                 <div
-                  key={`row-bg-${chamber.id}`}
-                  className={styles.timelineRowBackground}
-                  style={{ top: `${topOffset}px`, height: `${getChamberRowHeight(chamber.id)}px`, width: `${totalTimelineWidth}px` }}
-                />
-              );
-            })}
-
-            {chambers && chambers.map((chamber) => {
-              const layoutInfo = chamberLayouts.get(chamber.id);
-              const logsToRender = layoutInfo ? layoutInfo.logsWithTracks : [];
-              const rowTopOffset = chamberRowTopById.get(chamber.id) || 0;
-              const visibleLeftPx = visibleDayIndexRange.startIndex * dayWidthPx;
-              const visibleRightPx = visibleDayIndexRange.endIndexExclusive * dayWidthPx;
-              const rowHeight = getChamberRowHeight(chamber.id);
-              const totalTracks = layoutInfo ? layoutInfo.maxTracks : 0;
-              const tracksHeight = totalTracks > 0 ? totalTracks * itemBarTotalHeightPx : 0;
-              const baseTrackOffset = Math.max(itemBarGapPx, Math.floor((rowHeight - tracksHeight) / 2));
-
-              return (
-                <div key={chamber.id} className={styles.timelineRow} style={{ position: 'absolute', top: `${rowTopOffset}px`, height: `${rowHeight}px`, width: `${totalTimelineWidth}px` }}>
+                  key={chamber.id}
+                  className={styles.timelineRow}
+                  style={{ position: 'absolute', top: `${rowTopOffset}px`, height: `${rowHeight}px`, width: `${totalTimelineWidth}px` }}
+                >
                   {logsToRender.map((logDisplayItem) => {
-                    const originalLog = usageLogById.get(logDisplayItem.originalLogId);
-                    if (!originalLog) return null;
+                    const originalLog = usageLogById.get(logDisplayItem.originalLogId)
+                    if (!originalLog) return null
 
                     const { left, width, display } = calculateBarPositionAndWidth(
                       originalLog,
@@ -967,143 +533,35 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                       timelineViewActualEnd,
                       logDisplayItem.effectiveStatus,
                       dayWidthPx
-                    );
+                    )
+                    if (!display || width <= 0) return null
+                    if (left + width < visibleLeftPx || left > visibleRightPx) return null
 
-                    if (!display || width <= 0) return null;
-                    if (left + width < visibleLeftPx || left > visibleRightPx) return null;
-
-                    const styling = getBarStylingByEffectiveStatus(theme, logDisplayItem.effectiveStatus);
-                    const configNames = logDisplayItem.configNames ?? [];
-                    const hasConfigs = configNames.length > 0;
-                    const isMultiConfig = configNames.length > 1;
-                    const configText = hasConfigs ? configNames.join(', ') : '';
-                    const notesText = (originalLog.notes ?? '').trim().replace(/\s+/g, ' ');
-                    const hasNotes = notesText.length > 0;
-                    const barTextParts: string[] = [];
-                    if (logDisplayItem.projectName) barTextParts.push(logDisplayItem.projectName);
-                    if (hasConfigs) barTextParts.push(configText);
-                    if (originalLog.selectedWaterfall) {
-                      barTextParts.push(`WF:${originalLog.selectedWaterfall}`);
-                    }
-                    if (logDisplayItem.testProjectName) {
-                      barTextParts.push(logDisplayItem.testProjectName);
-                    }
-                    const barText = barTextParts.length > 0 ? barTextParts.join(' - ') : (originalLog.user || '使用记录');
-                    const barSegments: Array<{ text: string; tone: 'primary' | 'secondary' }> = [];
-                    if (logDisplayItem.projectName) barSegments.push({ text: logDisplayItem.projectName, tone: 'primary' });
-                    if (originalLog.selectedWaterfall) barSegments.push({ text: `WF:${originalLog.selectedWaterfall}`, tone: 'secondary' });
-                    if (logDisplayItem.testProjectName) barSegments.push({ text: logDisplayItem.testProjectName, tone: 'secondary' });
-                    const configPills = hasConfigs ? configNames.slice(0, MAX_CONFIG_PILLS) : [];
-                    const remainingConfigCount = hasConfigs ? Math.max(0, configNames.length - configPills.length) : 0;
-                    const pillBg = alpha(styling.textColor, 0.10);
-                    const pillBorder = alpha(styling.textColor, 0.18);
-                    const pillEmptyBg = alpha(styling.textColor, 0.06);
-                    const barTopPosition = baseTrackOffset + logDisplayItem.trackIndex * itemBarTotalHeightPx;
-
+                    const barTopPosition = baseTrackOffset + logDisplayItem.trackIndex * itemBarTotalHeightPx
                     return (
-                      <Tooltip
+                      <TimelineBar
                         key={logDisplayItem.displayId}
-                        title={
-                          <React.Fragment>
-                            <Typography variant="subtitle2" gutterBottom>{barText}</Typography>
-                            <Typography variant="caption">
-                              用户: {originalLog.user}<br />
-                              开始: {format(parseISO(originalLog.startTime), 'yyyy-MM-dd HH:mm', { locale: zhCN })}<br />
-                              结束: {originalLog.endTime ? format(parseISO(originalLog.endTime), 'yyyy-MM-dd HH:mm', { locale: zhCN }) : (logDisplayItem.effectiveStatus === 'in-progress' || logDisplayItem.effectiveStatus === 'overdue' ? '进行中/已超时' : '未设定')}<br />
-                              状态: {logDisplayItem.effectiveStatus}
-                              <br />Configs: {hasConfigs ? configText : '未选配置'}
-                              {originalLog.notes && <><br />备注: {originalLog.notes.substring(0, 500)}{originalLog.notes.length > 500 && '...'}</>}
-                            </Typography>
-                          </React.Fragment>
-                        }
-                        placement="top"
-                        arrow
-                      >
-                        <div
-                          className={styles.timelineBar}
-                          style={{
-                            left: `${left}px`,
-                            width: `${width}px`,
-                            backgroundColor: styling.backgroundColor,
-                            borderColor: styling.borderColor,
-                            color: styling.textColor,
-                            height: `${itemBarHeightPx}px`,
-                            top: `${barTopPosition}px`,
-                            ['--timeline-pill-bg' as any]: pillBg,
-                            ['--timeline-pill-border' as any]: pillBorder,
-                            ['--timeline-pill-empty-bg' as any]: pillEmptyBg,
-                          }}
-                          onClick={(e) => {
-                            if ((e.target as HTMLElement).closest(`.${styles.timelineBarDeleteButton}`)) return;
-                            onViewUsageLog(logDisplayItem.originalLogId);
-                          }}
-                        >
-                          <div className={styles.timelineBarContent}>
-                            <div className={styles.timelineBarLine1}>
-                              {barSegments.length > 0
-                                ? barSegments.map((seg, idx) => (
-                                    <React.Fragment key={`${logDisplayItem.displayId}-seg-${idx}`}>
-                                      {idx > 0 ? <span className={styles.timelineBarTextSeparator}> · </span> : null}
-                                      <span className={seg.tone === 'primary' ? styles.timelineBarTextPrimary : styles.timelineBarTextSecondary}>
-                                        {seg.text}
-                                      </span>
-                                    </React.Fragment>
-                                  ))
-                                : (originalLog.user || '使用记录')}
-                            </div>
-                            <div className={styles.timelineBarLine2}>
-                              {hasConfigs ? (
-                                <React.Fragment>
-                                  {configPills.map((name, idx) => (
-                                    <span key={`${logDisplayItem.displayId}-cfg-${idx}`} className={styles.timelineConfigPill}>
-                                      {name}
-                                    </span>
-                                  ))}
-                                  {remainingConfigCount > 0 ? (
-                                    showConfigCountBadge ? (
-                                      <span className={styles.timelineConfigCountPill}>CFG×{configNames.length}</span>
-                                    ) : (
-                                      <span className={styles.timelineConfigPillMore}>+{remainingConfigCount}</span>
-                                    )
-                                  ) : null}
-                                </React.Fragment>
-                              ) : (
-                                <span className={styles.timelineConfigPillEmpty} style={{ maxWidth: `${width * 0.8}px` }}>{hasNotes ? notesText : '未选配置'}</span>
-                              )}
-                            </div>
-                          </div>
-                          {onDeleteUsageLog && logDisplayItem.configIds.length > 0 ? (
-                            <button
-                              className={styles.timelineBarDeleteButton}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const items = logDisplayItem.configIds.map((id, idx) => ({
-                                  id,
-                                  name: logDisplayItem.configNames[idx] || id,
-                                }));
-                                if (items.length === 1) {
-                                  onDeleteUsageLog(logDisplayItem.originalLogId, items[0].id);
-                                  return;
-                                }
-                                setConfigDeleteMenu({ anchorEl: e.currentTarget, logId: logDisplayItem.originalLogId, items });
-                              }}
-                              title={isMultiConfig ? '删除某个配置' : '删除此配置'}
-                            >
-                              <DeleteIconSvg />
-                            </button>
-                          ) : null}
-                        </div>
-                      </Tooltip>
-                    );
+                        logDisplayItem={logDisplayItem}
+                        originalLog={originalLog}
+                        left={left}
+                        width={width}
+                        height={itemBarHeightPx}
+                        top={barTopPosition}
+                        showConfigCountBadge={showConfigCountBadge}
+                        canDeleteConfig={Boolean(onDeleteUsageLog)}
+                        onViewUsageLog={onViewUsageLog}
+                        onDeleteConfig={handleOpenDeleteConfig}
+                      />
+                    )
                   })}
                 </div>
-              );
+              )
             })}
 
             <Menu
               open={Boolean(configDeleteMenu)}
               anchorEl={configDeleteMenu?.anchorEl ?? null}
-              onClose={closeConfigDeleteMenu}
+              onClose={() => setConfigDeleteMenu(null)}
               anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
               transformOrigin={{ vertical: 'top', horizontal: 'right' }}
             >
@@ -1111,8 +569,8 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                 <MenuItem
                   key={it.id}
                   onClick={() => {
-                    onDeleteUsageLog?.(configDeleteMenu?.logId || '', it.id);
-                    closeConfigDeleteMenu();
+                    onDeleteUsageLog?.(configDeleteMenu?.logId || '', it.id)
+                    setConfigDeleteMenu(null)
                   }}
                 >
                   {it.name}
@@ -1120,16 +578,18 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
               ))}
             </Menu>
 
-            {(!propsUsageLogs || propsUsageLogs.length === 0) && chambers && chambers.length > 0 && !shouldBlockOnPrimaryLoading && !holidaysLoading && (
+            {(!propsUsageLogs || propsUsageLogs.length === 0) && chambers.length > 0 && !shouldBlockOnPrimaryLoading && (
               <Box sx={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
-                <Typography variant="body2" color="textSecondary">当前时间范围无使用记录。</Typography>
+                <Typography variant="body2" color="textSecondary">
+                  {tr('当前时间范围无使用记录。', 'No usage logs in the current window.')}
+                </Typography>
               </Box>
             )}
           </div>
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default ScrollingTimeline;
+export default ScrollingTimeline

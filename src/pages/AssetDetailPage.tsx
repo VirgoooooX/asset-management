@@ -1,110 +1,47 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  Dialog,
-  Divider,
-  IconButton,
-  Grid,
-  LinearProgress,
-  Stack,
-  Tab,
-  Tabs,
-  TextField,
-  Typography,
-} from '@mui/material'
+import { Alert, Button, Chip, LinearProgress, Stack, Tab, Tabs } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
-import PhotoIcon from '@mui/icons-material/Photo'
-import QrCode2Icon from '@mui/icons-material/QrCode2'
 import BadgeIcon from '@mui/icons-material/Badge'
-import AttachFileIcon from '@mui/icons-material/AttachFile'
-import BuildCircleIcon from '@mui/icons-material/BuildCircle'
-import ListAltIcon from '@mui/icons-material/ListAlt'
-import CloseIcon from '@mui/icons-material/Close'
-import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
-import ChevronRightIcon from '@mui/icons-material/ChevronRight'
-import OpenInNewIcon from '@mui/icons-material/OpenInNew'
-import { alpha, useTheme } from '@mui/material/styles'
 import PageShell from '../components/PageShell'
 import TitleWithIcon from '../components/TitleWithIcon'
 import AppCard from '../components/AppCard'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ChamberForm from '../components/ChamberForm'
 import UsageLogDetails from '../components/UsageLogDetails'
+import StatusChip from '../components/StatusChip'
+import ImageLightboxDialog, { type LightboxImageState } from '../components/ImageLightboxDialog'
+import AssetInfoTab from './assetDetail/AssetInfoTab'
+import AssetPerformanceTab from './assetDetail/AssetPerformanceTab'
+import AssetRepairsTab from './assetDetail/AssetRepairsTab'
+import AssetUsageTab from './assetDetail/AssetUsageTab'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchAssetsByType, deleteAsset, updateAsset } from '../store/assetsSlice'
 import { fetchUsageLogs } from '../store/usageLogsSlice'
 import { fetchRepairTickets } from '../store/repairTicketsSlice'
 import { fetchProjects } from '../store/projectsSlice'
 import { fetchTestProjects } from '../store/testProjectsSlice'
-import { getEffectiveUsageLogStatus } from '../utils/statusHelpers'
-import type { UsageLog } from '../types'
+import type { AssetAttachment } from '../types'
 import { useI18n } from '../i18n'
-import { deleteFile, normalizeFileUrlForDisplay, uploadFile } from '../services/storageService'
+import { deleteFile } from '../services/storageService'
+import { uploadAssetAttachments, uploadAssetFiles } from '../utils/fileUpload'
 
 type Props = {
   mode: 'create' | 'view'
-}
-
-type ImagePreviewState = {
-  title: string
-  urls: string[]
-  index: number
 }
 
 type PendingRemoveState =
   | { kind: 'photo' | 'nameplate'; url: string }
   | { kind: 'attachment'; attachmentId: string; attachmentName?: string }
 
-type InfoRowProps = {
-  label: React.ReactNode
-  value: React.ReactNode
-}
-
-const InfoRow: React.FC<InfoRowProps> = ({ label, value }) => {
-  return (
-    <Box
-      sx={{
-        display: 'grid',
-        gridTemplateColumns: { xs: '1fr', sm: '160px 1fr' },
-        gap: { xs: 0.5, sm: 2 },
-        alignItems: 'baseline',
-      }}
-    >
-      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 850 }}>
-        {label}
-      </Typography>
-      <Box sx={{ minWidth: 0 }}>{value}</Box>
-    </Box>
-  )
-}
-
-const getStatusColor = (status: string): 'default' | 'success' | 'warning' | 'error' => {
-  if (status === 'available') return 'success'
-  if (status === 'in-use') return 'warning'
-  if (status === 'maintenance') return 'error'
-  return 'default'
-}
-
-const formatDateTime = (value?: string) => {
-  if (!value) return '-'
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return value
-  return d.toLocaleString()
-}
-
 const AssetDetailPage: React.FC<Props> = ({ mode }) => {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
-  const theme = useTheme()
   const { assetId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { tr, language } = useI18n()
+  const { tr } = useI18n()
 
   const role = useAppSelector((s) => s.auth.user?.role)
   const isAdmin = role === 'admin'
@@ -127,68 +64,30 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
   const [pendingRemove, setPendingRemove] = useState<PendingRemoveState | null>(null)
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null)
   const [mainTab, setMainTab] = useState<'info' | 'performance' | 'repairs' | 'usage'>('info')
-  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null)
+  const [imagePreview, setImagePreview] = useState<LightboxImageState | null>(null)
   const [photoUploading, setPhotoUploading] = useState(false)
   const [nameplateUploading, setNameplateUploading] = useState(false)
   const [attachmentsUploading, setAttachmentsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  const [capTempMin, setCapTempMin] = useState('')
-  const [capTempMax, setCapTempMax] = useState('')
-  const [capHumidityMin, setCapHumidityMin] = useState('')
-  const [capHumidityMax, setCapHumidityMax] = useState('')
-  const [capRampRate, setCapRampRate] = useState('')
-  const [capVolume, setCapVolume] = useState('')
-  const [capTempStability, setCapTempStability] = useState('')
-  const [capHumidityStability, setCapHumidityStability] = useState('')
-  const [capNotes, setCapNotes] = useState('')
-  const [capCustomParams, setCapCustomParams] = useState<Array<{ id: string; name: string; value?: string; unit?: string }>>([])
-  const [capSaving, setCapSaving] = useState(false)
-  const [capSaveError, setCapSaveError] = useState<string | null>(null)
-
   useEffect(() => {
     dispatch(fetchAssetsByType({ type: 'chamber' }))
+    if (mode === 'create') return
     dispatch(fetchUsageLogs())
     dispatch(fetchRepairTickets(undefined))
     dispatch(fetchProjects())
     dispatch(fetchTestProjects())
-  }, [dispatch])
+  }, [dispatch, mode])
 
   useEffect(() => {
-    if (mode !== 'view') return
-    if (!isAdmin) return
-    const shouldOpen = searchParams.get('edit') === '1'
-    setEditOpen(shouldOpen)
+    if (mode !== 'view' || !isAdmin) return
+    setEditOpen(searchParams.get('edit') === '1')
   }, [isAdmin, mode, searchParams])
 
   const asset = useMemo(() => {
-    if (mode === 'create') return undefined
-    if (!assetId) return undefined
+    if (mode === 'create' || !assetId) return undefined
     return assets.find((a) => a.id === assetId)
   }, [assetId, assets, mode])
-
-  useEffect(() => {
-    if (mainTab !== 'performance') return
-    if (!asset) return
-    const c = asset.capabilities || {}
-    const toStr = (v: any) => (typeof v === 'number' && Number.isFinite(v) ? String(v) : '')
-    setCapTempMin(toStr(c.tempMin))
-    setCapTempMax(toStr(c.tempMax))
-    setCapHumidityMin(toStr(c.humidityMin))
-    setCapHumidityMax(toStr(c.humidityMax))
-    setCapRampRate(toStr(c.rampRateCPerMin))
-    setCapVolume(toStr(c.volumeLiters))
-    setCapTempStability(toStr(c.tempStability))
-    setCapHumidityStability(toStr(c.humidityStability))
-    setCapNotes(typeof c.notes === 'string' ? c.notes : '')
-    const list = Array.isArray(c.customParams) ? c.customParams : []
-    setCapCustomParams(
-      list
-        .filter((p: any) => p && typeof p.name === 'string' && typeof p.id === 'string')
-        .map((p: any) => ({ id: p.id, name: p.name, value: typeof p.value === 'string' ? p.value : '', unit: typeof p.unit === 'string' ? p.unit : '' }))
-    )
-    setCapSaveError(null)
-  }, [asset, mainTab])
 
   const projectNameById = useMemo(() => {
     const map = new Map<string, string>()
@@ -222,67 +121,14 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
       })
   }, [assetId, mode, repairTickets])
 
-  useEffect(() => {
-    if (!imagePreview) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setImagePreview(null)
-      if (e.key === 'ArrowLeft') {
-        setImagePreview((prev) => {
-          if (!prev) return prev
-          const len = prev.urls.length
-          if (len <= 1) return prev
-          const nextIndex = (prev.index - 1 + len) % len
-          return { ...prev, index: nextIndex }
-        })
-      }
-      if (e.key === 'ArrowRight') {
-        setImagePreview((prev) => {
-          if (!prev) return prev
-          const len = prev.urls.length
-          if (len <= 1) return prev
-          const nextIndex = (prev.index + 1) % len
-          return { ...prev, index: nextIndex }
-        })
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [imagePreview])
-
-  const sanitizeFileName = (name: string) =>
-    name
-      .replace(/[^\w.\-() ]+/g, '_')
-      .replace(/\s+/g, '_')
-      .slice(0, 120)
-
-  const createObjectKey = (fileName: string) => {
-    const id =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    return `${id}-${sanitizeFileName(fileName)}`
-  }
-
   const handleUploadImages = async (kind: 'photo' | 'nameplate', files: File[]) => {
-    if (!assetId) return
-    if (files.length === 0) return
-    if (!isAdmin) return
-
+    if (!assetId || files.length === 0 || !isAdmin) return
     setUploadError(null)
     if (kind === 'photo') setPhotoUploading(true)
     if (kind === 'nameplate') setNameplateUploading(true)
-
     try {
-      const list = files
-      const urls = await Promise.all(
-        list.map((file) => {
-          const objectKey = createObjectKey(file.name)
-          const folder = kind === 'photo' ? 'photos' : 'nameplates'
-          const path = `assets/${assetId}/${folder}/${objectKey}`
-          return uploadFile(file, path)
-        })
-      )
-
+      const folder = kind === 'photo' ? 'photos' : 'nameplates'
+      const urls = await uploadAssetFiles(assetId, folder, files)
       const existing = kind === 'photo' ? asset?.photoUrls ?? [] : asset?.nameplateUrls ?? []
       const merged = existing.concat(urls)
       await dispatch(
@@ -300,9 +146,7 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
   }
 
   const handleDeleteImage = async (kind: 'photo' | 'nameplate', url: string) => {
-    if (!assetId) return
-    if (!isAdmin) return
-
+    if (!assetId || !isAdmin) return
     setUploadError(null)
     try {
       await deleteFile(url)
@@ -319,43 +163,12 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
     }
   }
 
-  const formatBytes = (value?: number) => {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return '-'
-    if (value < 1024) return `${value} B`
-    const kb = value / 1024
-    if (kb < 1024) return `${kb.toFixed(1)} KB`
-    const mb = kb / 1024
-    if (mb < 1024) return `${mb.toFixed(1)} MB`
-    const gb = mb / 1024
-    return `${gb.toFixed(2)} GB`
-  }
-
   const handleUploadAttachments = async (files: File[]) => {
-    if (!assetId) return
-    if (files.length === 0) return
-    if (!isAdmin) return
-
+    if (!assetId || files.length === 0 || !isAdmin) return
     setUploadError(null)
     setAttachmentsUploading(true)
     try {
-      const list = files
-      const newItems = await Promise.all(
-        list.map(async (file) => {
-          const objectKey = createObjectKey(file.name)
-          const path = `assets/${assetId}/attachments/${objectKey}`
-          const url = await uploadFile(file, path)
-          return {
-            id: objectKey,
-            name: file.name,
-            url,
-            path,
-            contentType: file.type || undefined,
-            size: typeof file.size === 'number' ? file.size : undefined,
-            uploadedAt: new Date().toISOString(),
-          }
-        })
-      )
-
+      const newItems = await uploadAssetAttachments(assetId, 'attachments', files)
       const existing = asset?.attachments ?? []
       const merged = existing.concat(newItems)
       await dispatch(updateAsset({ id: assetId, changes: { attachments: merged } })).unwrap()
@@ -367,12 +180,10 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
   }
 
   const handleDeleteAttachment = async (attachmentId: string) => {
-    if (!assetId) return
-    if (!isAdmin) return
+    if (!assetId || !isAdmin) return
     const existing = asset?.attachments ?? []
     const target = existing.find((a) => a.id === attachmentId)
     if (!target) return
-
     setUploadError(null)
     try {
       await deleteFile(target.path || target.url)
@@ -407,59 +218,10 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
     navigate('/chambers')
   }
 
-  const handleAddCustomParam = () => {
-    const id =
-      typeof crypto !== 'undefined' && 'randomUUID' in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`
-    setCapCustomParams((prev) => prev.concat([{ id, name: '', value: '', unit: '' }]))
-  }
-
-  const handleSaveCapabilities = async () => {
-    if (!assetId) return
-    if (!isAdmin) return
-    setCapSaving(true)
-    setCapSaveError(null)
-    try {
-      const toNum = (v: string) => {
-        const n = Number(v)
-        return Number.isFinite(n) ? n : undefined
-      }
-      const base = asset?.capabilities || {}
-      const next = {
-        ...base,
-        tempMin: capTempMin.trim() ? toNum(capTempMin) : undefined,
-        tempMax: capTempMax.trim() ? toNum(capTempMax) : undefined,
-        humidityMin: capHumidityMin.trim() ? toNum(capHumidityMin) : undefined,
-        humidityMax: capHumidityMax.trim() ? toNum(capHumidityMax) : undefined,
-        rampRateCPerMin: capRampRate.trim() ? toNum(capRampRate) : undefined,
-        volumeLiters: capVolume.trim() ? toNum(capVolume) : undefined,
-        tempStability: capTempStability.trim() ? toNum(capTempStability) : undefined,
-        humidityStability: capHumidityStability.trim() ? toNum(capHumidityStability) : undefined,
-        notes: capNotes.trim() || undefined,
-        customParams: capCustomParams
-          .map((p) => ({
-            id: p.id,
-            name: p.name.trim(),
-            value: p.value?.trim() || undefined,
-            unit: p.unit?.trim() || undefined,
-          }))
-          .filter((p) => p.name.length > 0),
-      }
-      await dispatch(updateAsset({ id: assetId, changes: { capabilities: next } })).unwrap()
-    } catch (e: any) {
-      setCapSaveError(e?.message || tr('保存失败', 'Save failed'))
-    } finally {
-      setCapSaving(false)
-    }
-  }
-
   const titleText =
     mode === 'create'
       ? tr('新增设备', 'New asset')
       : asset?.name ?? (assetId ? tr(`设备 ${assetId.slice(0, 8)}`, `Asset ${assetId.slice(0, 8)}`) : tr('设备详情', 'Asset details'))
-  const previewUrl = imagePreview?.urls?.[imagePreview.index]
-  const previewCount = imagePreview?.urls?.length ?? 0
 
   return (
     <PageShell
@@ -471,23 +233,11 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
           </Button>
           {mode === 'view' ? (
             <>
-              <Chip
-                size="small"
-                label={
-                  asset
-                    ? asset.status === 'available'
-                      ? tr('可用', 'Available')
-                      : asset.status === 'in-use'
-                        ? tr('使用中', 'In use')
-                        : asset.status === 'maintenance'
-                          ? tr('维护中', 'Maintenance')
-                          : asset.status
-                    : tr('加载中', 'Loading')
-                }
-                color={asset ? getStatusColor(asset.status) : 'default'}
-                variant={asset ? 'filled' : 'outlined'}
-                sx={{ fontWeight: 800 }}
-              />
+              {asset ? (
+                <StatusChip kind="asset" status={asset.status} sx={{ fontWeight: 800 }} />
+              ) : (
+                <Chip size="small" label={tr('加载中', 'Loading')} variant="outlined" sx={{ fontWeight: 800 }} />
+              )}
               {isAdmin ? (
                 <>
                   <Button
@@ -566,721 +316,38 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
       </AppCard>
 
       {mainTab === 'info' ? (
-        <Grid container spacing={2}>
-          <Grid item xs={12} lg={7}>
-            <AppCard title={tr('基础信息', 'Basic info')} contentSx={{ pl: { xs: 0, sm: 2 }, pr: { xs: 0, sm: 0.5 } }}>
-              {!asset && mode === 'view' ? (
-                <Typography color="text.secondary">{tr('暂无数据', 'No data')}</Typography>
-              ) : (
-                <Stack spacing={2.25}>
-                  <Stack spacing={1.25}>
-                    <Typography sx={{ fontWeight: 950 }}>{tr('概览', 'Overview')}</Typography>
-                    <InfoRow
-                      label={tr('位置', 'Location')}
-                      value={<Typography sx={{ fontWeight: 850 }}>{asset?.location || '-'}</Typography>}
-                    />
-                    <InfoRow
-                      label={tr('负责人', 'Owner')}
-                      value={<Typography sx={{ fontWeight: 850 }}>{asset?.owner || '-'}</Typography>}
-                    />
-                    <InfoRow
-                      label={tr('标签', 'Tags')}
-                      value={
-                        asset?.tags?.length ? (
-                          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-                            {asset.tags.map((t) => (
-                              <Chip key={t} size="small" label={t} sx={{ fontWeight: 850 }} />
-                            ))}
-                          </Stack>
-                        ) : (
-                          <Typography sx={{ fontWeight: 850 }}>-</Typography>
-                        )
-                      }
-                    />
-                  </Stack>
-
-                  <Divider />
-
-                  <Stack spacing={1.25}>
-                    <Typography sx={{ fontWeight: 950 }}>{tr('资产信息', 'Asset')}</Typography>
-                    <InfoRow
-                      label={tr('设备种类', 'Category')}
-                      value={<Typography sx={{ fontWeight: 850 }}>{asset?.category || tr('环境箱', 'Chamber')}</Typography>}
-                    />
-                    <InfoRow
-                      label={tr('厂商 / 型号', 'Manufacturer / Model')}
-                      value={<Typography sx={{ fontWeight: 850 }}>{`${asset?.manufacturer || '-'} / ${asset?.model || '-'}`}</Typography>}
-                    />
-                    <InfoRow label={tr('资产号', 'Asset code')} value={<Typography sx={{ fontWeight: 850 }}>{asset?.assetCode || '-'}</Typography>} />
-                    <InfoRow label="SN" value={<Typography sx={{ fontWeight: 850 }}>{asset?.serialNumber || '-'}</Typography>} />
-                  </Stack>
-
-                  <Divider />
-
-                  <Stack spacing={1.25}>
-                    <Typography sx={{ fontWeight: 950 }}>{tr('校验与时间', 'Maintenance & time')}</Typography>
-                    <InfoRow label={tr('校验日期', 'Calibration date')} value={<Typography sx={{ fontWeight: 850 }}>{formatDateTime(asset?.calibrationDate)}</Typography>} />
-                    <InfoRow label={tr('创建时间', 'Created')} value={<Typography sx={{ fontWeight: 850 }}>{formatDateTime(asset?.createdAt)}</Typography>} />
-                    <InfoRow label={tr('更新时间', 'Updated')} value={<Typography sx={{ fontWeight: 850 }}>{formatDateTime(asset?.updatedAt ?? asset?.createdAt)}</Typography>} />
-                  </Stack>
-
-                  <Divider />
-
-                  <Stack spacing={1.25}>
-                    <Typography sx={{ fontWeight: 950 }}>{tr('关联记录', 'Related')}</Typography>
-                    <InfoRow
-                      label={tr('最近一次使用', 'Latest usage')}
-                      value={
-                        relatedUsageLogs[0] ? (
-                          (() => {
-                            const log = relatedUsageLogs[0]
-                            const effectiveStatus = getEffectiveUsageLogStatus(log)
-                            const projectName = log.projectId ? projectNameById.get(log.projectId) : undefined
-                            const testProjectName = log.testProjectId ? testProjectNameById.get(log.testProjectId) : undefined
-                            const label =
-                              effectiveStatus === 'completed'
-                                ? tr('已完成', 'Completed')
-                                : effectiveStatus === 'in-progress'
-                                  ? tr('使用中', 'In use')
-                                  : effectiveStatus === 'overdue'
-                                    ? tr('逾期', 'Overdue')
-                                    : tr('未开始', 'Not started')
-                            const color =
-                              effectiveStatus === 'completed'
-                                ? 'success'
-                                : effectiveStatus === 'in-progress'
-                                  ? 'warning'
-                                  : effectiveStatus === 'overdue'
-                                    ? 'error'
-                                    : 'info'
-                            return (
-                              <Box
-                                sx={{
-                                  border: '1px solid',
-                                  borderColor: 'divider',
-                                  borderRadius: 2,
-                                  p: 1.25,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  gap: 1.5,
-                                  backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
-                                }}
-                              >
-                                <Box sx={{ minWidth: 0 }}>
-                                  <Typography sx={{ fontWeight: 850 }} noWrap>
-                                    {projectName ?? testProjectName ?? tr('未关联项目', 'Unlinked')}
-                                  </Typography>
-                                  <Typography variant="body2" color="text.secondary" noWrap>
-                                    {formatDateTime(log.startTime)} → {formatDateTime(log.endTime)}
-                                  </Typography>
-                                  <Typography variant="body2" color="text.secondary" noWrap>
-                                    {tr('使用人：', 'User: ')}
-                                    {log.user || '-'}
-                                  </Typography>
-                                </Box>
-                                <Chip size="small" label={label} color={color as any} />
-                              </Box>
-                            )
-                          })()
-                        ) : (
-                          <Typography sx={{ fontWeight: 850 }}>-</Typography>
-                        )
-                      }
-                    />
-                    <InfoRow
-                      label={tr('最近一条维修', 'Latest repair')}
-                      value={
-                        relatedRepairTickets[0] ? (
-                          (() => {
-                            const t = relatedRepairTickets[0]
-                            return (
-                              <Box
-                                sx={{
-                                  border: '1px solid',
-                                  borderColor: 'divider',
-                                  borderRadius: 2,
-                                  p: 1.25,
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  gap: 1.5,
-                                  backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
-                                }}
-                              >
-                                <Box sx={{ minWidth: 0 }}>
-                                  <Typography sx={{ fontWeight: 850 }} noWrap>
-                                    {t.problemDesc || tr('维修工单', 'Repair ticket')}
-                                  </Typography>
-                                  <Typography variant="body2" color="text.secondary" noWrap>
-                                    {tr('更新时间：', 'Updated: ')}
-                                    {formatDateTime(t.updatedAt ?? t.createdAt)}
-                                  </Typography>
-                                </Box>
-                                <Chip
-                                  size="small"
-                                  label={
-                                    t.status === 'quote-pending'
-                                      ? tr('未询价', 'Quote pending')
-                                      : t.status === 'repair-pending'
-                                        ? tr('待维修', 'Repair pending')
-                                        : tr('已完成', 'Completed')
-                                  }
-                                  color={t.status === 'completed' ? 'success' : t.status === 'quote-pending' ? 'warning' : 'info'}
-                                />
-                              </Box>
-                            )
-                          })()
-                        ) : (
-                          <Typography sx={{ fontWeight: 850 }}>-</Typography>
-                        )
-                      }
-                    />
-                  </Stack>
-
-                  <Divider />
-
-                  <Stack spacing={0.75}>
-                    <Typography sx={{ fontWeight: 950 }}>{tr('描述', 'Description')}</Typography>
-                    <Typography>{asset?.description || '-'}</Typography>
-                  </Stack>
-                </Stack>
-              )}
-            </AppCard>
-          </Grid>
-
-          <Grid item xs={12} lg={5}>
-            <Stack spacing={2}>
-              <AppCard
-                title={tr('成本配置', 'Cost')}
-              >
-                <Stack spacing={1.25}>
-                  <InfoRow
-                    label={tr('计费口径', 'Billing rule')}
-                    value={<Typography sx={{ fontWeight: 850 }}>{tr('按小时计费（向上取整）', 'Hourly billing (ceil)')}</Typography>}
-                  />
-                  <InfoRow
-                    label={tr('小时费率', 'Hourly rate')}
-                    value={<Typography sx={{ fontWeight: 850 }}>{tr('按设备类型统一配置', 'Configured by category')}</Typography>}
-                  />
-                  <InfoRow
-                    label={tr('设备类型', 'Category')}
-                    value={<Typography sx={{ fontWeight: 850 }}>{asset?.category || tr('未分类', 'Uncategorized')}</Typography>}
-                  />
-                </Stack>
-              </AppCard>
-
-              <AppCard
-                title={<TitleWithIcon icon={<PhotoIcon />}>{tr('设备照片', 'Photos')}</TitleWithIcon>}
-                actions={
-                  isAdmin && mode === 'view' && assetId ? (
-                    <Button component="label" size="small" variant="outlined" disabled={photoUploading}>
-                      {photoUploading ? tr('上传中…', 'Uploading…') : tr('上传', 'Upload')}
-                      <input
-                        hidden
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        onChange={(e) => {
-                          const selectedFiles = Array.from(e.currentTarget.files ?? [])
-                          e.currentTarget.value = ''
-                          handleUploadImages('photo', selectedFiles)
-                        }}
-                      />
-                    </Button>
-                  ) : null
-                }
-              >
-                {asset?.photoUrls?.length ? (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {asset.photoUrls.slice(0, 12).map((url, index) => (
-                      <Box
-                        key={url}
-                        sx={{
-                          position: 'relative',
-                          height: { xs: 88, sm: 110, md: 130 },
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 1.5,
-                          border: '1px solid',
-                          borderColor: 'divider',
-                          overflow: 'hidden',
-                          cursor: 'zoom-in',
-                        }}
-                        onClick={() =>
-                          setImagePreview({
-                            title: tr('设备照片', 'Photos'),
-                            urls: asset.photoUrls ?? [],
-                            index,
-                          })
-                        }
-                      >
-                        <Box
-                          component="img"
-                          src={normalizeFileUrlForDisplay(url)}
-                          alt={tr('设备照片', 'Asset photo')}
-                          loading="lazy"
-                          sx={{
-                            height: '100%',
-                            width: 'auto',
-                            objectFit: 'contain',
-                            display: 'block',
-                          }}
-                        />
-                        {isAdmin ? (
-                          <Button
-                            size="small"
-                            color="error"
-                            variant="contained"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setPendingRemove({ kind: 'photo', url })
-                            }}
-                            sx={{
-                              position: 'absolute',
-                              top: 6,
-                              right: 6,
-                              minWidth: 0,
-                              px: 1,
-                              py: 0.5,
-                              fontWeight: 850,
-                            }}
-                          >
-                            {tr('删', 'Del')}
-                          </Button>
-                        ) : null}
-                      </Box>
-                    ))}
-                  </Box>
-                ) : (
-                  <Box
-                    sx={{
-                      border: '1px dashed',
-                      borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.22 : 0.18),
-                      borderRadius: 2,
-                      p: 2.25,
-                      textAlign: 'center',
-                      backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.35),
-                    }}
-                  >
-                    <Typography sx={{ fontWeight: 850 }}>{tr('暂无照片', 'No photos')}</Typography>
-                  </Box>
-                )}
-              </AppCard>
-
-              <AppCard
-                title={<TitleWithIcon icon={<QrCode2Icon />}>{tr('铭牌', 'Nameplate')}</TitleWithIcon>}
-                actions={
-                  isAdmin && mode === 'view' && assetId ? (
-                    <Button component="label" size="small" variant="outlined" disabled={nameplateUploading}>
-                      {nameplateUploading ? tr('上传中…', 'Uploading…') : tr('上传', 'Upload')}
-                      <input
-                        hidden
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        onChange={(e) => {
-                          const selectedFiles = Array.from(e.currentTarget.files ?? [])
-                          e.currentTarget.value = ''
-                          handleUploadImages('nameplate', selectedFiles)
-                        }}
-                      />
-                    </Button>
-                  ) : null
-                }
-              >
-                {asset?.nameplateUrls?.length ? (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {asset.nameplateUrls.slice(0, 12).map((url, index) => (
-                      <Box
-                        key={url}
-                        sx={{
-                          position: 'relative',
-                          height: { xs: 88, sm: 110, md: 130 },
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          borderRadius: 1.5,
-                          border: '1px solid',
-                          borderColor: 'divider',
-                          overflow: 'hidden',
-                          cursor: 'zoom-in',
-                        }}
-                        onClick={() =>
-                          setImagePreview({
-                            title: tr('铭牌', 'Nameplate'),
-                            urls: asset.nameplateUrls ?? [],
-                            index,
-                          })
-                        }
-                      >
-                        <Box
-                          component="img"
-                          src={normalizeFileUrlForDisplay(url)}
-                          alt={tr('铭牌', 'Nameplate')}
-                          loading="lazy"
-                          sx={{
-                            height: '100%',
-                            width: 'auto',
-                            objectFit: 'contain',
-                            display: 'block',
-                          }}
-                        />
-                        {isAdmin ? (
-                          <Button
-                            size="small"
-                            color="error"
-                            variant="contained"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setPendingRemove({ kind: 'nameplate', url })
-                            }}
-                            sx={{
-                              position: 'absolute',
-                              top: 6,
-                              right: 6,
-                              minWidth: 0,
-                              px: 1,
-                              py: 0.5,
-                              fontWeight: 850,
-                            }}
-                          >
-                            {tr('删', 'Del')}
-                          </Button>
-                        ) : null}
-                      </Box>
-                    ))}
-                  </Box>
-                ) : (
-                  <Box
-                    sx={{
-                      border: '1px dashed',
-                      borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.22 : 0.18),
-                      borderRadius: 2,
-                      p: 2.25,
-                      textAlign: 'center',
-                      backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.35),
-                    }}
-                  >
-                    <Typography sx={{ fontWeight: 850 }}>{tr('暂无铭牌信息', 'No nameplate')}</Typography>
-                  </Box>
-                )}
-              </AppCard>
-
-              <AppCard
-                title={<TitleWithIcon icon={<AttachFileIcon />}>{tr('技术档案', 'Attachments')}</TitleWithIcon>}
-                actions={
-                  isAdmin && mode === 'view' && assetId ? (
-                    <Button component="label" size="small" variant="outlined" disabled={attachmentsUploading}>
-                      {attachmentsUploading ? tr('上传中…', 'Uploading…') : tr('上传', 'Upload')}
-                      <input
-                        hidden
-                        type="file"
-                        multiple
-                        onChange={(e) => {
-                          const selectedFiles = Array.from(e.currentTarget.files ?? [])
-                          e.currentTarget.value = ''
-                          handleUploadAttachments(selectedFiles)
-                        }}
-                      />
-                    </Button>
-                  ) : null
-                }
-              >
-                {asset?.attachments?.length ? (
-                  <Stack spacing={1}>
-                    {asset.attachments.slice(0, 8).map((a) => (
-                      <Box
-                        key={a.id}
-                        sx={{
-                          border: '1px solid',
-                          borderColor: 'divider',
-                          borderRadius: 2,
-                          p: 1.25,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 1.25,
-                          backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
-                        }}
-                      >
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography sx={{ fontWeight: 850 }} noWrap>
-                            {a.name || tr('未命名文件', 'Untitled')}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" noWrap>
-                            {formatBytes(a.size)} · {formatDateTime(a.uploadedAt)}
-                          </Typography>
-                        </Box>
-                        <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                          <Button
-                            size="small"
-                            variant="outlined"
-                            component="a"
-                            href={normalizeFileUrlForDisplay(a.url)}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {tr('下载', 'Download')}
-                          </Button>
-                          {isAdmin ? (
-                          <Button size="small" variant="outlined" color="error" onClick={() => setPendingRemove({ kind: 'attachment', attachmentId: a.id, attachmentName: a.name })}>
-                              {tr('删除', 'Delete')}
-                            </Button>
-                          ) : null}
-                        </Box>
-                      </Box>
-                    ))}
-                  </Stack>
-                ) : (
-                  <Box
-                    sx={{
-                      border: '1px dashed',
-                      borderColor: alpha(theme.palette.text.primary, theme.palette.mode === 'dark' ? 0.22 : 0.18),
-                      borderRadius: 2,
-                      p: 2.25,
-                      textAlign: 'center',
-                      backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.25 : 0.35),
-                    }}
-                  >
-                    <Typography sx={{ fontWeight: 850 }}>{tr('暂无附件', 'No attachments')}</Typography>
-                  </Box>
-                )}
-              </AppCard>
-            </Stack>
-          </Grid>
-        </Grid>
+        <AssetInfoTab
+          mode={mode}
+          asset={asset}
+          assetId={assetId}
+          isAdmin={isAdmin}
+          latestUsageLog={relatedUsageLogs[0]}
+          latestRepairTicket={relatedRepairTickets[0]}
+          projectNameById={projectNameById}
+          testProjectNameById={testProjectNameById}
+          photoUploading={photoUploading}
+          nameplateUploading={nameplateUploading}
+          attachmentsUploading={attachmentsUploading}
+          onUploadImages={handleUploadImages}
+          onRequestDeleteImage={(kind, url) => setPendingRemove({ kind, url })}
+          onPreviewImage={setImagePreview}
+          onUploadAttachments={handleUploadAttachments}
+          onRequestDeleteAttachment={(a: AssetAttachment) =>
+            setPendingRemove({ kind: 'attachment', attachmentId: a.id, attachmentName: a.name })
+          }
+        />
       ) : mainTab === 'performance' ? (
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <AppCard
-              title={tr('性能参数', 'Performance')}
-              actions={
-                isAdmin ? (
-                  <Button size="small" variant="contained" onClick={handleSaveCapabilities} disabled={capSaving || !assetId}>
-                    {tr('保存', 'Save')}
-                  </Button>
-                ) : undefined
-              }
-            >
-              {capSaveError ? <Alert severity="error" sx={{ mb: 2 }}>{capSaveError}</Alert> : null}
-              {!asset ? (
-                <Typography color="text.secondary">{tr('暂无数据', 'No data')}</Typography>
-              ) : (
-                <Stack spacing={2}>
-                  <Grid container spacing={2}>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <TextField label={tr('温度下限 (°C)', 'Temp min (°C)')} size="small" fullWidth value={capTempMin} onChange={(e) => setCapTempMin(e.target.value)} disabled={!isAdmin || capSaving} />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <TextField label={tr('温度上限 (°C)', 'Temp max (°C)')} size="small" fullWidth value={capTempMax} onChange={(e) => setCapTempMax(e.target.value)} disabled={!isAdmin || capSaving} />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <TextField label={tr('湿度下限 (%)', 'Humidity min (%)')} size="small" fullWidth value={capHumidityMin} onChange={(e) => setCapHumidityMin(e.target.value)} disabled={!isAdmin || capSaving} />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <TextField label={tr('湿度上限 (%)', 'Humidity max (%)')} size="small" fullWidth value={capHumidityMax} onChange={(e) => setCapHumidityMax(e.target.value)} disabled={!isAdmin || capSaving} />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <TextField label={tr('升降温速率 (°C/min)', 'Ramp (°C/min)')} size="small" fullWidth value={capRampRate} onChange={(e) => setCapRampRate(e.target.value)} disabled={!isAdmin || capSaving} />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <TextField label={tr('容积 (L)', 'Volume (L)')} size="small" fullWidth value={capVolume} onChange={(e) => setCapVolume(e.target.value)} disabled={!isAdmin || capSaving} />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <TextField label={tr('温度波动度 (±°C)', 'Temp stability (±°C)')} size="small" fullWidth value={capTempStability} onChange={(e) => setCapTempStability(e.target.value)} disabled={!isAdmin || capSaving} />
-                    </Grid>
-                    <Grid item xs={12} sm={6} md={3}>
-                      <TextField label={tr('湿度波动度 (±%)', 'Humidity stability (±%)')} size="small" fullWidth value={capHumidityStability} onChange={(e) => setCapHumidityStability(e.target.value)} disabled={!isAdmin || capSaving} />
-                    </Grid>
-                    <Grid item xs={12}>
-                      <TextField label={tr('备注/限制', 'Notes')} size="small" fullWidth multiline minRows={3} value={capNotes} onChange={(e) => setCapNotes(e.target.value)} disabled={!isAdmin || capSaving} />
-                    </Grid>
-                  </Grid>
-
-                  <Divider />
-
-                  <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                    <Typography sx={{ fontWeight: 900 }}>{tr('自定义参数', 'Custom params')}</Typography>
-                    {isAdmin ? (
-                      <Button size="small" variant="outlined" onClick={handleAddCustomParam} disabled={capSaving}>
-                        {tr('新增参数', 'Add')}
-                      </Button>
-                    ) : null}
-                  </Stack>
-
-                  {capCustomParams.length === 0 ? (
-                    <Typography color="text.secondary">{tr('暂无自定义参数', 'No custom params')}</Typography>
-                  ) : (
-                    <Stack spacing={1.25}>
-                      {capCustomParams.map((p) => (
-                        <Box key={p.id} sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '220px 1fr 140px 44px' }, gap: 1, alignItems: 'center' }}>
-                          <TextField label={tr('名称', 'Name')} size="small" value={p.name} onChange={(e) => setCapCustomParams((prev) => prev.map((x) => (x.id === p.id ? { ...x, name: e.target.value } : x)))} disabled={!isAdmin || capSaving} />
-                          <TextField label={tr('值', 'Value')} size="small" value={p.value ?? ''} onChange={(e) => setCapCustomParams((prev) => prev.map((x) => (x.id === p.id ? { ...x, value: e.target.value } : x)))} disabled={!isAdmin || capSaving} />
-                          <TextField label={tr('单位', 'Unit')} size="small" value={p.unit ?? ''} onChange={(e) => setCapCustomParams((prev) => prev.map((x) => (x.id === p.id ? { ...x, unit: e.target.value } : x)))} disabled={!isAdmin || capSaving} />
-                          {isAdmin ? (
-                            <IconButton size="small" color="error" onClick={() => setCapCustomParams((prev) => prev.filter((x) => x.id !== p.id))} disabled={capSaving}>
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          ) : (
-                            <span />
-                          )}
-                        </Box>
-                      ))}
-                    </Stack>
-                  )}
-                </Stack>
-              )}
-            </AppCard>
-          </Grid>
-        </Grid>
+        <AssetPerformanceTab asset={asset} assetId={assetId} isAdmin={isAdmin} />
       ) : mainTab === 'repairs' ? (
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <AppCard
-              title={<TitleWithIcon icon={<BuildCircleIcon />}>{tr('维修记录', 'Repairs')}</TitleWithIcon>}
-              actions={
-                <Button size="small" variant="outlined" onClick={() => navigate('/repairs')} sx={{ whiteSpace: 'nowrap' }}>
-                  {tr('打开维修管理', 'Open repairs')}
-                </Button>
-              }
-            >
-              {repairLoading ? (
-                <LinearProgress />
-              ) : relatedRepairTickets.length === 0 ? (
-                <Typography color="text.secondary">{tr('暂无维修记录', 'No repair tickets')}</Typography>
-              ) : (
-                <Stack spacing={1.25}>
-                  {relatedRepairTickets.slice(0, 12).map((t) => (
-                    <Box
-                      key={t.id}
-                      onClick={() => navigate(`/repairs/${encodeURIComponent(t.id)}`)}
-                      sx={{
-                        border: '1px solid',
-                        borderColor: 'divider',
-                        borderRadius: 2,
-                        p: 1.25,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: 1.5,
-                        backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
-                        cursor: 'pointer',
-                        transition: 'background-color 150ms ease, border-color 150ms ease',
-                        '&:hover': {
-                          backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.45 : 0.75),
-                          borderColor: (theme) => alpha(theme.palette.primary.main, 0.25),
-                        },
-                      }}
-                    >
-                      <Box sx={{ minWidth: 0 }}>
-                        <Typography sx={{ fontWeight: 850 }} noWrap>
-                          {t.problemDesc || tr('维修工单', 'Repair ticket')}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" noWrap>
-                          {tr('更新时间：', 'Updated: ')}
-                          {formatDateTime(t.updatedAt ?? t.createdAt)}
-                        </Typography>
-                        {canManage && (t.vendorName || t.quoteAmount !== undefined) ? (
-                          <Typography variant="body2" color="text.secondary" noWrap>
-                            {t.vendorName ? `${tr('供应商', 'Vendor')}: ${t.vendorName}` : tr('供应商: -', 'Vendor: -')}
-                            {' · '}
-                            {t.quoteAmount !== undefined ? `${tr('报价', 'Quote')}: ${t.quoteAmount}` : tr('报价: -', 'Quote: -')}
-                          </Typography>
-                        ) : null}
-                      </Box>
-                      <Chip
-                        size="small"
-                        label={
-                          t.status === 'quote-pending'
-                            ? tr('未询价', 'Quote pending')
-                            : t.status === 'repair-pending'
-                              ? tr('待维修', 'Repair pending')
-                              : tr('已完成', 'Completed')
-                        }
-                        color={t.status === 'completed' ? 'success' : t.status === 'quote-pending' ? 'warning' : 'info'}
-                      />
-                    </Box>
-                  ))}
-                </Stack>
-              )}
-            </AppCard>
-          </Grid>
-        </Grid>
+        <AssetRepairsTab loading={repairLoading} canManage={canManage} tickets={relatedRepairTickets} />
       ) : (
-        <Grid container spacing={2}>
-          <Grid item xs={12}>
-            <AppCard title={<TitleWithIcon icon={<ListAltIcon />}>{tr('使用记录', 'Usage logs')}</TitleWithIcon>}>
-              {usageLogsLoading ? (
-                <LinearProgress />
-              ) : relatedUsageLogs.length === 0 ? (
-                <Typography color="text.secondary">{tr('暂无使用记录', 'No usage logs')}</Typography>
-              ) : (
-                <Stack spacing={1.25}>
-                  {relatedUsageLogs.slice(0, 12).map((log) => {
-                    const effectiveStatus = getEffectiveUsageLogStatus(log)
-                    const projectName = log.projectId ? projectNameById.get(log.projectId) : undefined
-                    const testProjectName = log.testProjectId ? testProjectNameById.get(log.testProjectId) : undefined
-                    const label =
-                      effectiveStatus === 'completed'
-                        ? tr('已完成', 'Completed')
-                        : effectiveStatus === 'in-progress'
-                          ? tr('使用中', 'In use')
-                          : effectiveStatus === 'overdue'
-                            ? tr('逾期', 'Overdue')
-                            : tr('未开始', 'Not started')
-
-                    const color =
-                      effectiveStatus === 'completed'
-                        ? 'success'
-                        : effectiveStatus === 'in-progress'
-                          ? 'warning'
-                          : effectiveStatus === 'overdue'
-                            ? 'error'
-                            : 'info'
-
-                    return (
-                      <Box
-                        key={log.id}
-                        onClick={() => setSelectedLogId(log.id)}
-                        sx={{
-                          border: '1px solid',
-                          borderColor: 'divider',
-                          borderRadius: 2,
-                          p: 1.25,
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 1.5,
-                          '&:hover': {
-                            backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.06),
-                            borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.32 : 0.22),
-                          },
-                        }}
-                      >
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography sx={{ fontWeight: 850 }} noWrap>
-                            {projectName ?? testProjectName ?? tr('未关联项目', 'Unlinked')}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" noWrap>
-                            {formatDateTime(log.startTime)} → {formatDateTime(log.endTime)}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" noWrap>
-                            {tr('使用人：', 'User: ')}
-                            {log.user || '-'}
-                          </Typography>
-                        </Box>
-                        <Chip size="small" label={label} color={color as any} />
-                      </Box>
-                    )
-                  })}
-                </Stack>
-              )}
-            </AppCard>
-          </Grid>
-        </Grid>
+        <AssetUsageTab
+          loading={usageLogsLoading}
+          usageLogs={relatedUsageLogs}
+          projectNameById={projectNameById}
+          testProjectNameById={testProjectNameById}
+          onSelectLog={setSelectedLogId}
+        />
       )}
 
       <ChamberForm
@@ -1292,119 +359,7 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
 
       <UsageLogDetails open={Boolean(selectedLogId)} onClose={() => setSelectedLogId(null)} logId={selectedLogId} />
 
-      <Dialog
-        open={Boolean(imagePreview)}
-        onClose={() => setImagePreview(null)}
-        maxWidth={false}
-        fullScreen
-        PaperProps={{ sx: { backgroundColor: 'transparent', boxShadow: 'none', m: 0, overflow: 'hidden' } }}
-        BackdropProps={{ sx: { backgroundColor: alpha('#000', theme.palette.mode === 'dark' ? 0.78 : 0.72) } }}
-      >
-        <Box
-          sx={{
-            width: '100dvw',
-            height: '100dvh',
-            p: { xs: 1.5, sm: 2.5 },
-            boxSizing: 'border-box',
-            display: 'grid',
-            gridTemplateRows: 'auto 1fr',
-            gap: 1,
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, px: 1, color: '#fff' }}>
-            <Typography sx={{ fontWeight: 900 }} noWrap>
-              {imagePreview?.title || tr('图片预览', 'Preview')}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {previewUrl ? (
-                <IconButton
-                  component="a"
-                  href={normalizeFileUrlForDisplay(previewUrl)}
-                  target="_blank"
-                  rel="noreferrer"
-                  sx={{ color: '#fff', backgroundColor: alpha('#000', 0.22), '&:hover': { backgroundColor: alpha('#000', 0.32) } }}
-                >
-                  <OpenInNewIcon fontSize="small" />
-                </IconButton>
-              ) : null}
-              <IconButton
-                onClick={() => setImagePreview(null)}
-                sx={{ color: '#fff', backgroundColor: alpha('#000', 0.22), '&:hover': { backgroundColor: alpha('#000', 0.32) } }}
-              >
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          </Box>
-
-          <Box
-            sx={{
-              position: 'relative',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minHeight: 0,
-              overflow: 'hidden',
-            }}
-          >
-            {previewCount > 1 ? (
-              <IconButton
-                onClick={() =>
-                  setImagePreview((prev) => {
-                    if (!prev) return prev
-                    const len = prev.urls.length
-                    const nextIndex = (prev.index - 1 + len) % len
-                    return { ...prev, index: nextIndex }
-                  })
-                }
-                sx={{
-                  position: 'absolute',
-                  left: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: '#fff',
-                  backgroundColor: alpha('#000', 0.28),
-                  '&:hover': { backgroundColor: alpha('#000', 0.38) },
-                }}
-              >
-                <ChevronLeftIcon />
-              </IconButton>
-            ) : null}
-
-            {previewUrl ? (
-              <Box
-                component="img"
-                src={normalizeFileUrlForDisplay(previewUrl)}
-                alt={imagePreview?.title || tr('图片预览', 'Preview')}
-                sx={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', objectFit: 'contain', display: 'block' }}
-              />
-            ) : null}
-
-            {previewCount > 1 ? (
-              <IconButton
-                onClick={() =>
-                  setImagePreview((prev) => {
-                    if (!prev) return prev
-                    const len = prev.urls.length
-                    const nextIndex = (prev.index + 1) % len
-                    return { ...prev, index: nextIndex }
-                  })
-                }
-                sx={{
-                  position: 'absolute',
-                  right: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  color: '#fff',
-                  backgroundColor: alpha('#000', 0.28),
-                  '&:hover': { backgroundColor: alpha('#000', 0.38) },
-                }}
-              >
-                <ChevronRightIcon />
-              </IconButton>
-            ) : null}
-          </Box>
-        </Box>
-      </Dialog>
+      <ImageLightboxDialog value={imagePreview} onChange={setImagePreview} />
 
       <ConfirmDialog
         open={pendingDelete}

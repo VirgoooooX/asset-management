@@ -7,6 +7,7 @@ interface RepairTicketsState {
   tickets: RepairTicket[]
   loading: boolean
   refreshing: boolean
+  submitting: boolean
   lastFetchedAt: number | null
   error: string | null
 }
@@ -15,8 +16,18 @@ const initialState: RepairTicketsState = {
   tickets: [],
   loading: false,
   refreshing: false,
+  submitting: false,
   lastFetchedAt: null,
   error: null,
+}
+
+const upsertTicketItem = (items: RepairTicket[], ticket: RepairTicket) => {
+  const index = items.findIndex((t) => t.id === ticket.id)
+  if (index === -1) {
+    items.unshift(ticket)
+    return
+  }
+  items[index] = ticket
 }
 
 export const fetchRepairTickets = createAsyncThunk<
@@ -37,9 +48,8 @@ export const fetchRepairTickets = createAsyncThunk<
       if (filters?.force) return true
       const state = (getState() as RootState).repairTickets
       if (state.loading || state.refreshing) return false
-      if (state.tickets.length === 0) return true
-      if (!state.lastFetchedAt) return true
-      return Date.now() - state.lastFetchedAt > 60 * 1000
+      if (state.lastFetchedAt !== null && Date.now() - state.lastFetchedAt < 60 * 1000) return false
+      return true
     },
   }
 )
@@ -50,10 +60,7 @@ export const addRepairTicket = createAsyncThunk<
   { rejectValue: string }
 >('repairTickets/addRepairTicket', async (data, { rejectWithValue }) => {
   try {
-    const id = await repairTicketService.createRepairTicket(data)
-    const created = await repairTicketService.getRepairTicketById(id)
-    if (!created) throw new Error('维修工单创建成功，但未能获取到创建后的数据。')
-    return created
+    return await repairTicketService.createRepairTicket(data)
   } catch (error: any) {
     return rejectWithValue(error.message || '创建维修工单失败')
   }
@@ -68,10 +75,7 @@ export const updateRepairTicket = createAsyncThunk<
   { rejectValue: string }
 >('repairTickets/updateRepairTicket', async ({ id, changes }, { rejectWithValue }) => {
   try {
-    await repairTicketService.updateRepairTicket(id, changes)
-    const updated = await repairTicketService.getRepairTicketById(id)
-    if (!updated) throw new Error('更新维修工单后未能检索到该工单。')
-    return updated
+    return await repairTicketService.updateRepairTicket(id, changes)
   } catch (error: any) {
     return rejectWithValue(error.message || '更新维修工单失败')
   }
@@ -95,10 +99,7 @@ export const transitionRepairTicketStatus = createAsyncThunk<
   { rejectValue: string }
 >('repairTickets/transitionRepairTicketStatus', async (args, { rejectWithValue }) => {
   try {
-    await repairTicketService.transitionRepairTicketStatus(args)
-    const updated = await repairTicketService.getRepairTicketById(args.id)
-    if (!updated) throw new Error('更新维修工单后未能检索到该工单。')
-    return updated
+    return await repairTicketService.transitionRepairTicketStatus(args)
   } catch (error: any) {
     return rejectWithValue(error.message || '更新维修状态失败')
   }
@@ -109,15 +110,25 @@ const repairTicketsSlice = createSlice({
   initialState,
   reducers: {
     upsertTicket(state, action: PayloadAction<RepairTicket>) {
-      const index = state.tickets.findIndex((t) => t.id === action.payload.id)
-      if (index === -1) {
-        state.tickets.unshift(action.payload)
-        return
-      }
-      state.tickets[index] = action.payload
+      upsertTicketItem(state.tickets, action.payload)
     },
   },
   extraReducers: (builder) => {
+    const handleMutationPending = (state: RepairTicketsState) => {
+      state.submitting = true
+      state.error = null
+    }
+    const handleUpsertFulfilled = (state: RepairTicketsState, action: PayloadAction<RepairTicket>) => {
+      upsertTicketItem(state.tickets, action.payload)
+      state.submitting = false
+    }
+    const handleMutationRejected =
+      (fallback: string) =>
+      (state: RepairTicketsState, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
+        state.submitting = false
+        state.error = action.payload || action.error.message || fallback
+      }
+
     builder
       .addCase(fetchRepairTickets.pending, (state) => {
         if (state.tickets.length > 0) state.refreshing = true
@@ -138,70 +149,24 @@ const repairTicketsSlice = createSlice({
           state.error = action.payload || action.error.message || '获取维修工单失败 (未知错误)'
         }
       )
-      .addCase(addRepairTicket.pending, (state) => {
-        state.loading = true
-        state.error = null
-      })
-      .addCase(addRepairTicket.fulfilled, (state, action: PayloadAction<RepairTicket>) => {
-        state.tickets.unshift(action.payload)
-        state.loading = false
-      })
-      .addCase(
-        addRepairTicket.rejected,
-        (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
-          state.loading = false
-          state.error = action.payload || action.error.message || '创建维修工单失败 (未知错误)'
-        }
-      )
-      .addCase(updateRepairTicket.pending, (state) => {
-        state.loading = true
-        state.error = null
-      })
-      .addCase(updateRepairTicket.fulfilled, (state, action: PayloadAction<RepairTicket>) => {
-        const index = state.tickets.findIndex((t) => t.id === action.payload.id)
-        if (index !== -1) state.tickets[index] = action.payload
-        state.loading = false
-      })
-      .addCase(
-        updateRepairTicket.rejected,
-        (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
-          state.loading = false
-          state.error = action.payload || action.error.message || '更新维修工单失败 (未知错误)'
-        }
-      )
-      .addCase(transitionRepairTicketStatus.pending, (state) => {
-        state.loading = true
-        state.error = null
-      })
-      .addCase(transitionRepairTicketStatus.fulfilled, (state, action: PayloadAction<RepairTicket>) => {
-        const index = state.tickets.findIndex((t) => t.id === action.payload.id)
-        if (index !== -1) state.tickets[index] = action.payload
-        state.loading = false
-      })
-      .addCase(
-        transitionRepairTicketStatus.rejected,
-        (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
-          state.loading = false
-          state.error = action.payload || action.error.message || '更新维修状态失败 (未知错误)'
-        }
-      )
-      .addCase(deleteRepairTicket.pending, (state) => {
-        state.loading = true
-        state.error = null
-      })
+      .addCase(addRepairTicket.pending, handleMutationPending)
+      .addCase(addRepairTicket.fulfilled, handleUpsertFulfilled)
+      .addCase(addRepairTicket.rejected, handleMutationRejected('创建维修工单失败 (未知错误)'))
+      .addCase(updateRepairTicket.pending, handleMutationPending)
+      .addCase(updateRepairTicket.fulfilled, handleUpsertFulfilled)
+      .addCase(updateRepairTicket.rejected, handleMutationRejected('更新维修工单失败 (未知错误)'))
+      .addCase(transitionRepairTicketStatus.pending, handleMutationPending)
+      .addCase(transitionRepairTicketStatus.fulfilled, handleUpsertFulfilled)
+      .addCase(transitionRepairTicketStatus.rejected, handleMutationRejected('更新维修状态失败 (未知错误)'))
+      .addCase(deleteRepairTicket.pending, handleMutationPending)
       .addCase(deleteRepairTicket.fulfilled, (state, action: PayloadAction<string>) => {
         state.tickets = state.tickets.filter((t) => t.id !== action.payload)
-        state.loading = false
+        state.submitting = false
       })
-      .addCase(
-        deleteRepairTicket.rejected,
-        (state, action: PayloadAction<string | undefined, string, unknown, SerializedError>) => {
-          state.loading = false
-          state.error = action.payload || action.error.message || '删除维修工单失败 (未知错误)'
-        }
-      )
+      .addCase(deleteRepairTicket.rejected, handleMutationRejected('删除维修工单失败 (未知错误)'))
   },
 })
 
 export const { upsertTicket } = repairTicketsSlice.actions
+
 export default repairTicketsSlice.reducer

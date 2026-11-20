@@ -1,0 +1,10 @@
+create index if not exists idx_usage_logs_active_chamber on usage_logs(chamber_id, created_at) where status <> 'completed';
+create index if not exists idx_usage_logs_created_at on usage_logs(created_at);
+create index if not exists idx_usage_logs_backfill on usage_logs(start_time) where status = 'completed' and end_time is not null and cost_cents_snapshot is null;
+create index if not exists idx_repair_tickets_asset_status on repair_tickets(asset_id, status);
+create index if not exists idx_audit_logs_actor_username_at on audit_logs(actor_username, at);
+create index if not exists idx_audit_logs_entity_id_at on audit_logs(entity_id, at);
+create index if not exists idx_audit_logs_request_id_at on audit_logs(request_id, at);
+create index if not exists idx_auth_sessions_expires_at on auth_sessions(expires_at);
+create index if not exists idx_assets_type_created on assets(type, created_at);
+create index if not exists idx_users_status_created on users(status, created_at);

@@ -1,6 +1,6 @@
 import type { AnyAction } from '@reduxjs/toolkit'
 import { createListenerMiddleware } from '@reduxjs/toolkit'
-import { apiFetch } from '../services/apiClient'
+import { apiFetch, refreshAccessToken } from '../services/apiClient'
 import { fetchAssetById } from './assetsSlice'
 import { fetchRepairTickets } from './repairTicketsSlice'
 import { fetchUsageLogs } from './usageLogsSlice'
@@ -11,6 +11,8 @@ export const listenerMiddleware = createListenerMiddleware()
 
 let pending: any = null
 let eventSource: EventSource | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let reconnectAttempt = 0
 const pendingAssetRefresh = new Map<string, any>()
 let pendingRepairsRefresh: any = null
 let pendingUsageLogsRefresh: any = null
@@ -45,6 +47,11 @@ const ensureEventStream = (api: any) => {
   const state = api.getState() as any
   const authed = Boolean(state?.auth?.isAuthenticated)
   if (!authed) {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+    reconnectAttempt = 0
     if (eventSource) {
       eventSource.close()
       eventSource = null
@@ -57,7 +64,7 @@ const ensureEventStream = (api: any) => {
     pendingUsageLogsRefresh = null
     return
   }
-  if (eventSource) return
+  if (eventSource || reconnectTimer) return
 
   const es = new EventSource('/api/events', { withCredentials: true })
   eventSource = es
@@ -96,14 +103,25 @@ const ensureEventStream = (api: any) => {
     scheduleUsageLogsRefresh(api)
   })
 
-  es.addEventListener('ready', () => undefined)
+  es.addEventListener('ready', () => {
+    reconnectAttempt = 0
+  })
 
   es.onerror = () => {
+    es.close()
+    if (eventSource === es) eventSource = null
     const latest = api.getState() as any
-    if (!latest?.auth?.isAuthenticated) {
-      es.close()
-      if (eventSource === es) eventSource = null
-    }
+    if (!latest?.auth?.isAuthenticated) return
+    if (reconnectTimer) return
+    const delayMs = Math.min(30_000, 1000 * Math.pow(2, Math.min(reconnectAttempt, 4)))
+    reconnectAttempt += 1
+    reconnectTimer = setTimeout(async () => {
+      reconnectTimer = null
+      const cur = api.getState() as any
+      if (!cur?.auth?.isAuthenticated) return
+      await refreshAccessToken().catch(() => false)
+      ensureEventStream(api)
+    }, delayMs)
   }
 }
 

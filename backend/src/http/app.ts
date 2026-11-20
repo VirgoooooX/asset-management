@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
+import compression from 'compression'
 import path from 'node:path'
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -16,12 +17,25 @@ import { assetsRouter } from './routes/assets.js'
 import { projectsRouter } from './routes/projects.js'
 import { testProjectsRouter } from './routes/testProjects.js'
 import { repairTicketsRouter } from './routes/repairTickets.js'
-import { settingsRouter } from './routes/settings.js'
 import { usersMeRouter } from './routes/usersMe.js'
 import { eventsRouter } from './routes/events.js'
 import { notificationsRouter } from './routes/notifications.js'
 import { reportsRouter } from './routes/reports.js'
 import { attachRequestId } from './middlewares/requestId.js'
+import { apiNotFoundHandler, errorHandler } from './middlewares/errorHandler.js'
+
+const resolveCorsOrigin = (): string[] | false => {
+  if (config.corsOrigin) {
+    const allowed = config.corsOrigin
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    return allowed.length ? allowed : false
+  }
+  return process.env.NODE_ENV === 'production'
+    ? false
+    : ['http://localhost:3000', 'http://127.0.0.1:3000']
+}
 
 export const createApp = async () => {
   fs.mkdirSync(config.dataDir, { recursive: true })
@@ -34,13 +48,34 @@ export const createApp = async () => {
 
   const app = express()
 
+  if (config.trustProxy !== undefined) {
+    app.set('trust proxy', config.trustProxy)
+  }
+
   app.disable('x-powered-by')
   app.use(attachRequestId)
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('X-Frame-Options', 'DENY')
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+    next()
+  })
   app.use(cookieParser())
 
   app.use(
+    compression({
+      filter: (req, res) => {
+        if (req.path === '/api/events') return false
+        const accept = req.headers.accept || ''
+        if (accept.includes('text/event-stream')) return false
+        return compression.filter(req, res)
+      },
+    })
+  )
+
+  app.use(
     cors({
-      origin: config.corsOrigin ?? true,
+      origin: resolveCorsOrigin(),
       credentials: true
     })
   )
@@ -56,22 +91,38 @@ export const createApp = async () => {
   app.use('/api/projects', projectsRouter)
   app.use('/api/test-projects', testProjectsRouter)
   app.use('/api/repair-tickets', repairTicketsRouter)
-  app.use('/api/settings', settingsRouter)
   app.use('/api/users/me', usersMeRouter)
   app.use('/api/events', eventsRouter)
   app.use('/api/notifications', notificationsRouter)
   app.use('/api/reports', reportsRouter)
+  app.use('/api', apiNotFoundHandler)
 
   if (config.frontendDistDir) {
     const indexHtml = path.join(config.frontendDistDir, 'index.html')
     if (fs.existsSync(indexHtml)) {
-      app.use(express.static(config.frontendDistDir))
+      const assetsDir = path.join(config.frontendDistDir, 'assets')
+      if (fs.existsSync(assetsDir)) {
+        app.use('/assets', express.static(assetsDir, { maxAge: '1y', immutable: true }))
+      }
+      app.use(
+        express.static(config.frontendDistDir, {
+          maxAge: 0,
+          setHeaders: (res, filePath) => {
+            if (filePath.endsWith('index.html')) {
+              res.setHeader('Cache-Control', 'no-cache')
+            }
+          },
+        })
+      )
       app.get('*', (req, res, next) => {
         if (req.path.startsWith('/api/')) return next()
+        res.setHeader('Cache-Control', 'no-cache')
         res.sendFile(indexHtml)
       })
     }
   }
+
+  app.use(errorHandler)
 
   return app
 }

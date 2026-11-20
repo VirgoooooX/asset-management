@@ -34,10 +34,16 @@ export const runMigrations = (migrationsDir: string) => {
     const version = file.replace(/\.sql$/i, '')
     if (applied.has(version)) continue
     const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8')
-    db.exec(sql)
-    db.prepare('insert into schema_migrations (version, applied_at) values (?, ?)').run(
-      version,
-      new Date().toISOString()
-    )
+    const insertVersion = db.prepare('insert into schema_migrations (version, applied_at) values (?, ?)')
+    const now = new Date().toISOString()
+    if (/\bbegin\b/i.test(sql)) {
+      db.exec(sql)
+      insertVersion.run(version, now)
+    } else {
+      db.transaction(() => {
+        db.exec(sql)
+        insertVersion.run(version, now)
+      })()
+    }
   }
 }

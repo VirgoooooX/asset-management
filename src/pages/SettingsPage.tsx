@@ -27,7 +27,6 @@ import {
   DashboardGroupBy,
   DashboardRangePreset,
   DensityMode,
-  ThemeMode,
   setLanguage,
   setCalibrationDaysThreshold,
   setDashboardGroupBy,

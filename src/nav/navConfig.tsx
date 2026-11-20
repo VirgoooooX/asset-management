@@ -12,7 +12,6 @@ import FactCheckIcon from '@mui/icons-material/FactCheck'
 import AssessmentIcon from '@mui/icons-material/Assessment'
 import PersonIcon from '@mui/icons-material/Person'
 import PeopleIcon from '@mui/icons-material/People'
-import type { SvgIconProps } from '@mui/material'
 
 export type NavRole = 'admin' | 'manager' | 'user'
 

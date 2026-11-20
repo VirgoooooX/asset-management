@@ -11,7 +11,7 @@ export const buildInfo: BuildInfo = {
   version: '0.2.0',
   commit: 'ce5f94d',
   builtAt: '2026-07-17T13:25:01.866Z',
-  changelog: JSON.parse(`[
+  changelog: [
   {
     "hash": "ce5f94d",
     "date": "2026-07-17",
@@ -75,7 +75,7 @@ export const buildInfo: BuildInfo = {
   {
     "hash": "bb5b35a",
     "date": "2026-02-11",
-    "message": "Merge branch \'main\' of https://github.com/VirgoooooX/asset-management"
+    "message": "Merge branch 'main' of https://github.com/VirgoooooX/asset-management"
   },
   {
     "hash": "641cdf9",
@@ -135,7 +135,7 @@ export const buildInfo: BuildInfo = {
   {
     "hash": "1b09bad",
     "date": "2026-01-25",
-    "message": "Merge branch \'main\' of https://github.com/VirgoooooX/asset-management"
+    "message": "Merge branch 'main' of https://github.com/VirgoooooX/asset-management"
   },
   {
     "hash": "6d67dd3",
@@ -162,5 +162,5 @@ export const buildInfo: BuildInfo = {
     "date": "2026-01-24",
     "message": "chore: 更新版本至0.1.2并修复release脚本参数"
   }
-]`) as ChangelogEntry[],
+  ],
 }

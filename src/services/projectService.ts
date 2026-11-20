@@ -16,24 +16,31 @@ export const getProjectById = async (id: string): Promise<Project | null> => {
   }
 }
 
-export const createProject = async (projectData: Omit<Project, 'id' | 'createdAt'>): Promise<string> => {
-  const data = await apiFetch<{ id: string }>('/api/projects', {
+export const createProject = async (projectData: Omit<Project, 'id' | 'createdAt'>): Promise<Project> => {
+  const data = await apiFetch<{ id: string; item?: Project }>('/api/projects', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(projectData),
   })
-  return data.id
+  if (data.item) return data.item
+  const fetched = await getProjectById(data.id)
+  if (!fetched) throw new Error('项目创建成功，但未能获取到创建后的项目数据。')
+  return fetched
 }
 
 export const updateProject = async (
   id: string,
   projectUpdateData: Partial<Omit<Project, 'id' | 'createdAt'>>
-): Promise<void> => {
-  await apiFetch(`/api/projects/${encodeURIComponent(id)}`, {
+): Promise<Project> => {
+  const data = await apiFetch<{ ok: boolean; item?: Project }>(`/api/projects/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(projectUpdateData),
   })
+  if (data.item) return data.item
+  const fetched = await getProjectById(id)
+  if (!fetched) throw new Error('更新项目后未能检索到该项目。')
+  return fetched
 }
 
 export const deleteProject = async (id: string): Promise<void> => {

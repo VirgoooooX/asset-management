@@ -1,19 +1,13 @@
-export const slugifyCategory = (value: string) => {
-  const trimmed = value.trim()
-  const cleaned = trimmed
+const slugifySegment = (value: string, fallback: string) => {
+  const cleaned = value
+    .trim()
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
     .replace(/\s+/g, ' ')
     .replace(/[. ]+$/g, '')
     .slice(0, 80)
-  return cleaned || 'uncategorized'
+  return cleaned || fallback
 }
 
-export const slugifyAssetFolder = (value: string) => {
-  const trimmed = value.trim()
-  const cleaned = trimmed
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
-    .replace(/\s+/g, ' ')
-    .replace(/[. ]+$/g, '')
-    .slice(0, 80)
-  return cleaned || 'unnamed'
-}
+export const slugifyCategory = (value: string) => slugifySegment(value, 'uncategorized')
+
+export const slugifyAssetFolder = (value: string) => slugifySegment(value, 'unnamed')

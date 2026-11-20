@@ -43,11 +43,10 @@
   position: sticky;
   top: 0;
   z-index: 30;
-  background: var(--timeline-header-bg);
+  background: var(--timeline-bg);
+  background-image: var(--timeline-header-bg);
   border-bottom: 1px solid var(--timeline-border);
   box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-  backdrop-filter: blur(16px) saturate(1.35);
-  -webkit-backdrop-filter: blur(16px) saturate(1.35);
 }
 
 .timelineHeaderChamberCell {
@@ -55,15 +54,14 @@
   position: sticky;
   left: 0;
   z-index: 35;
-  background: var(--timeline-sticky-bg);
+  background: var(--timeline-bg);
+  background-image: var(--timeline-sticky-bg);
   border-right: 1px solid var(--timeline-border);
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 600;
   box-sizing: border-box;
-  backdrop-filter: blur(18px) saturate(1.35);
-  -webkit-backdrop-filter: blur(18px) saturate(1.35);
 }
 
 .timelineHeaderDates {
@@ -83,11 +81,10 @@
   position: sticky;
   left: 0;
   z-index: 25;
-  background: var(--timeline-sticky-bg);
+  background: var(--timeline-bg);
+  background-image: var(--timeline-sticky-bg);
   border-right: 1px solid var(--timeline-border);
   box-sizing: border-box;
-  backdrop-filter: blur(18px) saturate(1.35);
-  -webkit-backdrop-filter: blur(18px) saturate(1.35);
 }
 
 .chamberRowName {
@@ -135,7 +132,7 @@
   width: 100%;
   font-size: 0.75em;
   font-weight: normal;
-  color: rgba(0,0,0,0.62);
+  opacity: 0.72;
   border-top: 1px solid var(--timeline-border);
   margin-top: 4px;
   padding-top: 4px;
@@ -327,22 +324,6 @@
   opacity: 0.92;
 }
 
-.timelineBarBadge {
-  display: inline-flex;
-  align-items: center;
-  height: 16px;
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: 0.74em;
-  font-weight: 850;
-  letter-spacing: -0.1px;
-  border: 1px solid rgba(0,0,0,0.14);
-  background-color: rgba(0,0,0,0.14);
-  margin-right: 6px;
-  opacity: 0.92;
-  vertical-align: middle;
-}
-
 .timelineBarTextPrimary {
   color: currentColor;
   font-weight: 650;
@@ -366,24 +347,24 @@
   top: 50%;
   transform: translateY(-50%);
   background: rgba(0,0,0,0.0);
-  color: #555; /* Default icon color */
+  color: currentColor;
   border: none;
   border-radius: 50%;
   width: 14px;
   height: 14px;
-  font-size: 8px; /* Adjust if using font icon, for SVG this is less relevant */
-  line-height: 14px; /* Helps center icon if it's a character */
+  font-size: 8px;
+  line-height: 14px;
   text-align: center;
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease-in-out, background-color 0.15s ease-in-out;
-  z-index: 11; /* Ensure it's above the timelineBar's hover z-index */
+  z-index: 11;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding:0; /* Reset padding */
-  flex-shrink: 0; /* Prevent button from shrinking */
+  padding: 0;
+  flex-shrink: 0;
 }
 
 .timelineBar:hover .timelineBarDeleteButton,
@@ -395,31 +376,5 @@
 .timelineBarDeleteButton:hover {
   background: rgba(0,0,0,0.2);
   opacity: 1;
-}
-
-.loading, .error {
-  padding: 20px;
-  text-align: center;
-  font-size: 1.2em;
-}
-
-.error {
-  color: red;
-}
-
-.noChambersMessage, .noLogsMessage {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #888;
-    font-size: 1em;
-    padding: 20px;
-    text-align: center;
-    z-index: 1;
-}
-.noChambersMessage {
-    width: calc(var(--chamber-name-width) - 20px);
-    left: calc(var(--chamber-name-width) / 2);
 }
 

@@ -27,24 +27,31 @@ export const createRepairTicket = async (data: {
   problemDesc: string
   startedAt?: string
   expectedReturnAt?: string
-}): Promise<string> => {
-  const res = await apiFetch<{ id: string }>('/api/repair-tickets', {
+}): Promise<RepairTicket> => {
+  const res = await apiFetch<{ id: string; item?: RepairTicket }>('/api/repair-tickets', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(data),
   })
-  return res.id
+  if (res.item) return res.item
+  const fetched = await getRepairTicketById(res.id)
+  if (!fetched) throw new Error('维修工单创建成功，但未能获取到创建后的数据。')
+  return fetched
 }
 
 export const updateRepairTicket = async (
   id: string,
   changes: Partial<Pick<RepairTicket, 'problemDesc' | 'startedAt' | 'vendorName' | 'quoteAmount' | 'expectedReturnAt' | 'attachments'>>
-): Promise<void> => {
-  await apiFetch(`/api/repair-tickets/${encodeURIComponent(id)}`, {
+): Promise<RepairTicket> => {
+  const res = await apiFetch<{ ok: boolean; item?: RepairTicket }>(`/api/repair-tickets/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(changes),
   })
+  if (res.item) return res.item
+  const fetched = await getRepairTicketById(id)
+  if (!fetched) throw new Error('更新维修工单后未能检索到该工单。')
+  return fetched
 }
 
 export const transitionRepairTicketStatus = async (args: {
@@ -53,13 +60,17 @@ export const transitionRepairTicketStatus = async (args: {
   note?: string
   vendorName?: string
   quoteAmount?: number
-}): Promise<void> => {
+}): Promise<RepairTicket> => {
   const { id, ...rest } = args
-  await apiFetch(`/api/repair-tickets/${encodeURIComponent(id)}/transition`, {
+  const res = await apiFetch<{ ok: boolean; item?: RepairTicket }>(`/api/repair-tickets/${encodeURIComponent(id)}/transition`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(rest),
   })
+  if (res.item) return res.item
+  const fetched = await getRepairTicketById(id)
+  if (!fetched) throw new Error('更新维修工单后未能检索到该工单。')
+  return fetched
 }
 
 export const deleteRepairTicket = async (id: string): Promise<void> => {

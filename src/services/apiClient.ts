@@ -27,7 +27,7 @@ const refreshOnce = async () => {
   refreshPromise = (async () => {
     const res = await fetch(joinUrl('/api/auth/refresh'), {
       method: 'POST',
-      credentials: 'include'
+      credentials: 'include',
     })
     if (!res.ok) return null
     const data = (await res.json().catch(() => null)) as any
@@ -40,10 +40,16 @@ const refreshOnce = async () => {
   return refreshPromise
 }
 
-export const apiFetch = async <T>(
+export const refreshAccessToken = async (): Promise<boolean> => {
+  const data = await refreshOnce()
+  return Boolean(data?.accessToken)
+}
+
+const fetchWithAuth = async (
   path: string,
-  init?: RequestInit & { retryOnAuth?: boolean }
-): Promise<T> => {
+  init?: RequestInit & { retryOnAuth?: boolean },
+  defaultAccept = 'application/json'
+): Promise<Response> => {
   const allowRefresh = init?.retryOnAuth !== false
   const dev = Boolean(((import.meta as any).env?.DEV as any) ?? false)
   const debugFiles = dev && (path.startsWith('/api/files') || path.startsWith('/api/auth'))
@@ -52,7 +58,7 @@ export const apiFetch = async <T>(
     const headers = new Headers(init?.headers)
     const token = getAccessToken()
     if (token) headers.set('authorization', `Bearer ${token}`)
-    if (!headers.has('accept')) headers.set('accept', 'application/json')
+    if (!headers.has('accept')) headers.set('accept', defaultAccept)
     if (debugFiles) {
       console.debug('[api]', {
         method: init?.method ?? 'GET',
@@ -60,7 +66,7 @@ export const apiFetch = async <T>(
         withRefresh,
         hasAuth: Boolean(token),
         hasBody: Boolean(init?.body),
-        contentType: headers.get('content-type') || undefined
+        contentType: headers.get('content-type') || undefined,
       })
     }
     const res = await fetch(joinUrl(path), { ...init, headers, credentials: 'include' })
@@ -69,7 +75,7 @@ export const apiFetch = async <T>(
         path,
         status: res.status,
         ok: res.ok,
-        contentType: res.headers.get('content-type') || undefined
+        contentType: res.headers.get('content-type') || undefined,
       })
     }
     if (res.status === 401 && withRefresh) {
@@ -82,12 +88,28 @@ export const apiFetch = async <T>(
   }
 
   const res = await doFetch(allowRefresh)
-  if (res.ok) {
-    if (res.status === 204) return undefined as any
-    return (await res.json()) as T
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    const err = new ApiError(text || res.statusText, res.status, text)
+    err.path = path
+    throw err
   }
-  const text = await res.text().catch(() => '')
-  const err = new ApiError(text || res.statusText, res.status, text)
-  err.path = path
-  throw err
+  return res
+}
+
+export const apiFetch = async <T>(
+  path: string,
+  init?: RequestInit & { retryOnAuth?: boolean }
+): Promise<T> => {
+  const res = await fetchWithAuth(path, init, 'application/json')
+  if (res.status === 204) return undefined as any
+  return (await res.json()) as T
+}
+
+export const apiFetchBlob = async (
+  path: string,
+  init?: RequestInit & { retryOnAuth?: boolean }
+): Promise<Blob> => {
+  const res = await fetchWithAuth(path, init, '*/*')
+  return await res.blob()
 }
