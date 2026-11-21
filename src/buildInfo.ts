@@ -8,10 +8,20 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '2.1.0',
-  commit: 'e2f7c3e',
-  builtAt: '2026-11-21T04:57:49.193Z',
+  version: '2.1.1',
+  commit: '00c719d',
+  builtAt: '2026-11-21T06:06:41.514Z',
   changelog: [
+    {
+      "hash": "00c719d",
+      "date": "2026-11-21",
+      "message": "fix: restore 2.0.0 dashboard and schedule"
+    },
+    {
+      "hash": "597aa2d",
+      "date": "2026-11-21",
+      "message": "chore: release 2.1.0"
+    },
     {
       "hash": "e2f7c3e",
       "date": "2026-11-21",
@@ -151,16 +161,6 @@ export const buildInfo: BuildInfo = {
       "hash": "dc62da7",
       "date": "2026-01-29",
       "message": "chore: 更新版本号至0.1.3并修正导航标签文本"
-    },
-    {
-      "hash": "0b6dec0",
-      "date": "2026-01-26",
-      "message": "fix: 处理未来时间日志的时钟偏移并同步资产状态"
-    },
-    {
-      "hash": "b9a9dfe",
-      "date": "2026-01-26",
-      "message": "refactor(ui): 统一页面布局并改进时间轴组件"
     }
   ],
 }
