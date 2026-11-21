@@ -8,10 +8,20 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '2.1.3',
-  commit: 'ab04879',
-  builtAt: '2026-11-21T08:47:46.584Z',
+  version: '2.1.4',
+  commit: '457179b',
+  builtAt: '2026-11-21T08:57:38.778Z',
   changelog: [
+    {
+      "hash": "457179b",
+      "date": "2026-11-21",
+      "message": "fix: replace native SideNav scrollbar with overlay rail"
+    },
+    {
+      "hash": "acd3614",
+      "date": "2026-11-21",
+      "message": "chore: release 2.1.3"
+    },
     {
       "hash": "ab04879",
       "date": "2026-11-21",
@@ -151,16 +161,6 @@ export const buildInfo: BuildInfo = {
       "hash": "5d1db11",
       "date": "2026-02-11",
       "message": "docs: 添加仪表盘和时间线预览图片"
-    },
-    {
-      "hash": "7197da8",
-      "date": "2026-02-10",
-      "message": "docs: 更新 README 并增强 Docker 工作流"
-    },
-    {
-      "hash": "3e6d068",
-      "date": "2026-02-10",
-      "message": "chore: 更新项目版本至0.1.8并调整发布配置"
     }
   ],
 }
