@@ -1,5 +1,5 @@
 import React from 'react'
-import { Box, Skeleton, Stack, Typography } from '@mui/material'
+import { Box, Stack, Typography } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
 import AssessmentIcon from '@mui/icons-material/Assessment'
 import EventAvailableIcon from '@mui/icons-material/EventAvailable'
@@ -10,6 +10,8 @@ import AppCard from '../../components/AppCard'
 import { useI18n } from '../../i18n'
 import type { RangePreset } from '../../utils/dateRange'
 import type { selectDashboardKpis } from '../../store/kpiSelectors'
+
+const TOP_ROW_HEIGHT = 180
 
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`
 
@@ -76,8 +78,7 @@ const DashboardKpiRow: React.FC<DashboardKpiRowProps> = ({
       title: tr('维修追踪', 'Repairs'),
       tone: 'warning' as const,
       attention: repairStats.quotePending > 0 || repairStats.repairPending > 0,
-      loading: isRepairLoading,
-      value: String(repairStats.quotePending + repairStats.repairPending),
+      value: isRepairLoading ? '-' : String(repairStats.quotePending + repairStats.repairPending),
       unit: tr('单', ''),
       notes: [
         tr(`未询价：${isRepairLoading ? '-' : repairStats.quotePending}`, `Quote pending: ${isRepairLoading ? '-' : repairStats.quotePending}`),
@@ -88,12 +89,11 @@ const DashboardKpiRow: React.FC<DashboardKpiRowProps> = ({
     },
     {
       title: tr(
-        `校验提醒（≤${kpis.calibrationAttention.daysThreshold}天到期）`,
-        `Calibrations (≤${kpis.calibrationAttention.daysThreshold}d)`
+        `校验提醒（≤${kpis.calibrationAttention.daysThreshold}天为即将到期）`,
+        `Calibrations (due ≤${kpis.calibrationAttention.daysThreshold}d)`
       ),
       tone: 'warning' as const,
       attention: kpis.calibrationAttention.count > 0,
-      loading: isLoading,
       value: String(kpis.calibrationAttention.count),
       unit: tr('台', ''),
       notes: [
@@ -107,7 +107,6 @@ const DashboardKpiRow: React.FC<DashboardKpiRowProps> = ({
       title: tr('使用率', 'Utilization'),
       tone: 'primary' as const,
       attention: false,
-      loading: isLoading,
       value: utilizationText,
       unit: '',
       notes: [
@@ -121,7 +120,6 @@ const DashboardKpiRow: React.FC<DashboardKpiRowProps> = ({
       title: tr('超时/逾期', 'Overdue'),
       tone: 'error' as const,
       attention: kpis.overdueActiveCount > 0,
-      loading: isLoading,
       value: String(kpis.overdueActiveCount),
       unit: tr('条', ''),
       notes: [
@@ -141,10 +139,11 @@ const DashboardKpiRow: React.FC<DashboardKpiRowProps> = ({
         gridTemplateColumns: {
           xs: 'repeat(1, minmax(0, 1fr))',
           sm: 'repeat(2, minmax(0, 1fr))',
-          lg: 'repeat(3, minmax(0, 1fr))',
-          xl: 'repeat(5, minmax(0, 1fr))',
+          md: 'repeat(3, minmax(0, 1fr))',
+          lg: 'repeat(5, minmax(0, 1fr))',
         },
-        gridAutoRows: '1fr',
+        gridAutoRows: `${TOP_ROW_HEIGHT}px`,
+        gridAutoFlow: 'row',
         gap: 2,
         alignItems: 'stretch',
       }}
@@ -161,68 +160,58 @@ const DashboardKpiRow: React.FC<DashboardKpiRowProps> = ({
           }}
           contentSx={{ mt: 0, height: '100%' }}
         >
-          <Box
-            sx={{
-              height: '100%',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-              gridTemplateRows: 'repeat(2, minmax(0, 1fr))',
-              gap: 1.25,
-              minWidth: 0,
-            }}
-          >
-            {statusTiles.map((item) => (
-              <Box
-                key={item.label}
-                sx={{
-                  border: '1px solid',
-                  borderColor: alpha(item.color, 0.24),
-                  background: `linear-gradient(180deg, ${alpha(item.color, theme.palette.mode === 'dark' ? 0.14 : 0.08)} 0%, ${alpha(theme.palette.background.paper, 1)} 78%)`,
-                  borderRadius: 2,
-                  p: 1.25,
-                  display: 'grid',
-                  gridTemplateColumns: 'minmax(0, 1fr) auto',
-                  alignItems: 'center',
-                  gap: 1,
-                  minWidth: 0,
-                }}
-              >
-                {isLoading ? (
-                  <Skeleton variant="text" width={40} height={34} />
-                ) : (
-                  <Typography
-                    sx={{
-                      fontWeight: 800,
-                      fontSize: 'clamp(1.35rem, 1.8vw, 1.75rem)',
-                      lineHeight: 1,
-                      letterSpacing: -0.5,
-                    }}
-                    noWrap
-                  >
+          <Box sx={{ height: '100%', overflow: 'hidden' }}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                gridTemplateRows: 'repeat(2, auto)',
+                gap: 1.25,
+                minWidth: 0,
+                alignContent: 'start',
+              }}
+            >
+              {statusTiles.map((item) => (
+                <Box
+                  key={item.label}
+                  sx={{
+                    border: '1px solid',
+                    borderColor: alpha(item.color, 0.24),
+                    background: `linear-gradient(180deg, ${alpha(item.color, 0.10)} 0%, ${alpha(theme.palette.background.paper, 1)} 74%)`,
+                    borderRadius: 2,
+                    p: 1.5,
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    alignItems: 'center',
+                    gap: 1.25,
+                    minWidth: 0,
+                  }}
+                >
+                  <Typography sx={{ fontWeight: 950, fontSize: 40, lineHeight: 1, letterSpacing: -0.9 }} noWrap>
                     {item.value}
                   </Typography>
-                )}
-                <Stack spacing={0.35} alignItems="flex-end" justifyContent="center" sx={{ minWidth: 0 }}>
-                  <Box
-                    sx={{
-                      width: 26,
-                      height: 26,
-                      borderRadius: 1.5,
-                      display: 'grid',
-                      placeItems: 'center',
-                      backgroundColor: alpha(item.color, 0.14),
-                      color: item.color,
-                      flex: '0 0 auto',
-                    }}
-                  >
-                    {item.icon}
-                  </Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }} noWrap>
-                    {item.label}
-                  </Typography>
-                </Stack>
-              </Box>
-            ))}
+                  <Stack spacing={0.35} alignItems="flex-end" justifyContent="center" sx={{ minWidth: 0 }}>
+                    <Box
+                      sx={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 2,
+                        display: 'grid',
+                        placeItems: 'center',
+                        backgroundColor: alpha(item.color, 0.14),
+                        color: item.color,
+                        flex: '0 0 auto',
+                      }}
+                    >
+                      {item.icon}
+                    </Box>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900 }} noWrap>
+                      {item.label}
+                    </Typography>
+                  </Stack>
+                </Box>
+              ))}
+            </Box>
           </Box>
         </AppCard>
       </Box>
@@ -247,85 +236,46 @@ const DashboardKpiRow: React.FC<DashboardKpiRowProps> = ({
                 boxShadow: 'none',
                 backgroundColor: 'transparent',
               }}
-              contentSx={{ mt: 0, height: '100%' }}
+              contentSx={{ mt: 0 }}
             >
               <Box
-                role="button"
-                tabIndex={0}
                 onClick={card.onClick}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    card.onClick()
-                  }
-                }}
                 sx={{
                   height: '100%',
                   minHeight: 160,
                   border: '1px solid',
                   borderColor: alpha(accent, 0.24),
-                  background: `linear-gradient(180deg, ${alpha(accent, theme.palette.mode === 'dark' ? 0.14 : 0.09)} 0%, ${alpha(theme.palette.background.paper, 1)} 72%)`,
+                  background: `linear-gradient(180deg, ${alpha(accent, 0.12)} 0%, ${alpha(theme.palette.background.paper, 1)} 68%)`,
                   borderRadius: 2,
                   p: 2,
                   display: 'flex',
                   flexDirection: 'column',
                   cursor: 'pointer',
-                  transition: 'transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
                   '&:hover': {
                     transform: 'translateY(-2px)',
-                    borderColor: alpha(accent, 0.45),
-                    boxShadow: `0 6px 16px ${alpha(accent, 0.18)}`,
-                  },
-                  '&:focus-visible': {
-                    outline: `2px solid ${theme.palette.primary.main}`,
-                    outlineOffset: 2,
+                    boxShadow: `0 4px 12px ${alpha(accent, 0.25)}`,
                   },
                 }}
               >
-                <Typography
-                  variant="subtitle1"
-                  sx={{ fontWeight: 700, lineHeight: 1.25, mb: 1.5, fontSize: { xs: 15, sm: 16 } }}
-                  noWrap
-                >
+                <Typography variant="subtitle1" sx={{ fontWeight: 950, lineHeight: 1.15, mb: 2, fontSize: { xs: 16, sm: 17 } }} noWrap>
                   {card.title}
                 </Typography>
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(0, auto) minmax(0, 1fr)',
-                    gap: 1.25,
-                    alignItems: 'center',
-                    flex: 1,
-                  }}
-                >
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: 1.25, alignItems: 'center', flex: 1 }}>
                   <Box sx={{ minWidth: 0 }}>
-                    {card.loading ? (
-                      <Skeleton variant="text" width={68} height={48} />
-                    ) : (
-                      <Stack direction="row" spacing={0.5} alignItems="baseline" sx={{ flexWrap: 'wrap' }}>
-                        <Typography
-                          sx={{
-                            fontWeight: 800,
-                            fontSize: 'clamp(1.75rem, 2.4vw, 2.5rem)',
-                            lineHeight: 1,
-                            letterSpacing: -0.8,
-                          }}
-                          noWrap
-                        >
-                          {card.value}
-                        </Typography>
-                        {card.unit ? (
-                          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                            {card.unit}
-                          </Typography>
-                        ) : null}
-                      </Stack>
-                    )}
+                    <Stack direction="row" spacing={0.5} alignItems="baseline" sx={{ flexWrap: 'wrap' }}>
+                      <Typography sx={{ fontWeight: 950, fontSize: 56, lineHeight: 1, letterSpacing: -1.2 }} noWrap>
+                        {card.value}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 850, ml: 0.5 }}>
+                        {card.unit || ' '}
+                      </Typography>
+                    </Stack>
                   </Box>
 
-                  <Stack spacing={0.5} sx={{ minWidth: 0, alignItems: 'flex-end', textAlign: 'right' }}>
+                  <Stack spacing={0.75} sx={{ minWidth: 0, alignItems: 'flex-end', textAlign: 'right' }}>
                     {card.notes.map((t) => (
-                      <Typography key={t} variant="caption" color="text.secondary" sx={{ lineHeight: 1.35 }}>
+                      <Typography key={t} variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }} noWrap>
                         {t}
                       </Typography>
                     ))}

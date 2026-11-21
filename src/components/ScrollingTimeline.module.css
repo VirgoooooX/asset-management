@@ -90,22 +90,17 @@
 .chamberRowName {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
+  justify-content: center;
   padding: 0 10px;
-  font-size: 0.88em;
-  font-weight: 600;
+  font-size: 0.9em;
+  font-weight: 500;
   border-bottom: 1px solid var(--timeline-border);
   box-sizing: border-box;
-  text-align: left;
+  text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   /* height is dynamic via inline style from JS */
-}
-.chamberRowName:focus-visible {
-  outline: 2px solid var(--timeline-today-text);
-  outline-offset: -2px;
 }
 .chamberRowName:last-child {
   border-bottom: none;
@@ -348,17 +343,17 @@
 
 .timelineBarDeleteButton {
   position: absolute;
-  right: 4px; /* Position from right edge of .timelineBar */
+  right: 5px; /* Position from right edge of .timelineBar */
   top: 50%;
   transform: translateY(-50%);
-  background: rgba(0,0,0,0.08);
+  background: rgba(0,0,0,0.0);
   color: currentColor;
   border: none;
   border-radius: 50%;
-  width: 22px;
-  height: 22px;
-  font-size: 11px;
-  line-height: 22px;
+  width: 14px;
+  height: 14px;
+  font-size: 8px;
+  line-height: 14px;
   text-align: center;
   cursor: pointer;
   opacity: 0;
@@ -378,37 +373,8 @@
   pointer-events: auto;
 }
 
-@media (hover: none) {
-  .timelineBarDeleteButton {
-    opacity: 0.78;
-    pointer-events: auto;
-  }
-}
-
 .timelineBarDeleteButton:hover {
   background: rgba(0,0,0,0.2);
   opacity: 1;
-}
-
-.timelineNowLine {
-  position: absolute;
-  top: 0;
-  width: 2px;
-  background-color: var(--timeline-now-line, #ef4444);
-  z-index: 15;
-  pointer-events: none;
-  transform: translateX(-1px);
-}
-
-.timelineNowLine::before {
-  content: '';
-  position: absolute;
-  top: -4px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: var(--timeline-now-line, #ef4444);
 }
 

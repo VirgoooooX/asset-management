@@ -1,13 +1,11 @@
 import React from 'react'
-import { Box, Button, Chip, Divider, Skeleton, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, Button, Chip, Divider, LinearProgress, Stack, Tooltip, Typography } from '@mui/material'
 import { alpha, useTheme, type Theme } from '@mui/material/styles'
 import TimerOffIcon from '@mui/icons-material/TimerOff'
 import { differenceInDays } from 'date-fns'
 import { useNavigate } from 'react-router-dom'
 import AppCard from '../../components/AppCard'
-import EmptyState from '../../components/EmptyState'
 import { useI18n } from '../../i18n'
-import { useAppSelector } from '../../store/hooks'
 import type { Asset, RepairTicket, UsageLog } from '../../types'
 import { formatDateTime, formatDurationMs } from '../../utils/formatters'
 import { getAssetStatusMeta, getRepairStatusMeta } from '../../utils/statusMeta'
@@ -30,13 +28,19 @@ export interface AssetStatusGridProps {
   isLoading: boolean
 }
 
-const buildStatusCardSx = (theme: Theme, accent: string, opts: { isOverdue: boolean }) => {
-  const isDark = theme.palette.mode === 'dark'
-  const effectiveAccent = opts.isOverdue ? theme.palette.error.main : accent
+const buildGlassCardSx = (theme: Theme, accent: string, opts: { isOverdue: boolean }) => {
+  const baseBgTop = alpha(accent, theme.palette.mode === 'dark' ? 0.16 : 0.10)
+  const baseBgBottom = alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.44 : 0.92)
+  const border = alpha(accent, theme.palette.mode === 'dark' ? 0.32 : 0.20)
+  const shadow = alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.50 : 0.12)
+
+  const overdueAccent = theme.palette.error.main
+  const overdueBorder = alpha(overdueAccent, theme.palette.mode === 'dark' ? 0.46 : 0.32)
+  const overdueGlow = alpha(overdueAccent, theme.palette.mode === 'dark' ? 0.22 : 0.14)
 
   return {
     borderRadius: 2,
-    p: 1.25,
+    p: 1.1,
     cursor: 'pointer',
     height: 92,
     display: 'flex',
@@ -45,36 +49,40 @@ const buildStatusCardSx = (theme: Theme, accent: string, opts: { isOverdue: bool
     position: 'relative',
     overflow: 'hidden',
     border: '1px solid',
-    borderColor: alpha(effectiveAccent, isDark ? 0.30 : 0.22),
-    borderLeftWidth: 4,
-    borderLeftColor: effectiveAccent,
-    backgroundColor: alpha(effectiveAccent, isDark ? 0.10 : 0.045),
-    transition: 'transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, background-color 140ms ease',
+    borderColor: opts.isOverdue ? overdueBorder : border,
+    background: `linear-gradient(180deg, ${baseBgTop}, ${baseBgBottom})`,
+    boxShadow: `0 18px 36px ${shadow}`,
+    '&::before': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+      background: `radial-gradient(circle at 18% 22%, ${alpha(accent, 0.34)}, transparent 58%), radial-gradient(circle at 78% 88%, ${alpha(accent, 0.18)}, transparent 62%)`,
+      opacity: theme.palette.mode === 'dark' ? 0.72 : 0.55,
+      pointerEvents: 'none',
+    },
+    '&::after': {
+      content: '""',
+      position: 'absolute',
+      inset: 0,
+      background: opts.isOverdue
+        ? `radial-gradient(circle at 78% 18%, ${alpha(overdueAccent, 0.34)}, transparent 58%), linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.02) 42%, rgba(255,255,255,0.08))`
+        : 'linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.02) 42%, rgba(255,255,255,0.08))',
+      opacity: theme.palette.mode === 'dark' ? 0.22 : 0.18,
+      pointerEvents: 'none',
+    },
+    ...(opts.isOverdue
+      ? {
+          outline: `1px solid ${alpha(overdueAccent, 0.22)}`,
+          boxShadow: `0 20px 42px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.56 : 0.16)}, 0 10px 30px ${overdueGlow}`,
+        }
+      : null),
     '&:hover': {
       transform: 'translateY(-1px)',
-      backgroundColor: alpha(effectiveAccent, isDark ? 0.14 : 0.075),
-      borderColor: alpha(effectiveAccent, isDark ? 0.48 : 0.40),
-      borderLeftColor: effectiveAccent,
-      boxShadow: `0 4px 12px ${alpha(theme.palette.common.black, isDark ? 0.32 : 0.08)}`,
+      boxShadow: `0 20px 42px ${alpha(theme.palette.common.black, theme.palette.mode === 'dark' ? 0.54 : 0.14)}`,
     },
-    '&:focus-visible': {
-      outline: `2px solid ${theme.palette.primary.main}`,
-      outlineOffset: 2,
-    },
+    transition: 'transform 140ms ease, box-shadow 140ms ease',
   } as const
 }
-
-const GRID_COLUMNS_SX = {
-  display: 'grid',
-  gridTemplateColumns: {
-    xs: 'repeat(2, minmax(0, 1fr))',
-    sm: 'repeat(3, minmax(0, 1fr))',
-    md: 'repeat(4, minmax(0, 1fr))',
-    lg: 'repeat(6, minmax(0, 1fr))',
-    xl: 'repeat(8, minmax(0, 1fr))',
-  },
-  gap: 1.25,
-} as const
 
 const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
   assetsByCategory,
@@ -87,8 +95,6 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
   const navigate = useNavigate()
   const theme = useTheme()
   const { tr } = useI18n()
-  const role = useAppSelector((s) => s.auth.user?.role)
-  const canManage = role === 'admin' || role === 'manager'
 
   const nowForCardMs = Date.now()
   const nowDate = new Date(nowForCardMs)
@@ -98,11 +104,9 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
       title={tr('设备状态总览', 'Asset status')}
       actions={
         <Stack direction="row" spacing={1}>
-          {canManage ? (
-            <Button size="small" variant="outlined" onClick={() => navigate('/chambers')} sx={{ whiteSpace: 'nowrap' }}>
-              {tr('设备列表', 'Assets')}
-            </Button>
-          ) : null}
+          <Button size="small" variant="outlined" onClick={() => navigate('/chambers')} sx={{ whiteSpace: 'nowrap' }}>
+            {tr('设备列表', 'Assets')}
+          </Button>
           <Button size="small" variant="outlined" onClick={() => navigate('/timeline')} sx={{ whiteSpace: 'nowrap' }}>
             {tr('设备排程', 'Occupancy Schedule')}
           </Button>
@@ -112,26 +116,12 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
       contentSx={{ mx: -2.5, mb: -2.5 }}
     >
       {isLoading && assetsByCategory.length === 0 ? (
-        <Box sx={{ px: 2.5, pb: 2.5 }}>
-          <Box sx={GRID_COLUMNS_SX}>
-            {Array.from({ length: 12 }).map((_, idx) => (
-              <Skeleton key={`asset-skeleton-${idx}`} variant="rounded" height={92} sx={{ borderRadius: 2 }} />
-            ))}
-          </Box>
+        <Box sx={{ p: 2.5 }}>
+          <LinearProgress />
         </Box>
       ) : assetsByCategory.length === 0 ? (
-        <Box sx={{ px: 2.5, pb: 2.5 }}>
-          <EmptyState
-            title={tr('暂无设备', 'No assets')}
-            description={tr('当前还没有登记任何设备资产。', 'No assets have been registered yet.')}
-            action={
-              canManage ? (
-                <Button size="small" variant="contained" onClick={() => navigate('/assets/new')}>
-                  {tr('新增设备', 'Add asset')}
-                </Button>
-              ) : undefined
-            }
-          />
+        <Box sx={{ p: 2.5 }}>
+          <Typography color="text.secondary">{tr('暂无设备', 'No assets')}</Typography>
         </Box>
       ) : (
         <Box sx={{ px: 2.5, pb: 2.5 }}>
@@ -150,8 +140,8 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
               return (
                 <Box key={category}>
                   <Stack direction="row" spacing={1.25} alignItems="center" flexWrap="wrap" sx={{ mb: 1 }}>
-                    <Typography sx={{ fontWeight: 700 }}>{category}</Typography>
-                    <Chip size="small" label={tr(`共 ${list.length}`, `Total ${list.length}`)} variant="outlined" />
+                    <Typography sx={{ fontWeight: 950 }}>{category}</Typography>
+                    <Chip size="small" label={tr(`共 ${list.length}`, `Total ${list.length}`)} variant="outlined" sx={{ fontWeight: 800 }} />
                     <Box sx={{ flex: 1 }} />
                     <Stack direction="row" spacing={0.75} alignItems="center" flexWrap="wrap">
                       <Chip size="small" label={tr(`可用 ${statusCounts.available}`, `Available ${statusCounts.available}`)} color="success" variant="outlined" />
@@ -159,7 +149,19 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
                       <Chip size="small" label={tr(`维护 ${statusCounts.maintenance}`, `Maintenance ${statusCounts.maintenance}`)} color="error" variant="outlined" />
                     </Stack>
                   </Stack>
-                  <Box sx={GRID_COLUMNS_SX}>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: {
+                        xs: 'repeat(2, minmax(0, 1fr))',
+                        sm: 'repeat(3, minmax(0, 1fr))',
+                        md: 'repeat(4, minmax(0, 1fr))',
+                        lg: 'repeat(6, minmax(0, 1fr))',
+                        xl: 'repeat(8, minmax(0, 1fr))',
+                      },
+                      gap: 1.25,
+                    }}
+                  >
                     {list.map((asset) => {
                       const color =
                         asset.status === 'available'
@@ -186,7 +188,7 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
 
                       const tooltip = occupancy ? (
                         <Box sx={{ p: 0.25 }}>
-                          <Typography sx={{ fontWeight: 700 }}>{asset.name}</Typography>
+                          <Typography sx={{ fontWeight: 900 }}>{asset.name}</Typography>
                           <Typography variant="body2" sx={{ mt: 0.5 }}>
                             {tr('项目', 'Project')}: {projectName ?? testProjectName ?? '-'}
                           </Typography>
@@ -201,23 +203,13 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
                         </Box>
                       ) : null
 
-                      const openAsset = () => navigate(`/assets/${asset.id}`)
-
                       const card = (
                         <Box
-                          role="button"
-                          tabIndex={0}
-                          onClick={openAsset}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                              e.preventDefault()
-                              openAsset()
-                            }
-                          }}
-                          sx={buildStatusCardSx(theme, color, { isOverdue })}
+                          onClick={() => navigate(`/assets/${asset.id}`)}
+                          sx={buildGlassCardSx(theme, color, { isOverdue })}
                         >
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography sx={{ fontWeight: 700, minWidth: 0 }} noWrap>
+                          <Stack direction="row" spacing={1} alignItems="center" sx={{ position: 'relative', zIndex: 1 }}>
+                            <Typography sx={{ fontWeight: 950, minWidth: 0 }} noWrap>
                               {asset.name}
                             </Typography>
                             <Box sx={{ flex: 1 }} />
@@ -227,16 +219,16 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
                               variant="outlined"
                               sx={{
                                 height: 22,
-                                fontWeight: 600,
+                                fontWeight: 900,
                                 borderColor: alpha(color, 0.38),
-                                backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.28 : 0.55),
+                                backgroundColor: alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.22 : 0.30),
                                 '& .MuiChip-label': { px: 0.75 },
                               }}
                             />
                           </Stack>
 
                           {occupancy && asset.status === 'in-use' ? (
-                            <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                            <Typography variant="body2" sx={{ fontWeight: 900, position: 'relative', zIndex: 1 }} noWrap>
                               {occupancy.log.user}
                             </Typography>
                           ) : (
@@ -244,19 +236,24 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
                               variant="body2"
                               color="text.primary"
                               noWrap
-                              sx={{ fontWeight: 600, visibility: 'hidden' }}
+                              sx={{
+                                fontWeight: 900,
+                                visibility: 'hidden',
+                                position: 'relative',
+                                zIndex: 1,
+                              }}
                             >
                               -
                             </Typography>
                           )}
 
-                          <Stack direction="row" spacing={1} alignItems="center">
+                          <Stack direction="row" spacing={1} alignItems="center" sx={{ position: 'relative', zIndex: 1 }}>
                             <Typography
                               variant="caption"
                               color={isOverdue ? 'error.main' : 'text.secondary'}
                               noWrap
                               sx={{
-                                fontWeight: isOverdue ? 700 : 500,
+                                fontWeight: isOverdue ? 900 : 600,
                                 minWidth: 0,
                               }}
                             >
@@ -276,8 +273,8 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
                                 variant="outlined"
                                 sx={{
                                   height: 22,
-                                  fontWeight: 600,
-                                  borderColor: alpha(theme.palette.error.main, 0.34),
+                                  fontWeight: 900,
+                                  borderColor: alpha(theme.palette.error.main, 0.30),
                                   backgroundColor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.14 : 0.08),
                                   '& .MuiChip-label': { px: 0.75 },
                                 }}
@@ -290,9 +287,9 @@ const AssetStatusGrid: React.FC<AssetStatusGridProps> = ({
                                 variant="outlined"
                                 sx={{
                                   height: 22,
-                                  fontWeight: 700,
-                                  borderColor: alpha(theme.palette.error.main, 0.42),
-                                  backgroundColor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.14 : 0.08),
+                                  fontWeight: 950,
+                                  borderColor: alpha(theme.palette.error.main, 0.38),
+                                  backgroundColor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
                                   '& .MuiChip-label': { px: 0.75 },
                                 }}
                               />
