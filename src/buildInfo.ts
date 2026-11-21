@@ -8,10 +8,20 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '2.1.2',
-  commit: '1b1341a',
-  builtAt: '2026-11-21T08:22:52.153Z',
+  version: '2.1.3',
+  commit: 'ab04879',
+  builtAt: '2026-11-21T08:47:46.584Z',
   changelog: [
+    {
+      "hash": "ab04879",
+      "date": "2026-11-21",
+      "message": "feat: prevent chamber schedule overlap and redesign timeline header & sidebar"
+    },
+    {
+      "hash": "efad1f0",
+      "date": "2026-11-21",
+      "message": "chore: release 2.1.2"
+    },
     {
       "hash": "1b1341a",
       "date": "2026-11-21",
@@ -151,16 +161,6 @@ export const buildInfo: BuildInfo = {
       "hash": "3e6d068",
       "date": "2026-02-10",
       "message": "chore: 更新项目版本至0.1.8并调整发布配置"
-    },
-    {
-      "hash": "8208e72",
-      "date": "2026-02-10",
-      "message": "chore: 重构发布脚本并添加Docker CI工作流"
-    },
-    {
-      "hash": "9b59880",
-      "date": "2026-02-10",
-      "message": "feat: 扩展设备能力参数并优化仪表板分组功能"
     }
   ],
 }
