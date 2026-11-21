@@ -8,10 +8,20 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '2.1.5',
-  commit: '28388c4',
-  builtAt: '2026-11-21T10:14:55.498Z',
+  version: '2.1.6',
+  commit: '046b91f',
+  builtAt: '2026-11-21T10:43:02.518Z',
   changelog: [
+    {
+      "hash": "046b91f",
+      "date": "2026-11-21",
+      "message": "feat: redesign dashboard KPI row with Bento cards, segmented bar, and donut gauge"
+    },
+    {
+      "hash": "009b238",
+      "date": "2026-11-21",
+      "message": "chore: release 2.1.5"
+    },
     {
       "hash": "28388c4",
       "date": "2026-11-21",
@@ -151,16 +161,6 @@ export const buildInfo: BuildInfo = {
       "hash": "1c7a46b",
       "date": "2026-02-12",
       "message": "feat: 实现报表、通知与审计功能并升级至版本0.1.9"
-    },
-    {
-      "hash": "bb5b35a",
-      "date": "2026-02-11",
-      "message": "Merge branch 'main' of https://github.com/VirgoooooX/asset-management"
-    },
-    {
-      "hash": "641cdf9",
-      "date": "2026-02-11",
-      "message": "docs: 将截图占位符替换为实际的Markdown图片链接"
     }
   ],
 }
