@@ -4,38 +4,96 @@
   display: flex;
   flex-direction: column;
   height: 100%; /* Ensure it takes full height from parent */
+  min-width: 0;
+  min-height: 0;
+  position: relative;
   overflow: hidden; /* Prevent double scrollbars on the page itself */
   background-color: var(--timeline-bg);
 }
 
 .timelineScrollContainer {
   flex-grow: 1;
+  min-width: 0;
+  min-height: 0;
   overflow: auto;
   position: relative;
   background-color: var(--timeline-bg);
-  scrollbar-gutter: stable both-edges;
-  scrollbar-width: auto;
-  scrollbar-color: var(--timeline-scrollbar-thumb) var(--timeline-scrollbar-track);
+  scrollbar-width: none;
+}
+
+.timelineScrollContainer:focus-visible {
+  outline: 2px solid var(--timeline-today-text);
+  outline-offset: -2px;
 }
 
 .timelineScrollContainer::-webkit-scrollbar {
-  height: 12px;
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.timelineScrollRail {
+  position: absolute;
+  z-index: 40;
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  transition: opacity 160ms ease;
+}
+
+.railsVisible .timelineScrollRail {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.railAxisHidden {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.timelineScrollRailY {
+  top: 4px;
+  right: 2px;
+  bottom: 4px;
   width: 12px;
 }
 
-.timelineScrollContainer::-webkit-scrollbar-track {
-  background-color: var(--timeline-scrollbar-track);
+.timelineScrollRailX {
+  left: 4px;
+  right: 4px;
+  bottom: 2px;
+  height: 12px;
 }
 
-.timelineScrollContainer::-webkit-scrollbar-thumb {
-  background-color: var(--timeline-scrollbar-thumb);
+.railsBoth .timelineScrollRailY {
+  bottom: 16px;
+}
+
+.railsBoth .timelineScrollRailX {
+  right: 16px;
+}
+
+.timelineScrollThumb {
+  position: absolute;
   border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: padding-box;
+  background: var(--timeline-scrollbar-thumb);
+  touch-action: none;
+  user-select: none;
 }
 
-.timelineScrollContainer::-webkit-scrollbar-thumb:hover {
-  background-color: var(--timeline-scrollbar-thumb-hover);
+.timelineScrollRailY .timelineScrollThumb {
+  left: 3px;
+  width: 6px;
+}
+
+.timelineScrollRailX .timelineScrollThumb {
+  top: 3px;
+  height: 6px;
+}
+
+.timelineScrollThumb:hover,
+.railsDragging .timelineScrollThumb {
+  background: var(--timeline-scrollbar-thumb-hover);
 }
 
 .timelineHeaderRow {

@@ -54,6 +54,298 @@ const buildTimelineCssVars = (theme: Theme) => {
   return vars as unknown as React.CSSProperties
 }
 
+const MIN_THUMB_PX = 28
+const RAIL_HIDE_MS = 800
+
+type AxisMetrics = {
+  length: number
+  offset: number
+  range: number
+  movable: number
+}
+
+function measureAxis(content: number, viewport: number, scroll: number, track: number): AxisMetrics | null {
+  const range = Math.max(0, content - viewport)
+  if (range <= 1 || track <= 0) return null
+  const length = Math.min(track, Math.max(MIN_THUMB_PX, (track * viewport) / content))
+  const movable = Math.max(0, track - length)
+  const offset = movable * Math.min(1, Math.max(0, scroll / range))
+  return { length, offset, range, movable }
+}
+
+function wheelPixels(delta: number, mode: number, page: number) {
+  if (mode === 1) return delta * 16
+  if (mode === 2) return delta * page
+  return delta
+}
+
+const TimelineOverlayRails: React.FC<{
+  viewportRef: React.RefObject<HTMLDivElement>
+}> = ({ viewportRef }) => {
+  const yRailRef = useRef<HTMLDivElement>(null)
+  const xRailRef = useRef<HTMLDivElement>(null)
+  const yThumbRef = useRef<HTMLDivElement>(null)
+  const xThumbRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const viewport = viewportRef.current
+    const shell = viewport?.parentElement
+    const yRail = yRailRef.current
+    const xRail = xRailRef.current
+    const yThumb = yThumbRef.current
+    const xThumb = xThumbRef.current
+    if (!viewport || !shell || !yRail || !xRail || !yThumb || !xThumb) return
+
+    const metrics: { x: AxisMetrics | null; y: AxisMetrics | null } = { x: null, y: null }
+    let frame = 0
+    let hideTimer = 0
+    let inside = shell.matches(':hover')
+    let focused = viewport.contains(document.activeElement)
+    let dragging = false
+    let scrollHold = false
+    let drag: {
+      pointerId: number
+      axis: 'x' | 'y'
+      startPointer: number
+      startScroll: number
+      range: number
+      movable: number
+    } | null = null
+
+    const syncVisibility = () => {
+      const active = (dragging || inside || focused || scrollHold) && Boolean(metrics.x || metrics.y)
+      shell.classList.toggle(styles.railsVisible, active)
+    }
+
+    const apply = () => {
+      const yOverflow = viewport.scrollHeight - viewport.clientHeight > 1
+      const xOverflow = viewport.scrollWidth - viewport.clientWidth > 1
+      shell.classList.toggle(styles.railsBoth, yOverflow && xOverflow)
+      metrics.y = yOverflow
+        ? measureAxis(viewport.scrollHeight, viewport.clientHeight, viewport.scrollTop, yRail.clientHeight)
+        : null
+      metrics.x = xOverflow
+        ? measureAxis(viewport.scrollWidth, viewport.clientWidth, viewport.scrollLeft, xRail.clientWidth)
+        : null
+      yRail.classList.toggle(styles.railAxisHidden, !metrics.y)
+      xRail.classList.toggle(styles.railAxisHidden, !metrics.x)
+      if (metrics.y) {
+        yThumb.style.height = `${metrics.y.length}px`
+        yThumb.style.transform = `translate3d(0, ${metrics.y.offset}px, 0)`
+      }
+      if (metrics.x) {
+        xThumb.style.width = `${metrics.x.length}px`
+        xThumb.style.transform = `translate3d(${metrics.x.offset}px, 0, 0)`
+      }
+      syncVisibility()
+    }
+
+    const schedule = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(() => {
+        frame = 0
+        apply()
+      })
+    }
+
+    const revealFromScroll = () => {
+      scrollHold = true
+      window.clearTimeout(hideTimer)
+      syncVisibility()
+      hideTimer = window.setTimeout(() => {
+        scrollHold = false
+        syncVisibility()
+      }, RAIL_HIDE_MS)
+    }
+
+    const onScroll = () => {
+      revealFromScroll()
+      schedule()
+    }
+
+    const endDrag = () => {
+      drag = null
+      dragging = false
+      viewport.style.scrollBehavior = ''
+      shell.classList.remove(styles.railsDragging)
+      syncVisibility()
+    }
+
+    const onThumbDown = (axis: 'x' | 'y') => (event: PointerEvent) => {
+      if (event.button !== 0) return
+      const current = metrics[axis]
+      if (!current || current.range <= 0 || current.movable <= 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      const thumb = axis === 'y' ? yThumb : xThumb
+      drag = {
+        pointerId: event.pointerId,
+        axis,
+        startPointer: axis === 'y' ? event.clientY : event.clientX,
+        startScroll: axis === 'y' ? viewport.scrollTop : viewport.scrollLeft,
+        range: current.range,
+        movable: current.movable,
+      }
+      dragging = true
+      viewport.style.scrollBehavior = 'auto'
+      shell.classList.add(styles.railsDragging)
+      thumb.setPointerCapture(event.pointerId)
+      syncVisibility()
+    }
+
+    const onThumbMove = (event: PointerEvent) => {
+      if (!drag || drag.pointerId !== event.pointerId) return
+      const delta = (drag.axis === 'y' ? event.clientY : event.clientX) - drag.startPointer
+      const next = Math.min(drag.range, Math.max(0, drag.startScroll + (delta * drag.range) / drag.movable))
+      if (drag.axis === 'y') viewport.scrollTop = next
+      else viewport.scrollLeft = next
+    }
+
+    const onThumbUp = (event: PointerEvent) => {
+      if (!drag || drag.pointerId !== event.pointerId) return
+      endDrag()
+    }
+
+    const jump = (axis: 'x' | 'y', client: number) => {
+      const rail = axis === 'y' ? yRail : xRail
+      const current = metrics[axis]
+      if (!current) return
+      const rect = rail.getBoundingClientRect()
+      const local = axis === 'y' ? client - rect.top : client - rect.left
+      const thumbStart = Math.min(current.movable, Math.max(0, local - current.length / 2))
+      const next = current.movable === 0 ? 0 : (thumbStart / current.movable) * current.range
+      viewport.style.scrollBehavior = 'auto'
+      if (axis === 'y') viewport.scrollTop = next
+      else viewport.scrollLeft = next
+      viewport.style.scrollBehavior = ''
+    }
+
+    const onRailDown = (axis: 'x' | 'y') => (event: PointerEvent) => {
+      if (event.button !== 0 || event.target !== event.currentTarget) return
+      event.preventDefault()
+      jump(axis, axis === 'y' ? event.clientY : event.clientX)
+    }
+
+    const onWheel = (axis: 'x' | 'y') => (event: WheelEvent) => {
+      const useX = axis === 'x' || event.shiftKey
+      const raw = useX ? event.deltaX || event.deltaY : event.deltaY || event.deltaX
+      const page = useX ? viewport.clientWidth : viewport.clientHeight
+      const delta = wheelPixels(raw, event.deltaMode, page)
+      if (useX) viewport.scrollLeft += delta
+      else viewport.scrollTop += delta
+      event.preventDefault()
+    }
+
+    const yWheel = onWheel('y')
+    const xWheel = onWheel('x')
+    const yDown = onThumbDown('y')
+    const xDown = onThumbDown('x')
+    const yRailDown = onRailDown('y')
+    const xRailDown = onRailDown('x')
+    const onEnter = () => {
+      inside = true
+      syncVisibility()
+    }
+    const onLeave = () => {
+      inside = false
+      syncVisibility()
+    }
+    const onFocusIn = () => {
+      focused = true
+      syncVisibility()
+    }
+    const onFocusOut = (event: FocusEvent) => {
+      if (event.relatedTarget instanceof Node && viewport.contains(event.relatedTarget)) return
+      focused = false
+      syncVisibility()
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey || event.ctrlKey || event.metaKey) return
+      const pageY = Math.max(40, viewport.clientHeight * 0.9)
+      const deltas: Record<string, [number, number]> = {
+        ArrowDown: [0, 40],
+        ArrowUp: [0, -40],
+        ArrowRight: [40, 0],
+        ArrowLeft: [-40, 0],
+        PageDown: [0, pageY],
+        PageUp: [0, -pageY],
+        Home: [-viewport.scrollLeft, -viewport.scrollTop],
+        End: [viewport.scrollWidth, viewport.scrollHeight],
+      }
+      const delta = deltas[event.key]
+      if (!delta) return
+      viewport.scrollBy({ left: delta[0], top: delta[1] })
+      event.preventDefault()
+    }
+
+    viewport.addEventListener('scroll', onScroll, { passive: true })
+    shell.addEventListener('pointerenter', onEnter)
+    shell.addEventListener('pointerleave', onLeave)
+    viewport.addEventListener('focusin', onFocusIn)
+    viewport.addEventListener('focusout', onFocusOut)
+    viewport.addEventListener('keydown', onKeyDown)
+    yThumb.addEventListener('pointerdown', yDown)
+    xThumb.addEventListener('pointerdown', xDown)
+    yThumb.addEventListener('pointermove', onThumbMove)
+    xThumb.addEventListener('pointermove', onThumbMove)
+    yThumb.addEventListener('pointerup', onThumbUp)
+    xThumb.addEventListener('pointerup', onThumbUp)
+    yThumb.addEventListener('pointercancel', onThumbUp)
+    xThumb.addEventListener('pointercancel', onThumbUp)
+    yThumb.addEventListener('lostpointercapture', onThumbUp)
+    xThumb.addEventListener('lostpointercapture', onThumbUp)
+    yRail.addEventListener('pointerdown', yRailDown)
+    xRail.addEventListener('pointerdown', xRailDown)
+    yRail.addEventListener('wheel', yWheel, { passive: false })
+    xRail.addEventListener('wheel', xWheel, { passive: false })
+
+    const observer = new ResizeObserver(() => schedule())
+    observer.observe(viewport)
+    for (const child of Array.from(viewport.children)) observer.observe(child)
+    schedule()
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(hideTimer)
+      observer.disconnect()
+      endDrag()
+      viewport.removeEventListener('scroll', onScroll)
+      shell.removeEventListener('pointerenter', onEnter)
+      shell.removeEventListener('pointerleave', onLeave)
+      viewport.removeEventListener('focusin', onFocusIn)
+      viewport.removeEventListener('focusout', onFocusOut)
+      viewport.removeEventListener('keydown', onKeyDown)
+      yThumb.removeEventListener('pointerdown', yDown)
+      xThumb.removeEventListener('pointerdown', xDown)
+      yThumb.removeEventListener('pointermove', onThumbMove)
+      xThumb.removeEventListener('pointermove', onThumbMove)
+      yThumb.removeEventListener('pointerup', onThumbUp)
+      xThumb.removeEventListener('pointerup', onThumbUp)
+      yThumb.removeEventListener('pointercancel', onThumbUp)
+      xThumb.removeEventListener('pointercancel', onThumbUp)
+      yThumb.removeEventListener('lostpointercapture', onThumbUp)
+      xThumb.removeEventListener('lostpointercapture', onThumbUp)
+      yRail.removeEventListener('pointerdown', yRailDown)
+      xRail.removeEventListener('pointerdown', xRailDown)
+      yRail.removeEventListener('wheel', yWheel)
+      xRail.removeEventListener('wheel', xWheel)
+      shell.classList.remove(styles.railsVisible, styles.railsBoth, styles.railsDragging)
+    }
+  }, [viewportRef])
+
+  return (
+    <>
+      <div ref={yRailRef} className={`${styles.timelineScrollRail} ${styles.timelineScrollRailY}`} aria-hidden="true">
+        <div ref={yThumbRef} className={styles.timelineScrollThumb} />
+      </div>
+      <div ref={xRailRef} className={`${styles.timelineScrollRail} ${styles.timelineScrollRailX}`} aria-hidden="true">
+        <div ref={xThumbRef} className={styles.timelineScrollThumb} />
+      </div>
+    </>
+  )
+}
+
 interface ScrollingTimelineProps {
   usageLogs: UsageLog[]
   onViewUsageLog: (logId: string) => void
@@ -438,7 +730,13 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
 
   return (
     <div className={styles.timelinePageContainer} style={timelineCssVars}>
-      <div ref={timelineContainerRef} className={styles.timelineScrollContainer} onScroll={handleTimelineScroll}>
+      <div
+        ref={timelineContainerRef}
+        className={styles.timelineScrollContainer}
+        tabIndex={0}
+        aria-label={tr('设备排程', 'Occupancy schedule')}
+        onScroll={handleTimelineScroll}
+      >
         <TimelineHeader
           totalTimelineWidth={totalTimelineWidth}
           dayWidthPx={dayWidthPx}
@@ -588,6 +886,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
           </div>
         </div>
       </div>
+      <TimelineOverlayRails viewportRef={timelineContainerRef} />
     </div>
   )
 }

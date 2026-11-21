@@ -49,6 +49,7 @@ const NAV_LABEL_JUSTIFY_CHARS = 2
 const HOVER_OPEN_DELAY_MS = 300
 const ICON_SIZE = 24
 const ROW_INSET = 8
+const TOOL_ROW_HEIGHT = 44
 
 const getNormalizedPathForSelection = (pathname: string) => {
   if (pathname.startsWith('/assets/')) return '/chambers'
@@ -194,6 +195,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
 
   const iconWrapperSx = useMemo(
     () => ({
+      height: TOOL_ROW_HEIGHT,
       display: 'grid',
       placeItems: 'center',
       lineHeight: 0,
@@ -281,8 +283,10 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
 
   const baseToolRowSx = {
     borderRadius: 0,
-    minHeight: 42,
+    height: effectiveExpanded ? 'auto' : TOOL_ROW_HEIGHT,
+    minHeight: TOOL_ROW_HEIGHT,
     px: 0,
+    py: 0,
     display: 'grid',
     gridTemplateColumns: `${ICON_COLUMN_WIDTH}px 1fr`,
     alignItems: 'center',
@@ -315,9 +319,10 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
     minWidth: 0,
     pr: 1.5,
     opacity: effectiveExpanded ? 1 : 0,
+    height: effectiveExpanded ? 'auto' : 0,
     maxWidth: effectiveExpanded ? EXPANDED_WIDTH - ICON_COLUMN_WIDTH : 0,
     transform: effectiveExpanded ? 'translateX(0)' : 'translateX(-6px)',
-    transition: theme.transitions.create(['opacity', 'transform', 'max-width'], {
+    transition: theme.transitions.create(['opacity', 'transform', 'max-width', 'height'], {
       easing: theme.transitions.easing.sharp,
       duration: 200,
     }),
@@ -515,12 +520,12 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
               onClick={() => handleNavigateAndClose('/me')}
               sx={baseToolRowSx}
             >
-              <Box sx={{ display: 'grid', placeItems: 'center' }}>
+              <Box sx={iconWrapperSx}>
                 <Avatar
                   sx={{
-                    width: 28,
-                    height: 28,
-                    fontSize: '0.8rem',
+                    width: ICON_SIZE,
+                    height: ICON_SIZE,
+                    fontSize: '0.75rem',
                     fontWeight: 700,
                     bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.28 : 0.14),
                     color: 'primary.main',
@@ -544,8 +549,10 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
         <Box
           sx={{
             mx: 0,
-            my: 0.5,
+            my: effectiveExpanded ? 0.5 : 0,
+            height: effectiveExpanded ? 'auto' : 0,
             opacity: effectiveExpanded ? 1 : 0,
+            overflow: 'hidden',
             transition: theme.transitions.create(['opacity'], { easing: theme.transitions.easing.sharp, duration: 200 }),
             px: effectiveExpanded ? `${ROW_INSET}px` : 0,
           }}
