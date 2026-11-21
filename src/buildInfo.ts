@@ -8,10 +8,20 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '2.1.4',
-  commit: '457179b',
-  builtAt: '2026-11-21T08:57:38.778Z',
+  version: '2.1.5',
+  commit: '28388c4',
+  builtAt: '2026-11-21T10:14:55.498Z',
   changelog: [
+    {
+      "hash": "28388c4",
+      "date": "2026-11-21",
+      "message": "fix: clip sticky layers to card radius and add jump-to-date picker"
+    },
+    {
+      "hash": "c34fd7d",
+      "date": "2026-11-21",
+      "message": "chore: release 2.1.4"
+    },
     {
       "hash": "457179b",
       "date": "2026-11-21",
@@ -151,16 +161,6 @@ export const buildInfo: BuildInfo = {
       "hash": "641cdf9",
       "date": "2026-02-11",
       "message": "docs: 将截图占位符替换为实际的Markdown图片链接"
-    },
-    {
-      "hash": "776c7a9",
-      "date": "2026-02-11",
-      "message": "Update README.md"
-    },
-    {
-      "hash": "5d1db11",
-      "date": "2026-02-11",
-      "message": "docs: 添加仪表盘和时间线预览图片"
     }
   ],
 }
