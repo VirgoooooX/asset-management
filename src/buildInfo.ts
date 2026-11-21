@@ -8,10 +8,20 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '2.0.0',
-  commit: '2041744',
-  builtAt: '2026-11-20T15:25:08.526Z',
+  version: '2.1.0',
+  commit: 'e2f7c3e',
+  builtAt: '2026-11-21T04:57:49.193Z',
   changelog: [
+    {
+      "hash": "e2f7c3e",
+      "date": "2026-11-21",
+      "message": "feat: complete 12-point UI optimization upgrade"
+    },
+    {
+      "hash": "74a07c8",
+      "date": "2026-11-20",
+      "message": "chore: release 2.0.0"
+    },
     {
       "hash": "2041744",
       "date": "2026-11-20",
@@ -151,16 +161,6 @@ export const buildInfo: BuildInfo = {
       "hash": "b9a9dfe",
       "date": "2026-01-26",
       "message": "refactor(ui): 统一页面布局并改进时间轴组件"
-    },
-    {
-      "hash": "1b09bad",
-      "date": "2026-01-25",
-      "message": "Merge branch 'main' of https://github.com/VirgoooooX/asset-management"
-    },
-    {
-      "hash": "6d67dd3",
-      "date": "2026-01-25",
-      "message": "feat(timeline): 优化时间轴记录条布局、间距及样式，修复 CSS 警告"
     }
   ],
 }
