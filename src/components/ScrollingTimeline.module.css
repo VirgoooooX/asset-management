@@ -8,6 +8,8 @@
   min-height: 0;
   position: relative;
   overflow: hidden;
+  border-radius: inherit;
+  isolation: isolate;
   background-color: var(--timeline-bg);
 }
 
@@ -17,6 +19,7 @@
   min-height: 0;
   overflow: auto;
   position: relative;
+  border-radius: inherit;
   background-color: var(--timeline-bg);
   scrollbar-width: none;
 }

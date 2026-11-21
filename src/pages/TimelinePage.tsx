@@ -12,10 +12,13 @@ import {
   Stack,
   Tooltip,
   Divider,
+  Popover,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import TimelineIcon from '@mui/icons-material/ViewTimeline';
 import TodayIcon from '@mui/icons-material/Today';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import { DateCalendar } from '@mui/x-date-pickers/DateCalendar';
 import ScrollingTimeline from '../components/ScrollingTimeline';
 import UsageLogDetails from '../components/UsageLogDetails';
 import UsageLogForm from '../components/UsageLogForm';
@@ -47,6 +50,9 @@ const TimelinePage: React.FC = () => {
   const [pendingDelete, setPendingDelete] = useState<{ logId: string; configId: string } | null>(null);
   const [dayWidthPx, setDayWidthPx] = useState<number>(200);
   const [scrollToTodaySignal, setScrollToTodaySignal] = useState(0);
+  const [jumpDateAnchorEl, setJumpDateAnchorEl] = useState<HTMLElement | null>(null);
+  const [selectedJumpDate, setSelectedJumpDate] = useState<Date | null>(() => new Date());
+  const [jumpToDate, setJumpToDate] = useState<{ date: Date; signal: number } | null>(null);
   const [visibleMonthLabel, setVisibleMonthLabel] = useState<string>(() =>
     formatVisibleMonthLabel(new Date(), language)
   );
@@ -260,7 +266,10 @@ const TimelinePage: React.FC = () => {
               variant="outlined"
               size="small"
               startIcon={<TodayIcon sx={{ fontSize: 15 }} />}
-              onClick={() => setScrollToTodaySignal((n) => n + 1)}
+              onClick={() => {
+                setSelectedJumpDate(new Date());
+                setScrollToTodaySignal((n) => n + 1);
+              }}
               sx={{
                 whiteSpace: 'nowrap',
                 minHeight: 32,
@@ -275,6 +284,55 @@ const TimelinePage: React.FC = () => {
             >
               {tr('跳转今天', 'Today')}
             </Button>
+
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<CalendarMonthIcon sx={{ fontSize: 15 }} />}
+              onClick={(e) => setJumpDateAnchorEl(e.currentTarget)}
+              sx={{
+                whiteSpace: 'nowrap',
+                minHeight: 32,
+                px: 1.25,
+                borderColor: alpha(theme.palette.text.primary, isDark ? 0.24 : 0.18),
+                color: 'text.primary',
+                backgroundColor: 'background.paper',
+                '&:hover': {
+                  borderColor: theme.palette.primary.main,
+                  backgroundColor: alpha(theme.palette.primary.main, isDark ? 0.12 : 0.04),
+                },
+              }}
+            >
+              {tr('跳转日期', 'Go to date')}
+            </Button>
+
+            <Popover
+              open={Boolean(jumpDateAnchorEl)}
+              anchorEl={jumpDateAnchorEl}
+              onClose={() => setJumpDateAnchorEl(null)}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+              slotProps={{
+                paper: {
+                  sx: {
+                    mt: 0.75,
+                    borderRadius: '12px',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                  },
+                },
+              }}
+            >
+              <DateCalendar
+                value={selectedJumpDate}
+                onChange={(newDate) => {
+                  if (!newDate || Number.isNaN(newDate.getTime())) return;
+                  setSelectedJumpDate(newDate);
+                  setJumpToDate((prev) => ({ date: newDate, signal: (prev?.signal ?? 0) + 1 }));
+                  setJumpDateAnchorEl(null);
+                }}
+              />
+            </Popover>
 
             <ToggleButtonGroup
               value={dayWidthPx}
@@ -341,7 +399,16 @@ const TimelinePage: React.FC = () => {
           }}
           contentSx={{ m: 0, display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}
         >
-          <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+          <Box
+            sx={{
+              flexGrow: 1,
+              minHeight: 0,
+              overflow: 'hidden',
+              position: 'relative',
+              borderRadius: '13px',
+              clipPath: 'inset(0 round 13px)',
+            }}
+          >
             {loading && usageLogs.length === 0 ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
                 <CircularProgress />
@@ -369,6 +436,7 @@ const TimelinePage: React.FC = () => {
                 onDeleteUsageLog={handleDeleteLog}
                 dayWidthPx={dayWidthPx}
                 scrollToTodaySignal={scrollToTodaySignal}
+                jumpToDate={jumpToDate}
                 minRowHeightPx={65}
                 itemBarHeightPx={50}
                 itemBarGapPx={2}

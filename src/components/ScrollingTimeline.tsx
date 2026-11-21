@@ -396,6 +396,7 @@ interface ScrollingTimelineProps {
   regionCode?: 'cn' | 'tw'
   dayWidthPx?: number
   scrollToTodaySignal?: number
+  jumpToDate?: { date: Date; signal: number } | null
   minRowHeightPx?: number
   itemBarHeightPx?: number
   itemBarGapPx?: number
@@ -411,6 +412,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   regionCode = 'cn',
   dayWidthPx: propsDayWidthPx,
   scrollToTodaySignal,
+  jumpToDate,
   minRowHeightPx: propsMinRowHeightPx,
   itemBarHeightPx: propsItemBarHeightPx,
   itemBarGapPx: propsItemBarGapPx,
@@ -475,6 +477,8 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   const isExtendingLeftRef = useRef(false)
   const isExtendingRightRef = useRef(false)
   const lastHandledTodaySignalRef = useRef(0)
+  const lastHandledJumpSignalRef = useRef(0)
+  const pendingScrollTargetDateRef = useRef<{ date: Date; behavior: ScrollBehavior } | null>(null)
   const rafUpdateVisibleRangeRef = useRef<number | null>(null)
   const [, startTransition] = useTransition()
 
@@ -600,24 +604,60 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     updateVisibleDayIndexRange()
   }, [dateHeaders.length, updateVisibleDayIndexRange])
 
+  const scrollToTargetDate = useCallback(
+    (rawDate: Date, behavior: ScrollBehavior = 'smooth') => {
+      const container = timelineContainerRef.current
+      const targetByShift = getTimelineBaseDate(rawDate, shiftStartMinutes)
+      const targetIndex = dateHeaders.findIndex((d) => isEqual(d, targetByShift))
+      const hasEnoughBuffer = targetIndex >= 4 && targetIndex <= dateHeaders.length - 5
+
+      if (!container || dateHeaders.length === 0 || targetIndex < 0 || !hasEnoughBuffer) {
+        pendingScrollTargetDateRef.current = { date: targetByShift, behavior }
+        setRangeStart(addMonths(targetByShift, -1))
+        setRangeEnd(addMonths(targetByShift, 1))
+        return
+      }
+
+      const desiredCellOffset = 2
+      const targetGridScrollLeft = Math.max(0, (targetIndex - desiredCellOffset) * dayWidthPx)
+      const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth)
+      const clampedScrollLeft = Math.min(targetGridScrollLeft, maxScroll)
+
+      ;(container as any).scrollTo?.({ left: clampedScrollLeft, behavior })
+      if (!(container as any).scrollTo) container.scrollLeft = clampedScrollLeft
+    },
+    [dateHeaders, dayWidthPx, shiftStartMinutes]
+  )
+
   useEffect(() => {
-    if (!scrollToTodaySignal || scrollToTodaySignal === lastHandledTodaySignalRef.current) return
+    const pending = pendingScrollTargetDateRef.current
     const container = timelineContainerRef.current
-    if (!container || dateHeaders.length === 0) return
+    if (!pending || !container || dateHeaders.length === 0) return
 
-    const todayByShift = getTimelineBaseDate(new Date(), shiftStartMinutes)
-    const todayIndex = dateHeaders.findIndex((d) => isEqual(d, todayByShift))
-    if (todayIndex < 0) return
+    const targetIndex = dateHeaders.findIndex((d) => isEqual(d, pending.date))
+    if (targetIndex < 0) return
 
-    lastHandledTodaySignalRef.current = scrollToTodaySignal
-    const desiredTodayCellOffset = 2
-    const targetGridScrollLeft = Math.max(0, (todayIndex - desiredTodayCellOffset) * dayWidthPx)
+    pendingScrollTargetDateRef.current = null
+    const desiredCellOffset = 2
+    const targetGridScrollLeft = Math.max(0, (targetIndex - desiredCellOffset) * dayWidthPx)
     const maxScroll = Math.max(0, container.scrollWidth - container.clientWidth)
     const clampedScrollLeft = Math.min(targetGridScrollLeft, maxScroll)
 
-    ;(container as any).scrollTo?.({ left: clampedScrollLeft, behavior: 'smooth' })
+    ;(container as any).scrollTo?.({ left: clampedScrollLeft, behavior: pending.behavior })
     if (!(container as any).scrollTo) container.scrollLeft = clampedScrollLeft
-  }, [dateHeaders, dayWidthPx, scrollToTodaySignal, shiftStartMinutes])
+  }, [dateHeaders, dayWidthPx])
+
+  useEffect(() => {
+    if (!scrollToTodaySignal || scrollToTodaySignal === lastHandledTodaySignalRef.current) return
+    lastHandledTodaySignalRef.current = scrollToTodaySignal
+    scrollToTargetDate(new Date(), 'smooth')
+  }, [scrollToTodaySignal, scrollToTargetDate])
+
+  useEffect(() => {
+    if (!jumpToDate || !jumpToDate.signal || jumpToDate.signal === lastHandledJumpSignalRef.current) return
+    lastHandledJumpSignalRef.current = jumpToDate.signal
+    scrollToTargetDate(jumpToDate.date, 'smooth')
+  }, [jumpToDate, scrollToTargetDate])
 
   useEffect(() => {
     setProcessedHolidays(new Map())
