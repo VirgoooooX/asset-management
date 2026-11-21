@@ -3,11 +3,11 @@
 .timelinePageContainer {
   display: flex;
   flex-direction: column;
-  height: 100%; /* Ensure it takes full height from parent */
+  height: 100%;
   min-width: 0;
   min-height: 0;
   position: relative;
-  overflow: hidden; /* Prevent double scrollbars on the page itself */
+  overflow: hidden;
   background-color: var(--timeline-bg);
 }
 
@@ -22,7 +22,7 @@
 }
 
 .timelineScrollContainer:focus-visible {
-  outline: 2px solid var(--timeline-today-text);
+  outline: 2px solid var(--timeline-accent);
   outline-offset: -2px;
 }
 
@@ -96,30 +96,114 @@
   background: var(--timeline-scrollbar-thumb-hover);
 }
 
+/* Sticky Date Header Row (Opaque, crisp separation shadow) */
 .timelineHeaderRow {
   display: flex;
   position: sticky;
   top: 0;
   z-index: 30;
-  background: var(--timeline-bg);
-  background-image: var(--timeline-header-bg);
-  border-bottom: 1px solid var(--timeline-border);
-  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  background-color: var(--timeline-header-bg);
+  border-bottom: 1px solid var(--timeline-border-strong);
+  box-shadow: var(--timeline-header-shadow);
 }
 
+/* Top-Left Sticky Filter Cell (Opaque) */
 .timelineHeaderChamberCell {
   flex-shrink: 0;
   position: sticky;
   left: 0;
   z-index: 35;
-  background: var(--timeline-bg);
-  background-image: var(--timeline-sticky-bg);
-  border-right: 1px solid var(--timeline-border);
+  background-color: var(--timeline-sticky-header-bg);
+  border-right: 1px solid var(--timeline-border-strong);
+  box-shadow: var(--timeline-sticky-shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  padding: 0 10px;
+  gap: 3px;
+  box-sizing: border-box;
+}
+
+.chamberSearchBox {
   display: flex;
   align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 7px;
+  border-radius: 7px;
+  background-color: var(--timeline-input-bg);
+  border: 1px solid var(--timeline-border-strong);
+  transition: border-color 140ms ease, box-shadow 140ms ease;
+}
+
+.chamberSearchBox:focus-within {
+  border-color: var(--timeline-accent);
+  box-shadow: 0 0 0 2px var(--timeline-accent-soft);
+}
+
+.chamberSearchIcon {
+  font-size: 15px !important;
+  color: var(--timeline-text-muted);
+  flex-shrink: 0;
+}
+
+.chamberSearchInput {
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--timeline-text-primary);
+  font-size: 0.78rem;
+  font-family: inherit;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+}
+
+.chamberSearchInput::placeholder {
+  color: var(--timeline-text-muted);
+  opacity: 0.9;
+}
+
+.chamberCountBadge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--timeline-text-muted);
+  background-color: var(--timeline-badge-bg);
+  border-radius: 999px;
+  padding: 1px 6px;
+  line-height: 1.35;
+  flex-shrink: 0;
+}
+
+.chamberSearchClear {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  font-weight: 600;
-  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--timeline-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.chamberSearchClear:hover {
+  background-color: var(--timeline-badge-bg);
+  color: var(--timeline-text-primary);
+}
+
+.chamberFilterMeta {
+  font-size: 0.68rem;
+  color: var(--timeline-text-muted);
+  text-align: right;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .timelineHeaderDates {
@@ -134,117 +218,225 @@
   position: relative;
 }
 
+/* Sticky Left Equipment Column (Scheme B - Opaque + Right Shadow) */
 .timelineChamberColumn {
   flex-shrink: 0;
   position: sticky;
   left: 0;
   z-index: 25;
-  background: var(--timeline-bg);
-  background-image: var(--timeline-sticky-bg);
-  border-right: 1px solid var(--timeline-border);
+  background-color: var(--timeline-sticky-bg);
+  border-right: 1px solid var(--timeline-border-strong);
+  box-shadow: var(--timeline-sticky-shadow);
   box-sizing: border-box;
 }
 
 .chamberRowName {
+  position: relative;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   justify-content: center;
-  padding: 0 10px;
-  font-size: 0.9em;
-  font-weight: 500;
-  border-bottom: 1px solid var(--timeline-border);
+  gap: 3px;
+  padding: 0 10px 0 14px;
+  border-bottom: 1px solid var(--timeline-grid-line-soft);
   box-sizing: border-box;
-  text-align: center;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  /* height is dynamic via inline style from JS */
+  background-color: var(--timeline-sticky-bg);
+  transition: background-color 140ms ease;
+  cursor: pointer;
 }
+
+.chamberRowName:hover {
+  background-color: var(--timeline-sticky-hover-bg);
+}
+
+.chamberRowName:focus-visible {
+  outline: 2px solid var(--timeline-accent);
+  outline-offset: -2px;
+}
+
 .chamberRowName:last-child {
   border-bottom: none;
 }
 
+.chamberStatusBar {
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+}
+
+.chamberNamePrimary {
+  width: 100%;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--timeline-text-primary);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chamberNameMeta {
+  width: 100%;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--timeline-text-muted);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Date Header Cells (Scheme C - Opaque, Horizontal Date+Weekday, Shift Time Scale) */
 .timelineDateHeader {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   border-right: 1px solid var(--timeline-border);
   box-sizing: border-box;
-  font-size: 0.9em;
-  font-weight: bold;
-  text-align: center;
-  padding: 8px 0;
-  /* min-width and width are dynamic via inline style from JS */
+  background-color: var(--timeline-header-bg);
+  overflow: hidden;
 }
+
 .timelineDateHeader:last-child {
   border-right: none;
 }
 
-.dateDisplay {
-  margin-bottom: 6px;
+.todayTopBar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background-color: var(--timeline-accent);
+  z-index: 2;
+}
+
+.dateTopRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 9px 10px 4px;
+  min-width: 0;
+}
+
+.dateNumber {
+  font-size: 0.88rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--timeline-text-primary);
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.dateWeekday {
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--timeline-text-muted);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dateWeekdayRest {
+  color: var(--timeline-weekend-text);
+}
+
+.dateWeekdayToday {
+  color: var(--timeline-accent);
+  font-weight: 700;
 }
 
 .shiftContainer {
   display: flex;
   width: 100%;
-  font-size: 0.75em;
-  font-weight: normal;
-  opacity: 0.72;
+  height: 22px;
+  font-size: 0.69rem;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+  color: var(--timeline-text-muted);
   border-top: 1px solid var(--timeline-border);
-  margin-top: 4px;
-  padding-top: 4px;
+  background-color: var(--timeline-shift-day-bg);
 }
 
-.dayShift, .nightShift {
+.dayShift,
+.nightShift {
   flex: 1;
-  text-align: center;
-  padding: 2px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 0 2px;
 }
 
 .dayShift {
   border-right: 1px solid var(--timeline-border);
 }
 
-/* Styling for specific date types in the header */
-.todayHeader {
-  background-color: var(--timeline-today-bg) !important;
-}
-.todayHeader .dateDisplay {
-  color: var(--timeline-today-text) !important;
-  font-weight: bold;
+.nightShift {
+  background-color: var(--timeline-shift-night-bg);
 }
 
+/* Specific Date Type Backgrounds in Header (All Opaque) */
 .weekendHeader {
-  background-color: transparent;
-  color: inherit;
-}
-.workdayOnWeekendHeader {
-  background-color: transparent;
-  color: inherit;
+  background-color: var(--timeline-header-weekend-bg);
 }
 
+.publicHolidayHeader {
+  background-color: var(--timeline-header-holiday-bg);
+}
+
+.workdayOnWeekendHeader {
+  background-color: var(--timeline-header-bg);
+}
+
+.todayHeader {
+  background-color: var(--timeline-header-today-bg) !important;
+}
+
+.todayHeader .dateNumber {
+  color: var(--timeline-accent) !important;
+}
+
+/* Grid Area */
 .timelineGridContent {
-  position: relative; /* For absolute positioning of bars and row backgrounds */
-  /* width and min-height are dynamic via inline style from JS */
-  /* flex-grow: 1; /* Removed as parent .timelineScrollableWrapper handles scroll */
-  /* overflow: visible; /* Default, content can exceed bounds, parent scrolls */
+  position: relative;
 }
 
 .timelineDayBackground {
   position: absolute;
   top: 0;
-  border-right: 1px dashed var(--timeline-grid-line); /* Softer grid lines */
+  border-right: 1px dashed var(--timeline-grid-line);
   box-sizing: border-box;
   z-index: 0;
-  transition: background-color 0.3s ease;
-  /* width and height are dynamic via inline style from JS */
+  transition: background-color 0.2s ease;
 }
+
+.timelineDayBackground::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dotted var(--timeline-grid-line-half);
+  pointer-events: none;
+}
+
 .timelineDayBackground:last-child {
   border-right: none;
 }
 
-/* Background colors for specific day types in the grid */
+.todayColumnBackground {
+  background-color: var(--timeline-today-col-bg);
+}
+
 .weekendSoftRedBackground {
   background-color: var(--timeline-weekend-bg);
 }
@@ -255,50 +447,61 @@
 
 .workdayOnWeekendBackground {
   background-color: var(--timeline-workday-override-bg);
-  /* background-color: #fafafa; */ /* Example:非常浅的灰色, 如果不设置则为默认白色 */
-  /* Example with pattern:
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(0, 0, 0, 0.02),
-    rgba(0, 0, 0, 0.02) 1px,
-    transparent 1px,
-    transparent 5px
-  );
-  */
 }
 
 .timelineRowBackground {
-    position: absolute;
-    left: 0;
-    border-bottom: 1px solid var(--timeline-grid-line-soft); /* Lighter horizontal row lines */
-    box-sizing: border-box;
-    z-index: 0; /* Behind bars */
-    /* width and height are dynamic via inline style from JS */
+  position: absolute;
+  left: 0;
+  border-bottom: 1px solid var(--timeline-grid-line-soft);
+  box-sizing: border-box;
+  z-index: 0;
 }
+
 .timelineRowBackground:last-child {
-    border-bottom: none;
+  border-bottom: none;
+}
+
+/* Current Time Indicator Line */
+.timelineNowLine {
+  position: absolute;
+  top: 0;
+  width: 1.5px;
+  background-color: var(--timeline-now-line);
+  z-index: 15;
+  pointer-events: none;
+  transform: translateX(-0.75px);
+}
+
+.timelineNowDot {
+  position: absolute;
+  top: -3.5px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background-color: var(--timeline-now-line);
+  transform: translateX(-50%);
+  box-shadow: 0 0 0 2px var(--timeline-now-ring);
 }
 
 .timelineRow {
-  position: absolute; /* Positioned by JS (top, height, width) */
+  position: absolute;
   box-sizing: border-box;
-  /* This div primarily acts as a container for absolutely positioned timelineBars */
 }
 
 .timelineBar {
   position: absolute;
-  border-radius: 7px; /* Rounded corners */
+  border-radius: 7px;
   box-shadow: var(--timeline-bar-shadow);
   cursor: pointer;
   transition: transform 0.15s ease-out, box-shadow 0.15s ease-out, background-color 0.2s;
   display: flex;
   align-items: center;
-  justify-content: center;   /* <<< MODIFIED FOR TEXT CENTERING */
+  justify-content: center;
   overflow: hidden;
-  border: 1px solid;         /* Border color set dynamically via inline style */
+  border: 1px solid;
   box-sizing: border-box;
-  padding: 4px 8px;            /* Padding inside the bar, around the text */
-  /* height, top, left, width, backgroundColor, borderColor, color (text) are dynamic via inline style from JS */
+  padding: 4px 8px;
 }
 
 .timelineBar:hover {
@@ -401,7 +604,7 @@
 
 .timelineBarDeleteButton {
   position: absolute;
-  right: 5px; /* Position from right edge of .timelineBar */
+  right: 5px;
   top: 50%;
   transform: translateY(-50%);
   background: rgba(0,0,0,0.0);
@@ -435,4 +638,3 @@
   background: rgba(0,0,0,0.2);
   opacity: 1;
 }
-

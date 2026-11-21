@@ -172,4 +172,113 @@ describe('usageLogs routes integration', () => {
     const remaining = await api(`/api/usage-logs?chamberId=${encodeURIComponent(a1Id)}`)
     expect(remaining.json?.total).toBe(1)
   })
+
+  it('rejects overlapping schedules on the same chamber, allows back-to-back, and truncates endTime on early completion', async () => {
+    const assetRes = await api('/api/assets', {
+      method: 'POST',
+      body: JSON.stringify({ type: 'chamber', name: 'Chamber-Overlap', status: 'available' }),
+    })
+    expect(assetRes.res.status).toBe(200)
+    const chamberId = String(assetRes.json?.id)
+
+    const first = await api('/api/usage-logs', {
+      method: 'POST',
+      body: JSON.stringify({
+        chamberId,
+        startTime: '2026-04-01T08:00:00.000Z',
+        endTime: '2026-04-02T08:00:00.000Z',
+        user: 'alice',
+        status: 'completed',
+      }),
+    })
+    expect(first.res.status).toBe(200)
+
+    // Overlapping start before first ends -> 409
+    const overlap = await api('/api/usage-logs', {
+      method: 'POST',
+      body: JSON.stringify({
+        chamberId,
+        startTime: '2026-04-02T04:00:00.000Z',
+        endTime: '2026-04-03T08:00:00.000Z',
+        user: 'bob',
+        status: 'completed',
+      }),
+    })
+    expect(overlap.res.status).toBe(409)
+    expect(overlap.json?.error).toBe('usage_log_overlap')
+
+    // Exact back-to-back (endA === startB) -> 200
+    const backToBack = await api('/api/usage-logs', {
+      method: 'POST',
+      body: JSON.stringify({
+        chamberId,
+        startTime: '2026-04-02T08:00:00.000Z',
+        endTime: '2026-04-03T08:00:00.000Z',
+        user: 'bob',
+        status: 'completed',
+      }),
+    })
+    expect(backToBack.res.status).toBe(200)
+    const backToBackId = String(backToBack.json?.id)
+
+    // Patching backToBack to pull startTime earlier into first -> 409
+    const patchOverlap = await api(`/api/usage-logs/${encodeURIComponent(backToBackId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ startTime: '2026-04-02T07:59:00.000Z' }),
+    })
+    expect(patchOverlap.res.status).toBe(409)
+    expect(patchOverlap.json?.error).toBe('usage_log_overlap')
+
+    // Start an ongoing test running from 1h ago until 10h in the future
+    const now = Date.now()
+    const activeStart = new Date(now - 60 * 60 * 1000).toISOString()
+    const activePlannedEnd = new Date(now + 10 * 60 * 60 * 1000).toISOString()
+    const running = await api('/api/usage-logs', {
+      method: 'POST',
+      body: JSON.stringify({
+        chamberId,
+        startTime: activeStart,
+        endTime: activePlannedEnd,
+        user: 'carol',
+        status: 'in-progress',
+      }),
+    })
+    expect(running.res.status).toBe(200)
+    const runningId = String(running.json?.id)
+
+    // Cannot start a second in-progress test while the first is still running
+    const secondActive = await api('/api/usage-logs', {
+      method: 'POST',
+      body: JSON.stringify({
+        chamberId,
+        startTime: new Date(now + 11 * 60 * 60 * 1000).toISOString(),
+        endTime: new Date(now + 12 * 60 * 60 * 1000).toISOString(),
+        user: 'dave',
+        status: 'in-progress',
+      }),
+    })
+    expect(secondActive.res.status).toBe(409)
+
+    // Stop the running test early (PATCH status: 'completed' without explicit endTime)
+    const stopped = await api(`/api/usage-logs/${encodeURIComponent(runningId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'completed' }),
+    })
+    expect(stopped.res.status).toBe(200)
+    const stoppedEnd = String((stopped.json?.item as { endTime?: string })?.endTime)
+    expect(Date.parse(stoppedEnd)).toBeLessThan(Date.parse(activePlannedEnd))
+
+    // Immediately starting the next test at stoppedEnd now succeeds
+    const nextAfterStop = await api('/api/usage-logs', {
+      method: 'POST',
+      body: JSON.stringify({
+        chamberId,
+        startTime: stoppedEnd,
+        endTime: new Date(Date.parse(stoppedEnd) + 2 * 60 * 60 * 1000).toISOString(),
+        user: 'dave',
+        status: 'in-progress',
+      }),
+    })
+    expect(nextAfterStop.res.status).toBe(200)
+  })
 })

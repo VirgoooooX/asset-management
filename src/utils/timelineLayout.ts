@@ -24,8 +24,8 @@ export const CUSTOM_DAY_START_HOUR = 7
 export const DEFAULT_SHIFT_START_MINUTES = CUSTOM_DAY_START_HOUR * 60
 export const DAY_WIDTH_PX = 200
 export const MIN_ROW_HEIGHT_PX = 80
-export const HEADER_HEIGHT_PX = 70
-export const CHAMBER_NAME_WIDTH_PX = 150
+export const HEADER_HEIGHT_PX = 62
+export const CHAMBER_NAME_WIDTH_PX = 168
 
 export interface TimelineUsageLogDisplayData extends Omit<UsageLog, 'id' | 'selectedConfigIds'> {
   displayId: string
@@ -115,6 +115,38 @@ export const formatDateHeader = (date: Date, language: Language = 'zh'): string 
   }
   return `${format(date, 'M/d', { locale: zhCN })} ${ZH_DAY_NAMES[getDay(date)]}`
 }
+
+export const formatDateHeaderParts = (date: Date, language: Language = 'zh'): { dateLabel: string; weekdayLabel: string } => {
+  if (language === 'en') {
+    return {
+      dateLabel: format(date, 'M/d', { locale: enUS }),
+      weekdayLabel: format(date, 'EEE', { locale: enUS }),
+    }
+  }
+  return {
+    dateLabel: format(date, 'M/d', { locale: zhCN }),
+    weekdayLabel: ZH_DAY_NAMES[getDay(date)],
+  }
+}
+
+export const formatVisibleMonthLabel = (date: Date, language: Language = 'zh'): string => {
+  if (language === 'en') {
+    return format(date, 'MMM yyyy', { locale: enUS })
+  }
+  return format(date, 'yyyy年M月', { locale: zhCN })
+}
+
+const formatMinutesHHmm = (totalMinutes: number): string => {
+  const normalized = ((totalMinutes % 1440) + 1440) % 1440
+  const hh = String(Math.floor(normalized / 60)).padStart(2, '0')
+  const mm = String(normalized % 60).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+export const formatShiftTimeLabels = (shiftStartMinutes: number): { dayTime: string; nightTime: string } => ({
+  dayTime: formatMinutesHHmm(shiftStartMinutes),
+  nightTime: formatMinutesHHmm(shiftStartMinutes + 12 * 60),
+})
 
 export const isWeekend = (date: Date): boolean => {
   const dayOfWeek = getDay(date)

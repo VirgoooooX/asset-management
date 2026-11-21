@@ -98,6 +98,91 @@ const ensureChamberUsable = (db: Database.Database, chamberId: string) => {
   return { ok: true as const }
 }
 
+type UsageLogScheduleConflict = {
+  error: 'usage_log_overlap' | 'usage_log_active_conflict'
+  conflict: {
+    id: string
+    startTime: string
+    endTime: string | null
+    user: string
+    status: string
+  }
+}
+
+const findChamberScheduleConflict = (
+  db: Database.Database,
+  params: {
+    chamberId: string
+    startMs: number
+    endMs: number | null
+    status: UsageLogRow['status']
+    nowMs: number
+    excludeId?: string
+  }
+): UsageLogScheduleConflict | null => {
+  const rows = (
+    params.excludeId
+      ? db
+          .prepare('select id, start_time, end_time, user, status from usage_logs where chamber_id = ? and id != ?')
+          .all(params.chamberId, params.excludeId)
+      : db.prepare('select id, start_time, end_time, user, status from usage_logs where chamber_id = ?').all(params.chamberId)
+  ) as Array<Pick<UsageLogRow, 'id' | 'start_time' | 'end_time' | 'user' | 'status'>>
+
+  const candStartMs = params.startMs
+  const candEndMs =
+    params.endMs !== null
+      ? params.endMs
+      : params.status === 'completed'
+        ? candStartMs
+        : Number.POSITIVE_INFINITY
+  const candIsOccupyingNow =
+    params.status !== 'completed' &&
+    (params.status === 'in-progress' || params.status === 'overdue' || candStartMs <= params.nowMs)
+
+  for (const r of rows) {
+    const existStartMs = parseIsoMs(r.start_time)
+    if (existStartMs === null) continue
+    const existExplicitEndMs = r.end_time ? parseIsoMs(r.end_time) : null
+    const existEndMs =
+      existExplicitEndMs !== null
+        ? existExplicitEndMs
+        : r.status === 'completed'
+          ? existStartMs
+          : Number.POSITIVE_INFINITY
+
+    if (candStartMs < existEndMs && existStartMs < candEndMs) {
+      return {
+        error: 'usage_log_overlap',
+        conflict: {
+          id: r.id,
+          startTime: r.start_time,
+          endTime: r.end_time ?? null,
+          user: r.user,
+          status: r.status,
+        },
+      }
+    }
+
+    const existIsOccupyingNow =
+      r.status !== 'completed' &&
+      (r.status === 'in-progress' || r.status === 'overdue' || existStartMs <= params.nowMs)
+    if (candIsOccupyingNow && existIsOccupyingNow) {
+      return {
+        error: 'usage_log_active_conflict',
+        conflict: {
+          id: r.id,
+          startTime: r.start_time,
+          endTime: r.end_time ?? null,
+          user: r.user,
+          status: r.status,
+        },
+      }
+    }
+  }
+
+  return null
+}
+
 const isTestProjectAllowedForChamber = (db: Database.Database, chamberId: string, testProjectId: string) => {
   const chamber = db.prepare('select category from assets where id = ?').get(chamberId) as { category?: string | null } | undefined
   const testProject = db.prepare('select asset_categories from test_projects where id = ?').get(testProjectId) as
@@ -233,7 +318,17 @@ usageLogsRouter.post('/', requireAuth, validateBody(usageLogCreateSchema), (req,
     targetStatus: null,
     updatedAt: null,
   }
+  let scheduleConflict: UsageLogScheduleConflict | null = null
   db.transaction(() => {
+    scheduleConflict = findChamberScheduleConflict(db, {
+      chamberId: d.chamberId,
+      startMs: normalizedStartMs,
+      endMs: normalizedEndMs,
+      status: d.status,
+      nowMs,
+    })
+    if (scheduleConflict) return
+
     db.prepare(
       [
         'insert into usage_logs (',
@@ -256,6 +351,10 @@ usageLogsRouter.post('/', requireAuth, validateBody(usageLogCreateSchema), (req,
     )
     statusChange = recomputeChamberStatus(db, d.chamberId)
   })()
+
+  if (scheduleConflict) {
+    return res.status(409).json(scheduleConflict)
+  }
 
   if (statusChange.updated && statusChange.targetStatus && statusChange.updatedAt) {
     publishAssetStatusChanged(d.chamberId, statusChange.targetStatus, statusChange.updatedAt)
@@ -322,12 +421,28 @@ usageLogsRouter.patch('/:id', requireAuth, validateBody(usageLogPatchSchema), (r
   const shouldNormalizeInProgressStart =
     d.status === 'in-progress' && d.startTime && rawStartMs !== null && rawStartMs - nowMs > CLOCK_SKEW_ALLOW_MS
 
+  const beforeStartMs = parseIsoMs(before.start_time)
+  const beforeEndMs = before.end_time ? parseIsoMs(before.end_time) : null
   const normalizedStartTime =
     d.startTime !== undefined ? (shouldNormalizeInProgressStart ? nowIso : d.startTime) : undefined
-  const autoCompletedEndTime = d.endTime === undefined && d.status === 'completed' && !before.end_time ? nowIso : undefined
+  const autoCompletedEndTime = (() => {
+    if (d.endTime !== undefined || d.status !== 'completed') return undefined
+    if (!before.end_time) return nowIso
+    if (
+      before.status !== 'completed' &&
+      beforeStartMs !== null &&
+      beforeEndMs !== null &&
+      beforeStartMs <= nowMs &&
+      nowMs < beforeEndMs
+    ) {
+      return nowIso
+    }
+    return undefined
+  })()
 
   const effectiveStartTime = normalizedStartTime ?? before.start_time
   const effectiveEndTime = d.endTime !== undefined ? d.endTime : autoCompletedEndTime ?? before.end_time
+  const effectiveStatus = d.status ?? before.status
 
   const effStartMs = parseIsoMs(effectiveStartTime)
   const effEndMs = effectiveEndTime !== null && effectiveEndTime !== undefined ? parseIsoMs(effectiveEndTime) : null
@@ -349,8 +464,29 @@ usageLogsRouter.patch('/:id', requireAuth, validateBody(usageLogPatchSchema), (r
     ...(autoCompletedEndTime !== undefined ? { endTime: autoCompletedEndTime } : null),
   }
 
+  const affectsSchedule =
+    d.chamberId !== undefined || d.startTime !== undefined || d.endTime !== undefined || d.status !== undefined
+  const isStoppingWithoutExpanding =
+    d.status === 'completed' &&
+    nextChamberId === prevChamberId &&
+    d.startTime === undefined &&
+    (d.endTime === undefined || (beforeEndMs !== null && effEndMs !== null && effEndMs <= beforeEndMs))
+
   const statusChanges: Array<{ chamberId: string; status: string; updatedAt: string }> = []
+  let scheduleConflict: UsageLogScheduleConflict | null = null
   db.transaction(() => {
+    if (affectsSchedule && !isStoppingWithoutExpanding && effStartMs !== null) {
+      scheduleConflict = findChamberScheduleConflict(db, {
+        chamberId: nextChamberId,
+        startMs: effStartMs,
+        endMs: effEndMs,
+        status: effectiveStatus,
+        nowMs,
+        excludeId: id,
+      })
+      if (scheduleConflict) return
+    }
+
     const { sets, params } = buildPatchSet(patchInput, USAGE_LOG_PATCH_SPECS)
     if (sets.length) {
       db.prepare(`update usage_logs set ${sets.join(', ')} where id = ?`).run(...params, id)
@@ -366,6 +502,10 @@ usageLogsRouter.patch('/:id', requireAuth, validateBody(usageLogPatchSchema), (r
       }
     }
   })()
+
+  if (scheduleConflict) {
+    return res.status(409).json(scheduleConflict)
+  }
 
   for (const sc of statusChanges) {
     publishAssetStatusChanged(sc.chamberId, sc.status, sc.updatedAt)

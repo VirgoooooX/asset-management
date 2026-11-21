@@ -1,8 +1,21 @@
 // src/pages/TimelinePage.tsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Container, Box, Typography, CircularProgress, Button, Alert, Chip, ToggleButtonGroup, ToggleButton, Stack } from '@mui/material';
+import {
+  Container,
+  Box,
+  Typography,
+  CircularProgress,
+  Button,
+  Alert,
+  ToggleButtonGroup,
+  ToggleButton,
+  Stack,
+  Tooltip,
+  Divider,
+} from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
-import TimelineIcon from '@mui/icons-material/ViewTimeline'
+import TimelineIcon from '@mui/icons-material/ViewTimeline';
+import TodayIcon from '@mui/icons-material/Today';
 import ScrollingTimeline from '../components/ScrollingTimeline';
 import UsageLogDetails from '../components/UsageLogDetails';
 import UsageLogForm from '../components/UsageLogForm';
@@ -10,265 +23,380 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import AppCard from '../components/AppCard';
 import { UsageLog } from '../types';
 import { fetchUsageLogs, removeConfigFromUsageLog } from '../store/usageLogsSlice';
-import { useAppDispatch, useAppSelector } from '../store/hooks'
-import { getEffectiveUsageLogStatus } from '../utils/statusHelpers'
+import { useAppDispatch, useAppSelector } from '../store/hooks';
+import { getEffectiveUsageLogStatus } from '../utils/statusHelpers';
 import { alpha, useTheme } from '@mui/material/styles';
-import TitleWithIcon from '../components/TitleWithIcon'
-import { APP_PAGE_FRAME } from '../theme'
-import { useI18n } from '../i18n'
-import { getUsageLogStatusMeta } from '../utils/statusMeta'
+import TitleWithIcon from '../components/TitleWithIcon';
+import { APP_PAGE_FRAME } from '../theme';
+import { useI18n } from '../i18n';
+import { getUsageLogStatusMeta } from '../utils/statusMeta';
+import { formatVisibleMonthLabel } from '../utils/timelineLayout';
 
 const TimelinePage: React.FC = () => {
-    const theme = useTheme();
-    const { tr } = useI18n()
-    const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
-    const [detailsOpen, setDetailsOpen] = useState(false);
-    const dispatch = useAppDispatch()
-    const { usageLogs, loading, error } = useAppSelector((state) => state.usageLogs)
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+  const { tr, language } = useI18n();
+  const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const dispatch = useAppDispatch();
+  const { usageLogs, loading, error } = useAppSelector((state) => state.usageLogs);
 
-    const initialFetchDoneRef = useRef(false);
+  const initialFetchDoneRef = useRef(false);
 
-    const [isUsageLogFormOpen, setIsUsageLogFormOpen] = useState(false);
-    const [pendingDelete, setPendingDelete] = useState<{ logId: string; configId: string } | null>(null);
-    const [dayWidthPx, setDayWidthPx] = useState<number>(200);
-    const [scrollToTodaySignal, setScrollToTodaySignal] = useState(0);
+  const [isUsageLogFormOpen, setIsUsageLogFormOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ logId: string; configId: string } | null>(null);
+  const [dayWidthPx, setDayWidthPx] = useState<number>(200);
+  const [scrollToTodaySignal, setScrollToTodaySignal] = useState(0);
+  const [visibleMonthLabel, setVisibleMonthLabel] = useState<string>(() =>
+    formatVisibleMonthLabel(new Date(), language)
+  );
 
-    const overdueCount = useMemo(() => {
-        return usageLogs.reduce((count, log) => {
-            return getEffectiveUsageLogStatus(log) === 'overdue' ? count + 1 : count
-        }, 0)
-    }, [usageLogs])
+  useEffect(() => {
+    setVisibleMonthLabel(formatVisibleMonthLabel(new Date(), language));
+  }, [language]);
 
-    const legendChipSx = useCallback((status: UsageLog['status']) => {
-        const tone = getUsageLogStatusMeta(status, tr).tone
-        const paletteEntry =
-            tone === 'success' ? theme.palette.success :
-            tone === 'warning' ? theme.palette.warning :
-            tone === 'error' ? theme.palette.error :
-            tone === 'info' ? theme.palette.info :
-            null
-        const main = paletteEntry?.main ?? theme.palette.text.secondary
-        const dark = paletteEntry?.dark ?? theme.palette.text.primary
+  const overdueCount = useMemo(() => {
+    return usageLogs.reduce((count, log) => {
+      return getEffectiveUsageLogStatus(log) === 'overdue' ? count + 1 : count;
+    }, 0);
+  }, [usageLogs]);
 
-        return {
-            backgroundColor: alpha(main, 0.16),
-            border: '1px solid',
-            borderColor: alpha(main, 0.32),
-            color: dark,
-            fontWeight: 650,
-        } as const;
-    }, [theme, tr]);
+  const legendItems = useMemo(() => {
+    const statuses: UsageLog['status'][] = ['not-started', 'in-progress', 'completed', 'overdue'];
+    return statuses.map((status) => {
+      const meta = getUsageLogStatusMeta(status, tr);
+      const color =
+        meta.tone === 'success'
+          ? theme.palette.success.main
+          : meta.tone === 'warning'
+            ? theme.palette.warning.main
+            : meta.tone === 'error'
+              ? theme.palette.error.main
+              : meta.tone === 'info'
+                ? theme.palette.info.main
+                : theme.palette.text.secondary;
+      return { status, label: meta.label, color };
+    });
+  }, [theme, tr]);
 
-    const handleViewUsageLog = useCallback((logId: string) => {
-        setSelectedLogId(logId);
-        setDetailsOpen(true);
-    }, []);
+  const handleViewUsageLog = useCallback((logId: string) => {
+    setSelectedLogId(logId);
+    setDetailsOpen(true);
+  }, []);
 
-    const handleCloseDetails = useCallback(() => {
-        setDetailsOpen(false);
-        setSelectedLogId(null);
-    }, []);
+  const handleCloseDetails = useCallback(() => {
+    setDetailsOpen(false);
+    setSelectedLogId(null);
+  }, []);
 
-    const handleDeleteLog = useCallback((logId: string, configId: string) => {
-        setPendingDelete({ logId, configId });
-    }, []);
+  const handleDeleteLog = useCallback((logId: string, configId: string) => {
+    setPendingDelete({ logId, configId });
+  }, []);
 
-    const handleCloseDelete = useCallback(() => setPendingDelete(null), []);
+  const handleCloseDelete = useCallback(() => setPendingDelete(null), []);
 
-    const handleConfirmDelete = useCallback(async () => {
-        if (!pendingDelete) return;
-        try {
-            await dispatch(removeConfigFromUsageLog({ logId: pendingDelete.logId, configId: pendingDelete.configId })).unwrap();
-        } catch (error) {
-            console.error('Failed to remove config from log:', error);
-        } finally {
-            setPendingDelete(null);
-        }
-    }, [dispatch, pendingDelete]);
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    try {
+      await dispatch(removeConfigFromUsageLog({ logId: pendingDelete.logId, configId: pendingDelete.configId })).unwrap();
+    } catch (err) {
+      console.error('Failed to remove config from log:', err);
+    } finally {
+      setPendingDelete(null);
+    }
+  }, [dispatch, pendingDelete]);
 
-    useEffect(() => {
-        // 只有在非加载状态且首次获取未完成时才 dispatch
-        if (!loading && !initialFetchDoneRef.current) {
-            dispatch(fetchUsageLogs());
-            initialFetchDoneRef.current = true;
-        }
-    }, [dispatch, loading]); // 依赖 dispatch 和 loading 状态
+  useEffect(() => {
+    if (!loading && !initialFetchDoneRef.current) {
+      dispatch(fetchUsageLogs());
+      initialFetchDoneRef.current = true;
+    }
+  }, [dispatch, loading]);
 
-    const handleOpenNewUsageLogForm = useCallback(() => {
-        setIsUsageLogFormOpen(true);
-    }, []);
+  const handleOpenNewUsageLogForm = useCallback(() => {
+    setIsUsageLogFormOpen(true);
+  }, []);
 
-    const handleCloseUsageLogForm = useCallback((success?: boolean) => {
-        setIsUsageLogFormOpen(false);
-        if (success) {
-            // 登记/编辑成功后的操作，例如显示提示或刷新列表
-            // 如果 Redux slice 能正确更新列表，通常不需要手动再次 fetchUsageLogs
-            // dispatch(fetchUsageLogs());
-        }
-    }, []);
+  const handleCloseUsageLogForm = useCallback(() => {
+    setIsUsageLogFormOpen(false);
+  }, []);
 
-    return (
-        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-            <Container maxWidth={APP_PAGE_FRAME.maxWidth} disableGutters sx={{ pt: { xs: 3, sm: 4 }, pb: 2, flexShrink: 0, px: APP_PAGE_FRAME.px }}>
-                <Stack
-                    direction="row"
-                    alignItems="center"
-                    justifyContent="space-between"
-                    spacing={2}
-                >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0, flexWrap: 'nowrap' }}>
-                        <Typography variant="h4" component="h1" sx={{ fontWeight: 850, lineHeight: 1.15, whiteSpace: 'nowrap' }}>
-                            <TitleWithIcon icon={<TimelineIcon />}>{tr('设备排程', 'Occupancy Schedule')}</TitleWithIcon>
-                        </Typography>
-                        {overdueCount > 0 ? (
-                            <Chip
-                                color="error"
-                                size="small"
-                                label={tr(
-                                    `当前有 ${overdueCount} 条超时未完成使用记录，请及时处理`,
-                                    `There are ${overdueCount} overdue usage logs. Please handle them.`
-                                )}
-                                sx={{
-                                    fontWeight: 750,
-                                    borderRadius: 999,
-                                    fontSize: '1.2rem',
-                                    height: 40,
-                                    whiteSpace: 'nowrap',
-                                    animation: 'timelineOverduePulse 1.15s ease-in-out infinite',
-                                    '@media (prefers-reduced-motion: reduce)': {
-                                        animation: 'none',
-                                    },
-                                    '@keyframes timelineOverduePulse': {
-                                        '0%': { opacity: 1, filter: 'saturate(1)' },
-                                        '55%': { opacity: 0.55, filter: 'saturate(1.15)' },
-                                        '100%': { opacity: 1, filter: 'saturate(1)' },
-                                    },
-                                    '& .MuiChip-label': {
-                                        whiteSpace: 'nowrap',
-                                        px: 1.25,
-                                        lineHeight: 1.15,
-                                    },
-                                }}
-                            />
-                        ) : null}
-                    </Box>
-                    <Box
-                        sx={{
-                            display: 'flex',
-                            flexWrap: 'wrap',
-                            gap: 1,
-                            alignItems: 'center',
-                            justifyContent: { xs: 'flex-start', sm: 'flex-end' },
-                        }}
-                    >
-                        <Button variant="outlined" size="small" onClick={() => setScrollToTodaySignal((n) => n + 1)} sx={{ whiteSpace: 'nowrap' }}>
-                            {tr('跳转今天', 'Today')}
-                        </Button>
-                        <ToggleButtonGroup
-                            value={dayWidthPx}
-                            exclusive
-                            size="small"
-                            onChange={(_, value) => {
-                                if (typeof value === 'number') setDayWidthPx(value);
-                            }}
-                            sx={{ flexShrink: 0 }}
-                        >
-                            <ToggleButton value={140} sx={{ px: 1.25 }}>{tr('紧凑', 'Compact')}</ToggleButton>
-                            <ToggleButton value={200} sx={{ px: 1.25 }}>{tr('默认', 'Default')}</ToggleButton>
-                            <ToggleButton value={260} sx={{ px: 1.25 }}>{tr('宽松', 'Wide')}</ToggleButton>
-                        </ToggleButtonGroup>
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                            <Chip label={tr('未开始', 'Not started')} size="small" sx={legendChipSx('not-started')} />
-                            <Chip label={tr('进行中', 'In progress')} size="small" sx={legendChipSx('in-progress')} />
-                            <Chip label={tr('已完成', 'Completed')} size="small" sx={legendChipSx('completed')} />
-                            <Chip label={tr('已超时', 'Overdue')} size="small" sx={legendChipSx('overdue')} />
-                        </Box>
-                        <Button
-                            variant="contained"
-                            color="primary"
-                            size="small"
-                            startIcon={<AddIcon />}
-                            onClick={handleOpenNewUsageLogForm}
-                            sx={{ whiteSpace: 'nowrap' }}
-                        >
-                            {tr('登记新使用记录', 'New usage log')}
-                        </Button>
-                    </Box>
-                </Stack>
-            </Container>
-
-            <Container
-                maxWidth={APP_PAGE_FRAME.maxWidth}
-                disableGutters
-                sx={{
-                    pb: 0,
-                    flexGrow: 1,
-                    minHeight: 0,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    px: APP_PAGE_FRAME.px,
-                }}
+  return (
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+      <Container
+        maxWidth={APP_PAGE_FRAME.maxWidth}
+        disableGutters
+        sx={{ pt: { xs: 3, sm: 4 }, pb: 3, flexShrink: 0, px: APP_PAGE_FRAME.px }}
+      >
+        <Stack
+          direction={{ xs: 'column', lg: 'row' }}
+          alignItems={{ xs: 'stretch', lg: 'center' }}
+          justifyContent="space-between"
+          spacing={1.5}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0, flexWrap: 'wrap' }}>
+            <Typography variant="h4" component="h1" sx={{ fontWeight: 700, lineHeight: 1.15, whiteSpace: 'nowrap' }}>
+              <TitleWithIcon icon={<TimelineIcon />}>{tr('设备排程', 'Occupancy Schedule')}</TitleWithIcon>
+            </Typography>
+            <Box
+              component="span"
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                height: 26,
+                px: 1.15,
+                borderRadius: '8px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                fontVariantNumeric: 'tabular-nums',
+                color: 'text.secondary',
+                backgroundColor: alpha(theme.palette.text.primary, isDark ? 0.1 : 0.06),
+                border: '1px solid',
+                borderColor: alpha(theme.palette.text.primary, isDark ? 0.14 : 0.08),
+                whiteSpace: 'nowrap',
+              }}
             >
-                <AppCard
-                    sx={{ p: 0, flexGrow: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-                    contentSx={{ m: 0, display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}
+              {visibleMonthLabel}
+            </Box>
+            {overdueCount > 0 ? (
+              <Tooltip
+                title={tr(
+                  `当前有 ${overdueCount} 条超时未完成使用记录，请及时处理`,
+                  `There are ${overdueCount} overdue usage logs. Please handle them.`
+                )}
+              >
+                <Box
+                  component="span"
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.75,
+                    height: 26,
+                    px: 1.15,
+                    borderRadius: 999,
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    color: isDark ? theme.palette.error.light : theme.palette.error.dark,
+                    backgroundColor: alpha(theme.palette.error.main, isDark ? 0.2 : 0.1),
+                    border: '1px solid',
+                    borderColor: alpha(theme.palette.error.main, isDark ? 0.42 : 0.28),
+                  }}
                 >
-                    <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
-                        {loading && usageLogs.length === 0 ? (
-                            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                                <CircularProgress />
-                                <Typography sx={{ ml: 2 }}>{tr('加载中...', 'Loading...')}</Typography>
-                            </Box>
-                        ) : error ? (
-                            <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', p: 2 }}>
-                                <Alert severity="error" sx={{ width: '100%', maxWidth: '600px', mb: 2 }}>
-                                    {tr(`加载时间轴数据失败: ${error}`, `Failed to load timeline: ${error}`)}
-                                </Alert>
-                                <Button variant="outlined" onClick={() => { initialFetchDoneRef.current = false; dispatch(fetchUsageLogs({ force: true })); }}>
-                                    {tr('重试', 'Retry')}
-                                </Button>
-                            </Box>
-                        ) : (
-                            <ScrollingTimeline
-                                usageLogs={usageLogs}
-                                onViewUsageLog={handleViewUsageLog}
-                                onDeleteUsageLog={handleDeleteLog}
-                                dayWidthPx={dayWidthPx}
-                                scrollToTodaySignal={scrollToTodaySignal}
-                                minRowHeightPx={65}
-                                itemBarHeightPx={50}
-                                itemBarGapPx={2}
-                            />
-                        )}
-                    </Box>
-                </AppCard>
+                  <Box
+                    component="span"
+                    sx={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      backgroundColor: theme.palette.error.main,
+                      flexShrink: 0,
+                      animation: 'timelineOverdueDotPulse 1.8s ease-in-out infinite',
+                      '@media (prefers-reduced-motion: reduce)': {
+                        animation: 'none',
+                      },
+                      '@keyframes timelineOverdueDotPulse': {
+                        '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+                        '50%': { opacity: 0.4, transform: 'scale(0.82)' },
+                      },
+                    }}
+                  />
+                  {tr(`${overdueCount} 条超时待处理`, `${overdueCount} overdue`)}
+                </Box>
+              </Tooltip>
+            ) : null}
+          </Box>
 
-                {/* 使用记录详情对话框 */}
-                {detailsOpen && selectedLogId && (
-                    <UsageLogDetails
-                        open={detailsOpen}
-                        onClose={handleCloseDetails}
-                        logId={selectedLogId}
-                    />
-                )}
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 1,
+              alignItems: 'center',
+              justifyContent: { xs: 'flex-start', lg: 'flex-end' },
+            }}
+          >
+            <Box
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 1.25,
+                px: 0.5,
+              }}
+              aria-label={tr('状态图例', 'Status legend')}
+            >
+              {legendItems.map((item) => (
+                <Box
+                  key={item.status}
+                  component="span"
+                  sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.6,
+                    fontSize: '0.78rem',
+                    fontWeight: 600,
+                    color: 'text.secondary',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Box
+                    component="span"
+                    sx={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: '50%',
+                      backgroundColor: item.color,
+                      flexShrink: 0,
+                    }}
+                  />
+                  {item.label}
+                </Box>
+              ))}
+            </Box>
 
-                {/* 登记/编辑使用记录表单对话框 */}
-                {isUsageLogFormOpen && (
-                    <UsageLogForm
-                        open={isUsageLogFormOpen}
-                        onClose={handleCloseUsageLogForm}
-                    />
-                )}
-                <ConfirmDialog
-                    open={Boolean(pendingDelete)}
-                    title={tr('确认删除', 'Confirm deletion')}
-                    description={tr('确定要删除此配置的使用记录吗？此操作无法撤销。', 'Delete this config from the usage log? This action cannot be undone.')}
-                    onClose={handleCloseDelete}
-                    onConfirm={handleConfirmDelete}
-                />
-            </Container>
-        </Box>
-    );
+            <Divider orientation="vertical" flexItem sx={{ height: 18, alignSelf: 'center', display: { xs: 'none', sm: 'block' } }} />
+
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<TodayIcon sx={{ fontSize: 15 }} />}
+              onClick={() => setScrollToTodaySignal((n) => n + 1)}
+              sx={{
+                whiteSpace: 'nowrap',
+                minHeight: 32,
+                px: 1.25,
+                borderColor: alpha(theme.palette.primary.main, 0.38),
+                backgroundColor: alpha(theme.palette.primary.main, isDark ? 0.1 : 0.04),
+                '&:hover': {
+                  borderColor: theme.palette.primary.main,
+                  backgroundColor: alpha(theme.palette.primary.main, isDark ? 0.18 : 0.09),
+                },
+              }}
+            >
+              {tr('跳转今天', 'Today')}
+            </Button>
+
+            <ToggleButtonGroup
+              value={dayWidthPx}
+              exclusive
+              size="small"
+              onChange={(_, value) => {
+                if (typeof value === 'number') setDayWidthPx(value);
+              }}
+              sx={{
+                flexShrink: 0,
+                backgroundColor: 'background.paper',
+                '& .MuiToggleButton-root': {
+                  minHeight: 32,
+                  py: 0.25,
+                  px: 1.15,
+                  fontSize: '0.78rem',
+                },
+              }}
+            >
+              <ToggleButton value={140}>{tr('紧凑', 'Compact')}</ToggleButton>
+              <ToggleButton value={200}>{tr('默认', 'Default')}</ToggleButton>
+              <ToggleButton value={260}>{tr('宽松', 'Wide')}</ToggleButton>
+            </ToggleButtonGroup>
+
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={handleOpenNewUsageLogForm}
+              sx={{ whiteSpace: 'nowrap', minHeight: 32, px: 1.5 }}
+            >
+              {tr('登记新使用记录', 'New usage log')}
+            </Button>
+          </Box>
+        </Stack>
+      </Container>
+
+      <Container
+        maxWidth={APP_PAGE_FRAME.maxWidth}
+        disableGutters
+        sx={{
+          pb: { xs: 1.5, sm: 2 },
+          flexGrow: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          px: APP_PAGE_FRAME.px,
+        }}
+      >
+        <AppCard
+          sx={{
+            p: 0,
+            flexGrow: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            borderRadius: '14px',
+            borderColor: alpha(theme.palette.text.primary, isDark ? 0.16 : 0.12),
+            boxShadow: isDark
+              ? '0 8px 28px -6px rgba(0, 0, 0, 0.45), 0 1px 3px rgba(0, 0, 0, 0.3)'
+              : '0 6px 24px -6px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.04)',
+          }}
+          contentSx={{ m: 0, display: 'flex', flexDirection: 'column', flexGrow: 1, minHeight: 0 }}
+        >
+          <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+            {loading && usageLogs.length === 0 ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+                <CircularProgress />
+                <Typography sx={{ ml: 2 }}>{tr('加载中...', 'Loading...')}</Typography>
+              </Box>
+            ) : error ? (
+              <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100%', p: 2 }}>
+                <Alert severity="error" sx={{ width: '100%', maxWidth: '600px', mb: 2 }}>
+                  {tr(`加载时间轴数据失败: ${error}`, `Failed to load timeline: ${error}`)}
+                </Alert>
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    initialFetchDoneRef.current = false;
+                    dispatch(fetchUsageLogs({ force: true }));
+                  }}
+                >
+                  {tr('重试', 'Retry')}
+                </Button>
+              </Box>
+            ) : (
+              <ScrollingTimeline
+                usageLogs={usageLogs}
+                onViewUsageLog={handleViewUsageLog}
+                onDeleteUsageLog={handleDeleteLog}
+                dayWidthPx={dayWidthPx}
+                scrollToTodaySignal={scrollToTodaySignal}
+                minRowHeightPx={65}
+                itemBarHeightPx={50}
+                itemBarGapPx={2}
+                onVisibleMonthChange={setVisibleMonthLabel}
+              />
+            )}
+          </Box>
+        </AppCard>
+
+        {detailsOpen && selectedLogId && (
+          <UsageLogDetails open={detailsOpen} onClose={handleCloseDetails} logId={selectedLogId} />
+        )}
+
+        {isUsageLogFormOpen && <UsageLogForm open={isUsageLogFormOpen} onClose={handleCloseUsageLogForm} />}
+
+        <ConfirmDialog
+          open={Boolean(pendingDelete)}
+          title={tr('确认删除', 'Confirm deletion')}
+          description={tr(
+            '确定要删除此配置的使用记录吗？此操作无法撤销。',
+            'Delete this config from the usage log? This action cannot be undone.'
+          )}
+          onClose={handleCloseDelete}
+          onConfirm={handleConfirmDelete}
+        />
+      </Container>
+    </Box>
+  );
 };
 
 export default TimelinePage;

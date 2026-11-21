@@ -10,12 +10,17 @@ import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 import { addHours, parseISO } from 'date-fns';
 
 import { UsageLog, Config as ConfigType } from '../types';
-import { addUsageLog, updateUsageLog } from '../store/usageLogsSlice';
+import { addUsageLog, fetchUsageLogs, updateUsageLog } from '../store/usageLogsSlice';
 import { fetchProjects } from '../store/projectsSlice';
 import { fetchTestProjects } from '../store/testProjectsSlice';
 import { fetchAssetsByType } from '../store/assetsSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks';
 import { useI18n } from '../i18n';
+import {
+  findUsageLogConflict,
+  formatUsageLogConflictMessage,
+  parseUsageLogConflictApiError,
+} from '../utils/usageLogOverlap';
 
 const ITEM_HEIGHT = 48;
 const ITEM_PADDING_TOP = 8;
@@ -36,8 +41,9 @@ interface UsageLogFormProps {
 
 const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
   const dispatch = useAppDispatch();
-  const { tr } = useI18n();
+  const { tr, dateFnsLocale } = useI18n();
 
+  const { usageLogs } = useAppSelector((state) => state.usageLogs);
   const { projects, loading: loadingProjects, error: projectsError } = useAppSelector((state) => state.projects);
   const { testProjects, loading: loadingAllTestProjects, error: testProjectsError } = useAppSelector((state) => state.testProjects);
   const { assets: chambers, loading: loadingChambers, error: chambersError } = useAppSelector((state) => state.assets);
@@ -77,6 +83,7 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
 
   useEffect(() => {
     if (open) {
+      dispatch(fetchUsageLogs());
       dispatch(fetchAssetsByType({ type: 'chamber' }));
       dispatch(fetchProjects());
       dispatch(fetchTestProjects());
@@ -172,15 +179,54 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
     setEndTime(null);
   };
 
+  const scheduleConflict = useMemo(() => {
+    if (!selectedChamberId || !startTime) return null;
+    if (log && status === 'completed') {
+      const sameChamber = selectedChamberId === log.chamberId;
+      const sameStart = startTime.toISOString() === log.startTime;
+      const origEndMs = log.endTime ? Date.parse(log.endTime) : null;
+      const nextEndMs = endTime ? endTime.getTime() : null;
+      const notExpandingEnd = origEndMs !== null && nextEndMs !== null && nextEndMs <= origEndMs;
+      if (sameChamber && sameStart && notExpandingEnd) return null;
+    }
+    return findUsageLogConflict({
+      logs: usageLogs,
+      chamberId: selectedChamberId,
+      startTime,
+      endTime,
+      status,
+      excludeLogId: log?.id,
+    });
+  }, [usageLogs, selectedChamberId, startTime, endTime, status, log]);
+
+  const scheduleConflictMessage = useMemo(() => {
+    if (!scheduleConflict) return null;
+    return formatUsageLogConflictMessage(scheduleConflict, tr, dateFnsLocale);
+  }, [scheduleConflict, tr, dateFnsLocale]);
+
+  const handleShiftStartAfterConflict = () => {
+    if (!scheduleConflict?.conflictLog.endTime) return;
+    const nextStart = parseISO(scheduleConflict.conflictLog.endTime);
+    if (Number.isNaN(nextStart.getTime())) return;
+    setStartTime(nextStart);
+    setFormSubmitError(null);
+  };
+
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
     if (!selectedChamberId) newErrors.chamberId = tr('请选择环境箱', 'Please select an asset');
     if (!actualProjectId) newErrors.project = tr('请选择项目名（用于关联）', 'Please select a project');
     if (!startTime) newErrors.startTime = tr('请选择开始时间', 'Please select a start time');
     if (!endTime) newErrors.endTime = tr('请选择或等待自动计算结束时间', 'Please select or wait for auto-calculated end time');
-    if (startTime && endTime && endTime < startTime) newErrors.endTime = tr('结束时间不能早于开始时间', 'End time cannot be earlier than start time');
+    if (startTime && endTime && endTime <= startTime) {
+      newErrors.endTime = tr('结束时间必须晚于开始时间', 'End time must be later than start time');
+    }
     if (!user.trim()) newErrors.user = tr('请输入使用人', 'Please enter user name');
     if (!status) newErrors.status = tr('请选择状态', 'Please select status');
+    if (scheduleConflict && scheduleConflictMessage) {
+      newErrors.startTime = newErrors.startTime || tr('所选时间段与该设备已有记录冲突', 'Time range conflicts with an existing log on this chamber');
+      setFormSubmitError(scheduleConflictMessage);
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -212,7 +258,10 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
       onClose(true);
     } catch (error: any) {
       console.error('提交使用记录失败:', error);
-      setFormSubmitError(error.message || tr('操作失败，请稍后再试。', 'Operation failed. Please try again later.'));
+      const parsedConflict = parseUsageLogConflictApiError(error, tr, dateFnsLocale);
+      const fallbackMessage =
+        typeof error === 'string' ? error : error?.message || tr('操作失败，请稍后再试。', 'Operation failed. Please try again later.');
+      setFormSubmitError(parsedConflict || fallbackMessage);
     }
   };
 
@@ -320,7 +369,7 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
               label={tr('开始时间', 'Start time')}
               value={startTime}
               onChange={(newValue) => setStartTime(newValue)}
-              slotProps={{ textField: { fullWidth: true, required: true, error: !!errors.startTime, helperText: errors.startTime } }}
+              slotProps={{ textField: { fullWidth: true, required: true, error: !!errors.startTime || !!scheduleConflict, helperText: errors.startTime } }}
             />
             <DateTimePicker
               label={tr('结束时间', 'End time')}
@@ -329,6 +378,20 @@ const UsageLogForm: React.FC<UsageLogFormProps> = ({ open, onClose, log }) => {
               minDateTime={startTime || undefined}
               slotProps={{ textField: { fullWidth: true, required: true, error: !!errors.endTime, helperText: errors.endTime } }}
             />
+            {scheduleConflictMessage && (
+              <Alert
+                severity="warning"
+                action={
+                  scheduleConflict?.reason === 'overlap' && scheduleConflict.conflictLog.endTime ? (
+                    <Button color="inherit" size="small" onClick={handleShiftStartAfterConflict} sx={{ whiteSpace: 'nowrap' }}>
+                      {tr('顺延至结束后', 'Start after it')}
+                    </Button>
+                  ) : undefined
+                }
+              >
+                {scheduleConflictMessage}
+              </Alert>
+            )}
 
             <TextField
               label={tr('使用人', 'User')}

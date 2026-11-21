@@ -4,6 +4,9 @@ import {
   assignTracksToLogs,
   calculateBarPositionAndWidth,
   classifyDay,
+  formatDateHeaderParts,
+  formatShiftTimeLabels,
+  formatVisibleMonthLabel,
   generateDateHeadersFromRange,
   getTimelineBaseDate,
   getTimelineDisplayData,
@@ -129,5 +132,15 @@ describe('timelineLayout', () => {
     expect(trackById.get('1')).toBe(0)
     expect(trackById.get('2')).toBe(1)
     expect(trackById.get('3')).toBe(0)
+  })
+
+  it('formats date header parts, shift times, and visible month labels', () => {
+    const sampleDate = new Date(2026, 10, 21, 7, 0, 0) // 2026-11-21 Saturday
+    expect(formatDateHeaderParts(sampleDate, 'zh')).toEqual({ dateLabel: '11/21', weekdayLabel: '周六' })
+    expect(formatDateHeaderParts(sampleDate, 'en')).toEqual({ dateLabel: '11/21', weekdayLabel: 'Sat' })
+    expect(formatVisibleMonthLabel(sampleDate, 'zh')).toBe('2026年11月')
+    expect(formatVisibleMonthLabel(sampleDate, 'en')).toBe('Nov 2026')
+    expect(formatShiftTimeLabels(7 * 60)).toEqual({ dayTime: '07:00', nightTime: '19:00' })
+    expect(formatShiftTimeLabels(8 * 60 + 30)).toEqual({ dayTime: '08:30', nightTime: '20:30' })
   })
 })

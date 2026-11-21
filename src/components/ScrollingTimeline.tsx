@@ -1,14 +1,16 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { addDays, addMonths, differenceInCalendarDays, getYear, isEqual } from 'date-fns'
+import { addDays, addMonths, differenceInCalendarDays, differenceInMinutes, getYear, isEqual } from 'date-fns'
 import { Alert, Box, CircularProgress, Menu, MenuItem, Typography } from '@mui/material'
-import { alpha, useTheme, type Theme } from '@mui/material/styles'
+import { alpha, decomposeColor, useTheme, type Theme } from '@mui/material/styles'
 import type { UsageLog } from '../types'
 import { fetchAssetsByType } from '../store/assetsSlice'
 import { fetchProjects } from '../store/projectsSlice'
 import { fetchTestProjects } from '../store/testProjectsSlice'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { loadHolidayCalendar, type HolidayDetail } from '../services/holidayService'
+import { useMinuteClock } from '../hooks/useMinuteClock'
+import { getAssetStatusMeta } from '../utils/statusMeta'
 import {
   CHAMBER_NAME_WIDTH_PX,
   DAY_WIDTH_PX,
@@ -17,6 +19,7 @@ import {
   assignTracksToLogs,
   calculateBarPositionAndWidth,
   classifyDay,
+  formatVisibleMonthLabel,
   generateDateHeadersFromRange,
   getTimelineBaseDate,
   getTimelineDisplayData,
@@ -30,26 +33,66 @@ import styles from './ScrollingTimeline.module.css'
 const DEFAULT_ITEM_BAR_HEIGHT_PX = 44
 const DEFAULT_ITEM_BAR_GAP_PX = 2
 
+const mixOpaqueRgb = (foreground: string, background: string, ratio: number): string => {
+  try {
+    const fg = decomposeColor(foreground)
+    const bg = decomposeColor(background)
+    const r = Math.round(fg.values[0] * ratio + bg.values[0] * (1 - ratio))
+    const g = Math.round(fg.values[1] * ratio + bg.values[1] * (1 - ratio))
+    const b = Math.round(fg.values[2] * ratio + bg.values[2] * (1 - ratio))
+    return `rgb(${r}, ${g}, ${b})`
+  } catch {
+    return background
+  }
+}
+
 const buildTimelineCssVars = (theme: Theme) => {
-  const headerGlass = `linear-gradient(180deg, ${alpha(theme.palette.primary.main, 0.18)} 0%, ${alpha(theme.palette.primary.main, 0.08)} 100%), ${alpha(theme.palette.background.paper, 0.58)}`
-  const stickyGlass = `linear-gradient(180deg, ${alpha(theme.palette.secondary.main, 0.16)} 0%, ${alpha(theme.palette.secondary.main, 0.06)} 100%), ${alpha(theme.palette.background.paper, 0.62)}`
+  const isDark = theme.palette.mode === 'dark'
+  const paper = theme.palette.background.paper
+  const primary = theme.palette.primary.main
+  const error = theme.palette.error.main
+  const textPrimary = theme.palette.text.primary
+
   const vars: Record<string, string> = {
-    ['--timeline-bg']: alpha(theme.palette.background.paper, 0.95),
-    ['--timeline-header-bg']: headerGlass,
-    ['--timeline-sticky-bg']: stickyGlass,
-    ['--timeline-border']: theme.palette.divider,
-    ['--timeline-grid-line']: alpha(theme.palette.text.primary, 0.08),
-    ['--timeline-grid-line-soft']: alpha(theme.palette.text.primary, 0.06),
-    ['--timeline-weekend-bg']: alpha(theme.palette.text.primary, 0.03),
-    ['--timeline-holiday-bg']: alpha(theme.palette.error.main, 0.08),
-    ['--timeline-workday-override-bg']: alpha(theme.palette.text.primary, 0.02),
-    ['--timeline-today-bg']: alpha(theme.palette.info.main, 0.1),
-    ['--timeline-today-text']: theme.palette.info.main,
-    ['--timeline-bar-shadow']: `0 1px 2px ${alpha(theme.palette.text.primary, 0.18)}`,
-    ['--timeline-bar-shadow-hover']: `0 6px 14px ${alpha(theme.palette.text.primary, 0.22)}`,
-    ['--timeline-scrollbar-thumb']: alpha(theme.palette.text.primary, 0.32),
-    ['--timeline-scrollbar-thumb-hover']: alpha(theme.palette.text.primary, 0.44),
-    ['--timeline-scrollbar-track']: alpha(theme.palette.text.primary, 0.08),
+    ['--timeline-bg']: paper,
+    ['--timeline-header-bg']: paper,
+    ['--timeline-header-today-bg']: mixOpaqueRgb(primary, paper, isDark ? 0.22 : 0.1),
+    ['--timeline-header-weekend-bg']: mixOpaqueRgb(textPrimary, paper, isDark ? 0.06 : 0.025),
+    ['--timeline-header-holiday-bg']: mixOpaqueRgb(error, paper, isDark ? 0.2 : 0.08),
+    ['--timeline-sticky-bg']: paper,
+    ['--timeline-sticky-hover-bg']: mixOpaqueRgb(primary, paper, isDark ? 0.14 : 0.05),
+    ['--timeline-sticky-header-bg']: mixOpaqueRgb(textPrimary, paper, isDark ? 0.07 : 0.03),
+    ['--timeline-input-bg']: paper,
+    ['--timeline-badge-bg']: alpha(textPrimary, isDark ? 0.14 : 0.08),
+    ['--timeline-shift-day-bg']: paper,
+    ['--timeline-shift-night-bg']: mixOpaqueRgb(textPrimary, paper, isDark ? 0.06 : 0.025),
+    ['--timeline-text-primary']: textPrimary,
+    ['--timeline-text-muted']: theme.palette.text.secondary,
+    ['--timeline-weekend-text']: isDark ? '#fb7185' : '#e11d48',
+    ['--timeline-accent']: primary,
+    ['--timeline-accent-soft']: alpha(primary, isDark ? 0.28 : 0.16),
+    ['--timeline-border']: alpha(textPrimary, isDark ? 0.12 : 0.09),
+    ['--timeline-border-strong']: alpha(textPrimary, isDark ? 0.18 : 0.14),
+    ['--timeline-sticky-shadow']: isDark
+      ? '4px 0 12px -4px rgba(0, 0, 0, 0.45)'
+      : '4px 0 10px -4px rgba(15, 23, 42, 0.1)',
+    ['--timeline-header-shadow']: isDark
+      ? '0 2px 8px -2px rgba(0, 0, 0, 0.45)'
+      : '0 2px 6px -2px rgba(15, 23, 42, 0.08)',
+    ['--timeline-grid-line']: alpha(textPrimary, isDark ? 0.11 : 0.08),
+    ['--timeline-grid-line-half']: alpha(textPrimary, isDark ? 0.07 : 0.05),
+    ['--timeline-grid-line-soft']: alpha(textPrimary, isDark ? 0.08 : 0.06),
+    ['--timeline-today-col-bg']: alpha(primary, isDark ? 0.08 : 0.045),
+    ['--timeline-weekend-bg']: alpha(textPrimary, isDark ? 0.04 : 0.025),
+    ['--timeline-holiday-bg']: alpha(error, isDark ? 0.12 : 0.06),
+    ['--timeline-workday-override-bg']: alpha(textPrimary, 0.015),
+    ['--timeline-now-line']: primary,
+    ['--timeline-now-ring']: alpha(primary, isDark ? 0.35 : 0.22),
+    ['--timeline-bar-shadow']: `0 1px 2px ${alpha(textPrimary, 0.18)}`,
+    ['--timeline-bar-shadow-hover']: `0 6px 14px ${alpha(textPrimary, 0.22)}`,
+    ['--timeline-scrollbar-thumb']: alpha(textPrimary, 0.32),
+    ['--timeline-scrollbar-thumb-hover']: alpha(textPrimary, 0.44),
+    ['--timeline-scrollbar-track']: alpha(textPrimary, 0.08),
   }
   return vars as unknown as React.CSSProperties
 }
@@ -358,6 +401,7 @@ interface ScrollingTimelineProps {
   itemBarGapPx?: number
   getMinRowHeightPx?: (chamberId: string) => number
   showConfigCountBadge?: boolean
+  onVisibleMonthChange?: (monthLabel: string) => void
 }
 
 const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
@@ -372,11 +416,13 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   itemBarGapPx: propsItemBarGapPx,
   getMinRowHeightPx,
   showConfigCountBadge: propsShowConfigCountBadge,
+  onVisibleMonthChange,
 }) => {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const theme = useTheme()
-  const { tr } = useI18n()
+  const { tr, language } = useI18n()
+  const nowMinuteMs = useMinuteClock(true)
 
   const timelineCssVars = useMemo(() => buildTimelineCssVars(theme), [theme])
   const dayWidthPx = propsDayWidthPx ?? DAY_WIDTH_PX
@@ -391,6 +437,17 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   const { projects, loading: projectsLoading, error: projectsError } = useAppSelector((state) => state.projects)
   const { testProjects, loading: testProjectsLoading, error: testProjectsError } = useAppSelector((state) => state.testProjects)
   const { loading: usageLogsDataLoading } = useAppSelector((state) => state.usageLogs)
+  const [chamberSearchQuery, setChamberSearchQuery] = useState('')
+  const lastReportedMonthRef = useRef<string>('')
+
+  const filteredChambers = useMemo(() => {
+    const q = chamberSearchQuery.trim().toLowerCase()
+    if (!q) return chambers
+    return chambers.filter((c) => {
+      const hay = [c.name, c.category ?? '', c.location ?? '', c.assetCode ?? ''].join(' ').toLowerCase()
+      return hay.includes(q)
+    })
+  }, [chambers, chamberSearchQuery])
 
   const initialTimelineBaseDate = useMemo(() => getTimelineBaseDate(new Date(), shiftStartMinutes), [shiftStartMinutes])
   const [rangeStart, setRangeStart] = useState(() => addMonths(initialTimelineBaseDate, -1))
@@ -446,11 +503,23 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     const startIndex = Math.max(0, Math.floor(gridScrollLeft / dayWidthPx) - overscanDays)
     const endIndexExclusive = Math.min(totalDays, Math.ceil((gridScrollLeft + visibleGridWidth) / dayWidthPx) + overscanDays)
 
+    if (onVisibleMonthChange) {
+      const anchorIndex = Math.min(totalDays - 1, Math.max(0, Math.floor((gridScrollLeft + visibleGridWidth * 0.3) / dayWidthPx)))
+      const anchorDate = dateHeaders[anchorIndex]
+      if (anchorDate) {
+        const nextLabel = formatVisibleMonthLabel(anchorDate, language)
+        if (nextLabel !== lastReportedMonthRef.current) {
+          lastReportedMonthRef.current = nextLabel
+          onVisibleMonthChange(nextLabel)
+        }
+      }
+    }
+
     setVisibleDayIndexRange((prev) => {
       if (prev.startIndex === startIndex && prev.endIndexExclusive === endIndexExclusive) return prev
       return { startIndex, endIndexExclusive }
     })
-  }, [dateHeaders.length, dayWidthPx])
+  }, [dateHeaders, dayWidthPx, language, onVisibleMonthChange])
 
   useEffect(() => {
     const container = timelineContainerRef.current
@@ -637,21 +706,29 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     [chamberLayouts, getMinRowHeightPx, itemBarGapPx, itemBarTotalHeightPx, minRowHeightPx]
   )
 
+  const overdueChamberIds = useMemo(() => {
+    const set = new Set<string>()
+    timelineDisplayItems.forEach((item) => {
+      if (item.effectiveStatus === 'overdue') set.add(item.chamberId)
+    })
+    return set
+  }, [timelineDisplayItems])
+
   const totalTimelineGridHeight = useMemo(() => {
-    if (!chambers || chambers.length === 0) return minRowHeightPx * 3
-    return chambers.reduce((sum, chamber) => sum + getChamberRowHeight(chamber.id), 0)
-  }, [chambers, getChamberRowHeight, minRowHeightPx])
+    if (!filteredChambers || filteredChambers.length === 0) return minRowHeightPx * 3
+    return filteredChambers.reduce((sum, chamber) => sum + getChamberRowHeight(chamber.id), 0)
+  }, [filteredChambers, getChamberRowHeight, minRowHeightPx])
 
   const chamberRowTopById = useMemo(() => {
     const map = new Map<string, number>()
-    if (!chambers || chambers.length === 0) return map
+    if (!filteredChambers || filteredChambers.length === 0) return map
     let topOffset = 0
-    chambers.forEach((chamber) => {
+    filteredChambers.forEach((chamber) => {
       map.set(chamber.id, topOffset)
       topOffset += getChamberRowHeight(chamber.id)
     })
     return map
-  }, [chambers, getChamberRowHeight])
+  }, [filteredChambers, getChamberRowHeight])
 
   useEffect(() => {
     const container = timelineContainerRef.current
@@ -721,12 +798,30 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     )
   }
 
-  const todayByShift = getTimelineBaseDate(new Date(), shiftStartMinutes)
+  const nowDate = new Date(nowMinuteMs)
+  const todayByShift = getTimelineBaseDate(nowDate, shiftStartMinutes)
   const dayLabels = { weekend: tr('周末', 'Weekend'), weekday: tr('工作日', 'Workday') }
   const visibleDays = dateHeaders.slice(visibleDayIndexRange.startIndex, visibleDayIndexRange.endIndexExclusive)
   const visibleDayClassifications = visibleDays.map((d) => classifyDay(d, processedHolidays, dayLabels))
   const visibleLeftPx = visibleDayIndexRange.startIndex * dayWidthPx
   const visibleRightPx = visibleDayIndexRange.endIndexExclusive * dayWidthPx
+
+  const nowOffsetMinutes = differenceInMinutes(nowDate, timelineViewActualStart)
+  const nowLineLeftPx = (nowOffsetMinutes / (24 * 60)) * dayWidthPx
+  const showNowLine = nowLineLeftPx >= 0 && nowLineLeftPx <= totalTimelineWidth
+
+  const getChamberStatusIndicator = (chamber: (typeof chambers)[number]) => {
+    if (chamber.status === 'maintenance') {
+      return { color: theme.palette.error.main, label: getAssetStatusMeta('maintenance', tr).label }
+    }
+    if (overdueChamberIds.has(chamber.id)) {
+      return { color: theme.palette.error.main, label: tr('已超时', 'Overdue') }
+    }
+    if (chamber.status === 'in-use') {
+      return { color: theme.palette.warning.main, label: getAssetStatusMeta('in-use', tr).label }
+    }
+    return { color: theme.palette.success.main, label: getAssetStatusMeta('available', tr).label }
+  }
 
   return (
     <div className={styles.timelinePageContainer} style={timelineCssVars}>
@@ -744,40 +839,59 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
           visibleStartIndex={visibleDayIndexRange.startIndex}
           visibleDayClassifications={visibleDayClassifications}
           todayByShift={todayByShift}
+          shiftStartMinutes={shiftStartMinutes}
+          searchQuery={chamberSearchQuery}
+          onSearchQueryChange={setChamberSearchQuery}
+          totalChamberCount={chambers.length}
+          filteredChamberCount={filteredChambers.length}
         />
 
         <div className={styles.timelineBodyRow} style={{ width: `${CHAMBER_NAME_WIDTH_PX + totalTimelineWidth}px` }}>
           <div className={styles.timelineChamberColumn} style={{ width: `${CHAMBER_NAME_WIDTH_PX}px` }}>
-            {chambers.map((chamber) => (
-              <div
-                key={chamber.id}
-                className={styles.chamberRowName}
-                style={{ height: `${getChamberRowHeight(chamber.id)}px`, cursor: 'pointer' }}
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(`/assets/${chamber.id}`)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') navigate(`/assets/${chamber.id}`)
-                }}
-              >
-                {chamber.name}
-              </div>
-            ))}
-            {chambers.length === 0 && !chambersLoading && (
-              <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 1, textAlign: 'center' }}>
+            {filteredChambers.map((chamber) => {
+              const statusIndicator = getChamberStatusIndicator(chamber)
+              const metaText = chamber.category
+                ? `${chamber.category} · ${statusIndicator.label}`
+                : statusIndicator.label
+              return (
+                <div
+                  key={chamber.id}
+                  className={styles.chamberRowName}
+                  style={{ height: `${getChamberRowHeight(chamber.id)}px` }}
+                  role="button"
+                  tabIndex={0}
+                  title={`${chamber.name} (${metaText})`}
+                  onClick={() => navigate(`/assets/${chamber.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') navigate(`/assets/${chamber.id}`)
+                  }}
+                >
+                  <span className={styles.chamberStatusBar} style={{ backgroundColor: statusIndicator.color }} />
+                  <span className={styles.chamberNamePrimary}>{chamber.name}</span>
+                  <span className={styles.chamberNameMeta}>{metaText}</span>
+                </div>
+              )
+            })}
+            {filteredChambers.length === 0 && !chambersLoading && (
+              <Box sx={{ height: '100%', minHeight: minRowHeightPx * 3, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 1.5, textAlign: 'center' }}>
                 <Typography variant="caption" color="textSecondary">
-                  {tr('暂无环境箱', 'No chambers')}
+                  {chamberSearchQuery.trim()
+                    ? tr('未找到匹配设备', 'No matching assets')
+                    : tr('暂无环境箱', 'No chambers')}
                 </Typography>
               </Box>
             )}
           </div>
 
           <div className={styles.timelineGridContent} style={{ width: `${totalTimelineWidth}px`, minHeight: `${totalTimelineGridHeight}px` }}>
-            {visibleDays.map((_dayCellStartTime, offset) => {
+            {visibleDays.map((dayCellStartTime, offset) => {
               const dayIndex = visibleDayIndexRange.startIndex + offset
               const classification = visibleDayClassifications[offset]
+              const isTodayCol = isEqual(dayCellStartTime, todayByShift)
               let dayBgClass = styles.timelineDayBackground
-              if (classification.type === 'publicHolidayHighWage') {
+              if (isTodayCol) {
+                dayBgClass += ` ${styles.todayColumnBackground}`
+              } else if (classification.type === 'publicHolidayHighWage') {
                 dayBgClass += ` ${styles.publicHolidayStrongRedBackground}`
               } else if (classification.type === 'publicHolidayLowWage' || classification.type === 'weekendRest') {
                 dayBgClass += ` ${styles.weekendSoftRedBackground}`
@@ -794,7 +908,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
               )
             })}
 
-            {chambers.map((chamber) => (
+            {filteredChambers.map((chamber) => (
               <div
                 key={`row-bg-${chamber.id}`}
                 className={styles.timelineRowBackground}
@@ -806,7 +920,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
               />
             ))}
 
-            {chambers.map((chamber) => {
+            {filteredChambers.map((chamber) => {
               const layoutInfo = chamberLayouts.get(chamber.id)
               const logsToRender = layoutInfo ? layoutInfo.logsWithTracks : []
               const rowTopOffset = chamberRowTopById.get(chamber.id) || 0
@@ -830,7 +944,8 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                       timelineViewActualStart,
                       timelineViewActualEnd,
                       logDisplayItem.effectiveStatus,
-                      dayWidthPx
+                      dayWidthPx,
+                      nowDate
                     )
                     if (!display || width <= 0) return null
                     if (left + width < visibleLeftPx || left > visibleRightPx) return null
@@ -855,6 +970,16 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                 </div>
               )
             })}
+
+            {showNowLine && filteredChambers.length > 0 ? (
+              <div
+                className={styles.timelineNowLine}
+                style={{ left: `${nowLineLeftPx}px`, height: `${totalTimelineGridHeight}px` }}
+                aria-hidden="true"
+              >
+                <span className={styles.timelineNowDot} />
+              </div>
+            ) : null}
 
             <Menu
               open={Boolean(configDeleteMenu)}
