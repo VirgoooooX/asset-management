@@ -8,10 +8,20 @@ export type BuildInfo = {
 }
 
 export const buildInfo: BuildInfo = {
-  version: '2.1.1',
-  commit: '00c719d',
-  builtAt: '2026-11-21T06:06:41.514Z',
+  version: '2.1.2',
+  commit: '1b1341a',
+  builtAt: '2026-11-21T08:22:52.153Z',
   changelog: [
+    {
+      "hash": "1b1341a",
+      "date": "2026-11-21",
+      "message": "fix: overlay timeline scrollbars and align sidebar controls"
+    },
+    {
+      "hash": "13ba38a",
+      "date": "2026-11-21",
+      "message": "chore: release 2.1.1"
+    },
     {
       "hash": "00c719d",
       "date": "2026-11-21",
@@ -151,16 +161,6 @@ export const buildInfo: BuildInfo = {
       "hash": "9b59880",
       "date": "2026-02-10",
       "message": "feat: 扩展设备能力参数并优化仪表板分组功能"
-    },
-    {
-      "hash": "2b04d50",
-      "date": "2026-01-31",
-      "message": "feat: 扩展实时事件系统并优化仪表板UI"
-    },
-    {
-      "hash": "dc62da7",
-      "date": "2026-01-29",
-      "message": "chore: 更新版本号至0.1.3并修正导航标签文本"
     }
   ],
 }
