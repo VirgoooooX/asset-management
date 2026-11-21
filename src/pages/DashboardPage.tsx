@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Chip, Stack } from '@mui/material'
+import { Stack } from '@mui/material'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import { startOfDay, subDays } from 'date-fns'
 import AppCard from '../components/AppCard'
@@ -205,11 +205,6 @@ const DashboardPage: React.FC = () => {
               dispatch(setDashboardRangePreset(value))
               setPreset(value)
             }}
-          />
-          <Chip
-            label={tr(`校准提醒: ${calibrationDaysThreshold}天`, `Calibration due: ${calibrationDaysThreshold} days`)}
-            size="small"
-            sx={{ fontWeight: 650 }}
           />
         </Stack>
       }

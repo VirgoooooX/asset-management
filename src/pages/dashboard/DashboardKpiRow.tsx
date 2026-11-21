@@ -1,17 +1,12 @@
 import React from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
-import AssessmentIcon from '@mui/icons-material/Assessment'
-import EventAvailableIcon from '@mui/icons-material/EventAvailable'
-import BuildCircleIcon from '@mui/icons-material/BuildCircle'
-import SpeedIcon from '@mui/icons-material/Speed'
 import { useNavigate } from 'react-router-dom'
-import AppCard from '../../components/AppCard'
 import { useI18n } from '../../i18n'
 import type { RangePreset } from '../../utils/dateRange'
 import type { selectDashboardKpis } from '../../store/kpiSelectors'
 
-const TOP_ROW_HEIGHT = 180
+const CARD_HEIGHT = 156
 
 const formatPercent = (value: number) => `${Math.round(value * 100)}%`
 
@@ -38,98 +33,93 @@ const DashboardKpiRow: React.FC<DashboardKpiRowProps> = ({
 }) => {
   const navigate = useNavigate()
   const theme = useTheme()
+  const isDark = theme.palette.mode === 'dark'
   const { tr } = useI18n()
 
-  const utilizationText = formatPercent(kpis.utilization.ratio)
+  const utilizationRatio = Math.max(0, Math.min(1, kpis.utilization.ratio || 0))
+  const utilizationText = formatPercent(utilizationRatio)
   const windowLabel = tr(
     preset === 'custom' ? '自定义' : preset === '7d' ? '7天' : preset === '30d' ? '30天' : '90天',
     preset === 'custom' ? 'Custom' : preset === '7d' ? '7d' : preset === '30d' ? '30d' : '90d'
   )
 
-  const statusTiles = [
-    {
-      label: tr('设备总数', 'Total'),
-      value: kpis.totalAssets,
-      color: theme.palette.primary.main,
-      icon: <AssessmentIcon fontSize="small" />,
-    },
-    {
-      label: tr('可用', 'Available'),
-      value: kpis.statusCounts.available,
-      color: theme.palette.success.main,
-      icon: <EventAvailableIcon fontSize="small" />,
-    },
-    {
-      label: tr('使用中', 'In use'),
-      value: kpis.statusCounts['in-use'],
-      color: theme.palette.warning.main,
-      icon: <SpeedIcon fontSize="small" />,
-    },
-    {
-      label: tr('维护中', 'Maintenance'),
-      value: kpis.statusCounts.maintenance,
-      color: theme.palette.error.main,
-      icon: <BuildCircleIcon fontSize="small" />,
-    },
-  ] as const
+  const totalAssets = kpis.totalAssets
+  const availableCount = kpis.statusCounts.available
+  const inUseCount = kpis.statusCounts['in-use']
+  const maintenanceCount = kpis.statusCounts.maintenance
+  const availablePct = totalAssets > 0 ? Math.round((availableCount / totalAssets) * 100) : 0
 
-  const summaryCards = [
-    {
-      title: tr('维修追踪', 'Repairs'),
-      tone: 'warning' as const,
-      attention: repairStats.quotePending > 0 || repairStats.repairPending > 0,
-      value: isRepairLoading ? '-' : String(repairStats.quotePending + repairStats.repairPending),
-      unit: tr('单', ''),
-      notes: [
-        tr(`未询价：${isRepairLoading ? '-' : repairStats.quotePending}`, `Quote pending: ${isRepairLoading ? '-' : repairStats.quotePending}`),
-        tr(`待维修：${isRepairLoading ? '-' : repairStats.repairPending}`, `Repair pending: ${isRepairLoading ? '-' : repairStats.repairPending}`),
-        tr(`本周完成：${isRepairLoading ? '-' : repairStats.completedThisWeek}`, `Completed (7d): ${isRepairLoading ? '-' : repairStats.completedThisWeek}`),
-      ],
-      onClick: () => navigate('/repairs'),
+  const activeRepairsCount = repairStats.quotePending + repairStats.repairPending
+  const hasRepairAttention = activeRepairsCount > 0
+  const hasCalibrationAttention = kpis.calibrationAttention.count > 0
+  const hasOverdueAttention = kpis.overdueActiveCount > 0
+
+  const buildCardSx = (accent: string) => ({
+    height: CARD_HEIGHT,
+    borderRadius: '12px',
+    p: 1.75,
+    border: '1px solid',
+    borderColor: alpha(accent, isDark ? 0.34 : 0.24),
+    background: `linear-gradient(180deg, ${alpha(accent, isDark ? 0.16 : 0.1)} 0%, ${theme.palette.background.paper} 66%)`,
+    boxShadow: isDark
+      ? `0 4px 16px -4px rgba(0, 0, 0, 0.45)`
+      : `0 2px 10px -2px rgba(15, 23, 42, 0.05)`,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'space-between',
+    cursor: 'pointer',
+    minWidth: 0,
+    transition: 'transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease',
+    '&:hover': {
+      transform: 'translateY(-2px)',
+      borderColor: alpha(accent, isDark ? 0.52 : 0.42),
+      boxShadow: `0 8px 20px -6px ${alpha(accent, isDark ? 0.32 : 0.22)}`,
     },
-    {
-      title: tr(
-        `校验提醒（≤${kpis.calibrationAttention.daysThreshold}天为即将到期）`,
-        `Calibrations (due ≤${kpis.calibrationAttention.daysThreshold}d)`
-      ),
-      tone: 'warning' as const,
-      attention: kpis.calibrationAttention.count > 0,
-      value: String(kpis.calibrationAttention.count),
-      unit: tr('台', ''),
-      notes: [
-        tr(`即将到期：${kpis.calibrationAttention.dueCount}`, `Due soon: ${kpis.calibrationAttention.dueCount}`),
-        tr(`已逾期：${kpis.calibrationAttention.overdueCount}`, `Overdue: ${kpis.calibrationAttention.overdueCount}`),
-        tr(`未填写：${kpis.calibrationAttention.missingCount}`, `Missing: ${kpis.calibrationAttention.missingCount}`),
-      ],
-      onClick: () => navigate('/calibrations'),
-    },
-    {
-      title: tr('使用率', 'Utilization'),
-      tone: 'primary' as const,
-      attention: false,
-      value: utilizationText,
-      unit: '',
-      notes: [
-        tr(`时间窗：${windowLabel}`, `Window: ${windowLabel}`),
-        tr('口径：合并占用时段', 'Logic: merged occupancy'),
-        tr(`数据：${isLoading ? '加载中' : '已更新'}`, `Data: ${isLoading ? 'Loading' : 'Updated'}`),
-      ],
-      onClick: () => navigate('/timeline'),
-    },
-    {
-      title: tr('超时/逾期', 'Overdue'),
-      tone: 'error' as const,
-      attention: kpis.overdueActiveCount > 0,
-      value: String(kpis.overdueActiveCount),
-      unit: tr('条', ''),
-      notes: [
-        tr('口径：时间窗内逾期记录', 'Logic: overdue within window'),
-        tr(`时间窗：${windowLabel}`, `Window: ${windowLabel}`),
-        tr(`数据：${isLoading ? '加载中' : '已更新'}`, `Data: ${isLoading ? 'Loading' : 'Updated'}`),
-      ],
-      onClick: () => navigate('/usage-logs'),
-    },
-  ] as const
+  })
+
+  const buildBadgeSx = (color: string) => ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    height: 20,
+    px: 0.85,
+    borderRadius: '6px',
+    fontSize: '0.68rem',
+    fontWeight: 700,
+    lineHeight: 1,
+    whiteSpace: 'nowrap',
+    color: isDark ? alpha('#ffffff', 0.92) : color,
+    backgroundColor: alpha(color, isDark ? 0.24 : 0.12),
+    flexShrink: 0,
+  })
+
+  const footerRowSx = (accent: string) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 0.75,
+    pt: 1,
+    borderTop: '1px solid',
+    borderColor: alpha(accent, isDark ? 0.18 : 0.12),
+    fontSize: '0.73rem',
+    color: 'text.secondary',
+    minWidth: 0,
+  })
+
+  // Donut gauge geometry
+  const ringRadius = 18
+  const ringCircumference = 2 * Math.PI * ringRadius
+  const ringDashOffset = ringCircumference * (1 - utilizationRatio)
+
+  const fleetAccent = theme.palette.success.main
+  const utilizationAccent = theme.palette.primary.main
+  const overdueAccent = hasOverdueAttention ? theme.palette.error.main : theme.palette.primary.main
+  const repairAccent = hasRepairAttention ? theme.palette.warning.main : theme.palette.primary.main
+  const calibrationAccent =
+    kpis.calibrationAttention.overdueCount > 0
+      ? theme.palette.error.main
+      : hasCalibrationAttention
+        ? theme.palette.warning.main
+        : theme.palette.primary.main
 
   return (
     <Box
@@ -140,152 +130,368 @@ const DashboardKpiRow: React.FC<DashboardKpiRowProps> = ({
           xs: 'repeat(1, minmax(0, 1fr))',
           sm: 'repeat(2, minmax(0, 1fr))',
           md: 'repeat(3, minmax(0, 1fr))',
-          lg: 'repeat(5, minmax(0, 1fr))',
+          lg: '1.15fr repeat(4, minmax(0, 1fr))',
         },
-        gridAutoRows: `${TOP_ROW_HEIGHT}px`,
-        gridAutoFlow: 'row',
-        gap: 2,
+        gap: 1.75,
         alignItems: 'stretch',
       }}
     >
-      <Box sx={{ display: 'flex', minWidth: 0, height: '100%', alignItems: 'stretch' }}>
-        <AppCard
-          sx={{
-            flex: 1,
-            height: '100%',
-            p: 0,
-            border: 'none',
-            boxShadow: 'none',
-            backgroundColor: 'transparent',
-          }}
-          contentSx={{ mt: 0, height: '100%' }}
-        >
-          <Box sx={{ height: '100%', overflow: 'hidden' }}>
-            <Box
+      {/* Card 1: Fleet Status Distribution */}
+      <Box onClick={() => navigate('/chambers')} sx={buildCardSx(fleetAccent)}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Typography sx={{ fontWeight: 850, fontSize: '0.92rem', lineHeight: 1.2 }} noWrap>
+            {tr('设备运行态势', 'Fleet Status')}
+          </Typography>
+          <Box component="span" sx={buildBadgeSx(theme.palette.primary.main)}>
+            {tr(`共 ${totalAssets} 台`, `${totalAssets} Total`)}
+          </Box>
+        </Box>
+
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, mb: 1 }}>
+            <Typography
               sx={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                gridTemplateRows: 'repeat(2, auto)',
-                gap: 1.25,
-                minWidth: 0,
-                alignContent: 'start',
+                fontWeight: 900,
+                fontSize: '2.15rem',
+                lineHeight: 1,
+                letterSpacing: '-0.03em',
+                fontVariantNumeric: 'tabular-nums',
               }}
             >
-              {statusTiles.map((item) => (
-                <Box
-                  key={item.label}
-                  sx={{
-                    border: '1px solid',
-                    borderColor: alpha(item.color, 0.24),
-                    background: `linear-gradient(180deg, ${alpha(item.color, 0.10)} 0%, ${alpha(theme.palette.background.paper, 1)} 74%)`,
-                    borderRadius: 2,
-                    p: 1.5,
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(0, 1fr) auto',
-                    alignItems: 'center',
-                    gap: 1.25,
-                    minWidth: 0,
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 950, fontSize: 40, lineHeight: 1, letterSpacing: -0.9 }} noWrap>
-                    {item.value}
-                  </Typography>
-                  <Stack spacing={0.35} alignItems="flex-end" justifyContent="center" sx={{ minWidth: 0 }}>
-                    <Box
-                      sx={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 2,
-                        display: 'grid',
-                        placeItems: 'center',
-                        backgroundColor: alpha(item.color, 0.14),
-                        color: item.color,
-                        flex: '0 0 auto',
-                      }}
-                    >
-                      {item.icon}
-                    </Box>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 900 }} noWrap>
-                      {item.label}
-                    </Typography>
-                  </Stack>
-                </Box>
-              ))}
+              {availableCount}
+            </Typography>
+            <Typography sx={{ fontSize: '0.8rem', fontWeight: 750, color: 'success.main' }} noWrap>
+              {tr('台可用', 'available')}
+            </Typography>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ ml: 'auto', fontWeight: 650, fontVariantNumeric: 'tabular-nums' }}
+              noWrap
+            >
+              {availablePct}% {tr('空闲', 'free')}
+            </Typography>
+          </Box>
+
+          {/* Three-color segmented bar */}
+          <Box
+            sx={{
+              height: 7,
+              borderRadius: 999,
+              backgroundColor: alpha(theme.palette.text.primary, isDark ? 0.14 : 0.08),
+              display: 'flex',
+              overflow: 'hidden',
+              gap: '2px',
+            }}
+          >
+            {totalAssets > 0 ? (
+              <>
+                {availableCount > 0 ? (
+                  <Box
+                    sx={{
+                      flex: availableCount,
+                      backgroundColor: 'success.main',
+                      borderRadius: 999,
+                      transition: 'flex 300ms ease',
+                    }}
+                  />
+                ) : null}
+                {inUseCount > 0 ? (
+                  <Box
+                    sx={{
+                      flex: inUseCount,
+                      backgroundColor: 'warning.main',
+                      borderRadius: 999,
+                      transition: 'flex 300ms ease',
+                    }}
+                  />
+                ) : null}
+                {maintenanceCount > 0 ? (
+                  <Box
+                    sx={{
+                      flex: maintenanceCount,
+                      backgroundColor: 'error.main',
+                      borderRadius: 999,
+                      transition: 'flex 300ms ease',
+                    }}
+                  />
+                ) : null}
+              </>
+            ) : null}
+          </Box>
+        </Box>
+
+        <Box sx={footerRowSx(fleetAccent)}>
+          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, whiteSpace: 'nowrap' }}>
+            <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'success.main' }} />
+            {tr('可用', 'Avail')}{' '}
+            <Box component="b" sx={{ color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+              {availableCount}
             </Box>
           </Box>
-        </AppCard>
+          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, whiteSpace: 'nowrap' }}>
+            <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'warning.main' }} />
+            {tr('使用', 'In use')}{' '}
+            <Box component="b" sx={{ color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+              {inUseCount}
+            </Box>
+          </Box>
+          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, whiteSpace: 'nowrap' }}>
+            <Box component="span" sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'error.main' }} />
+            {tr('维护', 'Maint')}{' '}
+            <Box component="b" sx={{ color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+              {maintenanceCount}
+            </Box>
+          </Box>
+        </Box>
       </Box>
 
-      {summaryCards.map((card) => {
-        const accent = card.attention
-          ? card.tone === 'warning'
-            ? theme.palette.warning.main
-            : card.tone === 'error'
-              ? theme.palette.error.main
-              : theme.palette.primary.main
-          : theme.palette.primary.main
-
-        return (
-          <Box key={card.title} sx={{ display: 'flex', minWidth: 0, height: '100%', alignItems: 'stretch' }}>
-            <AppCard
-              sx={{
-                flex: 1,
-                height: '100%',
-                p: 0,
-                border: 'none',
-                boxShadow: 'none',
-                backgroundColor: 'transparent',
-              }}
-              contentSx={{ mt: 0 }}
-            >
-              <Box
-                onClick={card.onClick}
-                sx={{
-                  height: '100%',
-                  minHeight: 160,
-                  border: '1px solid',
-                  borderColor: alpha(accent, 0.24),
-                  background: `linear-gradient(180deg, ${alpha(accent, 0.12)} 0%, ${alpha(theme.palette.background.paper, 1)} 68%)`,
-                  borderRadius: 2,
-                  p: 2,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  cursor: 'pointer',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
-                  '&:hover': {
-                    transform: 'translateY(-2px)',
-                    boxShadow: `0 4px 12px ${alpha(accent, 0.25)}`,
-                  },
-                }}
-              >
-                <Typography variant="subtitle1" sx={{ fontWeight: 950, lineHeight: 1.15, mb: 2, fontSize: { xs: 16, sm: 17 } }} noWrap>
-                  {card.title}
-                </Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)', gap: 1.25, alignItems: 'center', flex: 1 }}>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Stack direction="row" spacing={0.5} alignItems="baseline" sx={{ flexWrap: 'wrap' }}>
-                      <Typography sx={{ fontWeight: 950, fontSize: 56, lineHeight: 1, letterSpacing: -1.2 }} noWrap>
-                        {card.value}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 850, ml: 0.5 }}>
-                        {card.unit || ' '}
-                      </Typography>
-                    </Stack>
-                  </Box>
-
-                  <Stack spacing={0.75} sx={{ minWidth: 0, alignItems: 'flex-end', textAlign: 'right' }}>
-                    {card.notes.map((t) => (
-                      <Typography key={t} variant="caption" color="text.secondary" sx={{ lineHeight: 1.4 }} noWrap>
-                        {t}
-                      </Typography>
-                    ))}
-                  </Stack>
-                </Box>
-              </Box>
-            </AppCard>
+      {/* Card 2: Utilization with Donut Gauge */}
+      <Box onClick={() => navigate('/timeline')} sx={buildCardSx(utilizationAccent)}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Typography sx={{ fontWeight: 850, fontSize: '0.92rem', lineHeight: 1.2 }} noWrap>
+            {tr('设备使用率', 'Utilization')}
+          </Typography>
+          <Box component="span" sx={buildBadgeSx(utilizationAccent)}>
+            {tr(preset === 'custom' ? '自定义窗' : `近 ${windowLabel}`, windowLabel)}
           </Box>
-        )
-      })}
+        </Box>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              sx={{
+                fontWeight: 900,
+                fontSize: '2.25rem',
+                lineHeight: 1,
+                letterSpacing: '-0.03em',
+                fontVariantNumeric: 'tabular-nums',
+                color: 'text.primary',
+              }}
+            >
+              {isLoading ? '-' : utilizationText}
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.35, fontWeight: 550 }} noWrap>
+              {tr('合并占用时段', 'Merged occupancy')}
+            </Typography>
+          </Box>
+
+          <Box
+            component="svg"
+            width={48}
+            height={48}
+            viewBox="0 0 44 44"
+            sx={{ flexShrink: 0, transform: 'rotate(-90deg)' }}
+            aria-hidden="true"
+          >
+            <circle
+              cx="22"
+              cy="22"
+              r={ringRadius}
+              fill="none"
+              stroke={alpha(theme.palette.text.primary, isDark ? 0.16 : 0.1)}
+              strokeWidth="5"
+            />
+            <circle
+              cx="22"
+              cy="22"
+              r={ringRadius}
+              fill="none"
+              stroke={utilizationAccent}
+              strokeWidth="5"
+              strokeDasharray={ringCircumference}
+              strokeDashoffset={ringDashOffset}
+              strokeLinecap="round"
+              style={{ transition: 'stroke-dashoffset 400ms ease' }}
+            />
+          </Box>
+        </Box>
+
+        <Box sx={footerRowSx(utilizationAccent)}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.73rem', fontVariantNumeric: 'tabular-nums' }} noWrap>
+            {tr(`活跃占用 ${inUseCount} / ${totalAssets} 台`, `Active ${inUseCount} / ${totalAssets}`)}
+          </Typography>
+          <Typography variant="caption" sx={{ fontSize: '0.73rem', fontWeight: 700, color: 'primary.main', whiteSpace: 'nowrap' }}>
+            {tr('排程 ›', 'Schedule ›')}
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Card 3: Overdue */}
+      <Box onClick={() => navigate('/usage-logs')} sx={buildCardSx(overdueAccent)}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Typography sx={{ fontWeight: 850, fontSize: '0.92rem', lineHeight: 1.2 }} noWrap>
+            {tr('超时 / 逾期', 'Overdue')}
+          </Typography>
+          <Box
+            component="span"
+            sx={buildBadgeSx(hasOverdueAttention ? theme.palette.error.main : theme.palette.success.main)}
+          >
+            {hasOverdueAttention ? tr('需关注', 'Action needed') : tr('无逾期', 'Clear')}
+          </Box>
+        </Box>
+
+        <Stack direction="row" spacing={0.75} alignItems="baseline">
+          <Typography
+            sx={{
+              fontWeight: 900,
+              fontSize: '2.35rem',
+              lineHeight: 1,
+              letterSpacing: '-0.03em',
+              fontVariantNumeric: 'tabular-nums',
+              color: hasOverdueAttention ? 'error.main' : 'text.primary',
+            }}
+          >
+            {isLoading ? '-' : kpis.overdueActiveCount}
+          </Typography>
+          <Typography
+            sx={{
+              fontSize: '0.8rem',
+              fontWeight: 750,
+              color: hasOverdueAttention ? 'error.main' : 'text.secondary',
+            }}
+            noWrap
+          >
+            {tr('条未完成', 'overdue')}
+          </Typography>
+        </Stack>
+
+        <Box sx={footerRowSx(overdueAccent)}>
+          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.73rem' }} noWrap>
+            {tr(`时间窗：${windowLabel}`, `Window: ${windowLabel}`)}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              fontSize: '0.73rem',
+              fontWeight: 700,
+              color: hasOverdueAttention ? 'error.main' : 'primary.main',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {tr('去处理 ›', 'View ›')}
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Card 4: Repairs */}
+      <Box onClick={() => navigate('/repairs')} sx={buildCardSx(repairAccent)}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Typography sx={{ fontWeight: 850, fontSize: '0.92rem', lineHeight: 1.2 }} noWrap>
+            {tr('维修追踪', 'Repairs')}
+          </Typography>
+          <Box
+            component="span"
+            sx={buildBadgeSx(hasRepairAttention ? theme.palette.warning.main : theme.palette.success.main)}
+          >
+            {hasRepairAttention ? tr('处理中', 'Active') : tr('正常', 'Normal')}
+          </Box>
+        </Box>
+
+        <Stack direction="row" spacing={0.75} alignItems="baseline">
+          <Typography
+            sx={{
+              fontWeight: 900,
+              fontSize: '2.35rem',
+              lineHeight: 1,
+              letterSpacing: '-0.03em',
+              fontVariantNumeric: 'tabular-nums',
+              color: hasRepairAttention ? 'warning.main' : 'text.primary',
+            }}
+          >
+            {isRepairLoading ? '-' : activeRepairsCount}
+          </Typography>
+          <Typography sx={{ fontSize: '0.8rem', fontWeight: 750, color: 'text.secondary' }} noWrap>
+            {tr('单进行中', 'active')}
+          </Typography>
+        </Stack>
+
+        <Box sx={footerRowSx(repairAccent)}>
+          <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+            {tr('未询价', 'Quote')}{' '}
+            <Box component="b" sx={{ color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+              {isRepairLoading ? '-' : repairStats.quotePending}
+            </Box>
+          </Box>
+          <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+            {tr('待修', 'Pending')}{' '}
+            <Box component="b" sx={{ color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+              {isRepairLoading ? '-' : repairStats.repairPending}
+            </Box>
+          </Box>
+          <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+            {tr('周完成', '7d')}{' '}
+            <Box component="b" sx={{ color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+              {isRepairLoading ? '-' : repairStats.completedThisWeek}
+            </Box>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* Card 5: Calibrations */}
+      <Box onClick={() => navigate('/calibrations')} sx={buildCardSx(calibrationAccent)}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+          <Typography sx={{ fontWeight: 850, fontSize: '0.92rem', lineHeight: 1.2 }} noWrap>
+            {tr('校验提醒', 'Calibrations')}
+          </Typography>
+          <Box
+            component="span"
+            sx={buildBadgeSx(hasCalibrationAttention ? calibrationAccent : theme.palette.text.secondary)}
+          >
+            {tr(`阈值 ≤${kpis.calibrationAttention.daysThreshold}天`, `Due ≤${kpis.calibrationAttention.daysThreshold}d`)}
+          </Box>
+        </Box>
+
+        <Stack direction="row" spacing={0.75} alignItems="baseline">
+          <Typography
+            sx={{
+              fontWeight: 900,
+              fontSize: '2.35rem',
+              lineHeight: 1,
+              letterSpacing: '-0.03em',
+              fontVariantNumeric: 'tabular-nums',
+              color:
+                kpis.calibrationAttention.overdueCount > 0
+                  ? 'error.main'
+                  : hasCalibrationAttention
+                    ? 'warning.main'
+                    : 'text.primary',
+            }}
+          >
+            {kpis.calibrationAttention.count}
+          </Typography>
+          <Typography sx={{ fontSize: '0.8rem', fontWeight: 750, color: 'text.secondary' }} noWrap>
+            {tr('台即将到期', 'due soon')}
+          </Typography>
+        </Stack>
+
+        <Box sx={footerRowSx(calibrationAccent)}>
+          <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+            {tr('到期', 'Due')}{' '}
+            <Box component="b" sx={{ color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+              {kpis.calibrationAttention.dueCount}
+            </Box>
+          </Box>
+          <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+            {tr('逾期', 'Over')}{' '}
+            <Box
+              component="b"
+              sx={{
+                color: kpis.calibrationAttention.overdueCount > 0 ? 'error.main' : 'text.primary',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {kpis.calibrationAttention.overdueCount}
+            </Box>
+          </Box>
+          <Box component="span" sx={{ whiteSpace: 'nowrap' }}>
+            {tr('未填', 'Unset')}{' '}
+            <Box component="b" sx={{ color: 'text.primary', fontVariantNumeric: 'tabular-nums' }}>
+              {kpis.calibrationAttention.missingCount}
+            </Box>
+          </Box>
+        </Box>
+      </Box>
     </Box>
   )
 }
