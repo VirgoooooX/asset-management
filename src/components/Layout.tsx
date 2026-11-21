@@ -6,6 +6,7 @@ import {
   Box,
   Typography,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 
 import { signOutUser } from '../store/authSlice'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
@@ -32,7 +33,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     dispatch(hydrateNotifications({ userId: id }))
   }, [dispatch, isAuthenticated, user?.id])
 
-  const handleLogout = () => { // 新增
+  const handleLogout = () => {
     dispatch(signOutUser());
     navigate('/login');
   };
@@ -48,6 +49,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <Box
         sx={{
           display: 'flex',
+          flexDirection: { xs: 'column', sm: 'row' },
           flex: 1,
           minWidth: 0,
           overflow: 'hidden',
@@ -68,6 +70,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           sx={{
             flexGrow: 1,
             minWidth: 0,
+            minHeight: 0,
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
@@ -92,9 +95,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               px: 2,
               mt: 'auto',
               backgroundColor: (theme) =>
-                theme.palette.mode === 'light'
-                  ? theme.palette.grey[200]
-                  : theme.palette.grey[800],
+                alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.72 : 0.85),
               borderTop: '1px solid',
               borderTopColor: 'divider',
               flexShrink: 0,

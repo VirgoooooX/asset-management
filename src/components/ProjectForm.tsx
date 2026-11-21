@@ -16,7 +16,6 @@ import {
   ListItemText,
   Chip,
   Alert,
-  Snackbar,
   Stack,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -24,6 +23,7 @@ import { useI18n } from '../i18n';
 import { useAppDispatch } from '../store/hooks';
 import { addProject, updateProject } from '../store/projectsSlice';
 import { Project, Config } from '../types';
+import { useToast } from './ToastProvider';
 
 interface ProjectFormProps {
   open: boolean;
@@ -34,6 +34,7 @@ interface ProjectFormProps {
 const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => {
   const dispatch = useAppDispatch();
   const { tr } = useI18n();
+  const toast = useToast();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -45,9 +46,6 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
 
   const [newWf, setNewWf] = useState('');
   const [formSubmitError, setFormSubmitError] = useState<string | null>(null);
-  const [snackbarOpen, setSnackbarOpen] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
 
   useEffect(() => {
     if (open) {
@@ -68,7 +66,6 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
       setConfigName('');
       setConfigRemark('');
       setNewWf('');
-      setSnackbarOpen(false);
     }
   }, [project, open]);
 
@@ -97,8 +94,10 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
             project: projectDataForDispatch,
           })
         ).unwrap();
+        toast.success(tr('项目信息已更新', 'Project updated.'));
       } else {
         await dispatch(addProject(projectDataForDispatch)).unwrap();
+        toast.success(tr('项目已创建', 'Project created.'));
       }
       onClose(true);
     } catch (error: unknown) {
@@ -110,9 +109,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
 
   const handleAddConfig = () => {
     if (!configName.trim()) {
-      setSnackbarMessage(tr('Config 名称不能为空', 'Config name is required'));
-      setSnackbarSeverity('error');
-      setSnackbarOpen(true);
+      toast.error(tr('Config 名称不能为空', 'Config name is required'));
       return;
     }
 
@@ -138,15 +135,11 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
 
   const handleAddWf = () => {
     if (!newWf.trim()) {
-      setSnackbarMessage(tr('WaterFall 名称不能为空', 'WaterFall name is required'));
-      setSnackbarSeverity('error');
-      setSnackbarOpen(true);
+      toast.error(tr('WaterFall 名称不能为空', 'WaterFall name is required'));
       return;
     }
     if (wfs.includes(newWf.trim())) {
-      setSnackbarMessage(tr('该 WaterFall 已存在', 'This WaterFall already exists'));
-      setSnackbarSeverity('error');
-      setSnackbarOpen(true);
+      toast.error(tr('该 WaterFall 已存在', 'This WaterFall already exists'));
       return;
     }
     setWfs([...wfs, newWf.trim()]);
@@ -184,6 +177,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                   value={configName}
                   onChange={(e) => setConfigName(e.target.value)}
                   size="small"
+                  margin="none"
                   fullWidth
                   sx={{ flex: 1 }}
                 />
@@ -192,6 +186,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                   value={configRemark}
                   onChange={(e) => setConfigRemark(e.target.value)}
                   size="small"
+                  margin="none"
                   fullWidth
                   sx={{ flex: 1.5 }}
                 />
@@ -218,7 +213,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                     <ListItemText
                       primary={
                         <Stack direction="row" spacing={1} alignItems="baseline" sx={{ minWidth: 0 }}>
-                          <Typography sx={{ fontWeight: 650 }} noWrap>
+                          <Typography sx={{ fontWeight: 600 }} noWrap>
                             {config.name}
                           </Typography>
                           <Typography variant="caption" color="text.secondary" noWrap sx={{ flex: 1, minWidth: 0 }}>
@@ -251,6 +246,7 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
                   label={tr('新 WaterFall 名称', 'New WaterFall name')}
                   value={newWf}
                   onChange={(e) => setNewWf(e.target.value)}
+                  margin="none"
                   sx={{ flexGrow: 1 }}
                 />
                 <Button onClick={handleAddWf} variant="outlined" size="medium">
@@ -283,16 +279,6 @@ const ProjectForm: React.FC<ProjectFormProps> = ({ open, onClose, project }) => 
           </Button>
         </DialogActions>
       </form>
-      <Snackbar
-        open={snackbarOpen}
-        autoHideDuration={3500}
-        onClose={() => setSnackbarOpen(false)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert onClose={() => setSnackbarOpen(false)} severity={snackbarSeverity} sx={{ width: '100%' }} variant="filled">
-          {snackbarMessage}
-        </Alert>
-      </Snackbar>
     </Dialog>
   );
 };

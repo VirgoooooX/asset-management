@@ -1,14 +1,36 @@
 import React, { useMemo, useState } from 'react'
-import { Box, Button, Divider, Stack, TextField, Typography } from '@mui/material'
+import {
+  Box,
+  Button,
+  Divider,
+  FormControl,
+  FormControlLabel,
+  FormLabel,
+  Radio,
+  RadioGroup,
+  Stack,
+  Switch,
+  TextField,
+  Typography,
+} from '@mui/material'
 import PersonIcon from '@mui/icons-material/Person'
 import LockIcon from '@mui/icons-material/Lock'
 import CloudSyncIcon from '@mui/icons-material/CloudSync'
+import PaletteIcon from '@mui/icons-material/Palette'
 import PageShell from '../components/PageShell'
 import AppCard from '../components/AppCard'
 import TitleWithIcon from '../components/TitleWithIcon'
+import { useToast } from '../components/ToastProvider'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { apiFetch } from '../services/apiClient'
-import { applySettingsFromRemote } from '../store/settingsSlice'
+import {
+  applySettingsFromRemote,
+  setDensity,
+  setLanguage,
+  toggleThemeMode,
+  type DensityMode,
+  type Language,
+} from '../store/settingsSlice'
 import { useI18n } from '../i18n'
 
 const ProfilePage: React.FC = () => {
@@ -16,6 +38,7 @@ const ProfilePage: React.FC = () => {
   const auth = useAppSelector((s) => s.auth)
   const settings = useAppSelector((s) => s.settings)
   const { tr } = useI18n()
+  const toast = useToast()
 
   const userLabel = useMemo(() => {
     if (!auth.user) return '-'
@@ -23,18 +46,11 @@ const ProfilePage: React.FC = () => {
   }, [auth.user])
 
   const [syncing, setSyncing] = useState(false)
-  const [syncError, setSyncError] = useState<string | null>(null)
-  const [syncOk, setSyncOk] = useState<string | null>(null)
-
   const [changing, setChanging] = useState(false)
-  const [changeError, setChangeError] = useState<string | null>(null)
-  const [changeOk, setChangeOk] = useState<string | null>(null)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
 
   const handleSyncFromCloud = async () => {
-    setSyncError(null)
-    setSyncOk(null)
     setSyncing(true)
     try {
       const data = await apiFetch<{ preferences: any }>('/api/users/me/preferences', { method: 'GET' })
@@ -42,47 +58,43 @@ const ProfilePage: React.FC = () => {
       if (remote && typeof remote === 'object') {
         dispatch(applySettingsFromRemote(remote))
       }
-      setSyncOk(tr('已从云端同步', 'Synced from cloud'))
+      toast.success(tr('已从云端同步', 'Synced from cloud'))
     } catch (e: any) {
-      setSyncError(e?.message || tr('同步失败', 'Sync failed'))
+      toast.error(e?.message || tr('同步失败', 'Sync failed'))
     } finally {
       setSyncing(false)
     }
   }
 
   const handleSaveToCloud = async () => {
-    setSyncError(null)
-    setSyncOk(null)
     setSyncing(true)
     try {
       await apiFetch('/api/users/me/preferences', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ uiSettings: settings })
+        body: JSON.stringify({ uiSettings: settings }),
       })
-      setSyncOk(tr('已保存到云端', 'Saved to cloud'))
+      toast.success(tr('已保存到云端', 'Saved to cloud'))
     } catch (e: any) {
-      setSyncError(e?.message || tr('保存失败', 'Save failed'))
+      toast.error(e?.message || tr('保存失败', 'Save failed'))
     } finally {
       setSyncing(false)
     }
   }
 
   const handleChangePassword = async () => {
-    setChangeError(null)
-    setChangeOk(null)
     setChanging(true)
     try {
       await apiFetch('/api/users/me/password', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ oldPassword, newPassword })
+        body: JSON.stringify({ oldPassword, newPassword }),
       })
       setOldPassword('')
       setNewPassword('')
-      setChangeOk(tr('密码已更新', 'Password updated'))
+      toast.success(tr('密码已更新', 'Password updated'))
     } catch (e: any) {
-      setChangeError(e?.message || tr('修改失败', 'Update failed'))
+      toast.error(e?.message || tr('修改失败', 'Update failed'))
     } finally {
       setChanging(false)
     }
@@ -92,12 +104,63 @@ const ProfilePage: React.FC = () => {
     <PageShell title={<TitleWithIcon icon={<PersonIcon />}>{tr('个人', 'Profile')}</TitleWithIcon>}>
       <Stack spacing={2}>
         <AppCard title={tr('账号信息', 'Account')}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
             {tr('当前用户', 'Current user')}
           </Typography>
           <Typography variant="body1" sx={{ mt: 0.5, fontWeight: 700 }}>
             {userLabel}
           </Typography>
+        </AppCard>
+
+        <AppCard
+          title={
+            <Stack direction="row" spacing={1} alignItems="center">
+              <PaletteIcon fontSize="small" />
+              <span>{tr('外观偏好', 'Appearance')}</span>
+            </Stack>
+          }
+        >
+          <Stack spacing={2}>
+            <Box>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={settings.themeMode === 'dark'}
+                    onChange={() => dispatch(toggleThemeMode())}
+                  />
+                }
+                label={settings.themeMode === 'dark' ? tr('深色模式', 'Dark mode') : tr('浅色模式', 'Light mode')}
+              />
+            </Box>
+
+            <Divider />
+
+            <FormControl>
+              <FormLabel>{tr('语言', 'Language')}</FormLabel>
+              <RadioGroup
+                row
+                value={settings.language}
+                onChange={(e) => dispatch(setLanguage(e.target.value as Language))}
+              >
+                <FormControlLabel value="zh" control={<Radio />} label={tr('中文', 'Chinese')} />
+                <FormControlLabel value="en" control={<Radio />} label="English" />
+              </RadioGroup>
+            </FormControl>
+
+            <Divider />
+
+            <FormControl>
+              <FormLabel>{tr('密度', 'Density')}</FormLabel>
+              <RadioGroup
+                row
+                value={settings.density as DensityMode}
+                onChange={(e) => dispatch(setDensity(e.target.value as DensityMode))}
+              >
+                <FormControlLabel value="comfortable" control={<Radio />} label={tr('舒适', 'Comfortable')} />
+                <FormControlLabel value="compact" control={<Radio />} label={tr('紧凑', 'Compact')} />
+              </RadioGroup>
+            </FormControl>
+          </Stack>
         </AppCard>
 
         <AppCard
@@ -120,16 +183,6 @@ const ProfilePage: React.FC = () => {
                 {tr('保存到云端', 'Save to cloud')}
               </Button>
             </Stack>
-            {syncError ? (
-              <Typography variant="body2" color="error">
-                {syncError}
-              </Typography>
-            ) : null}
-            {syncOk ? (
-              <Typography variant="body2" color="success.main">
-                {syncOk}
-              </Typography>
-            ) : null}
           </Stack>
         </AppCard>
 
@@ -161,23 +214,15 @@ const ProfilePage: React.FC = () => {
                   autoComplete="new-password"
                   fullWidth
                 />
-                <Button
-                  variant="contained"
-                  onClick={handleChangePassword}
-                  disabled={changing || !oldPassword || newPassword.length < 8}
-                >
-                  {tr('更新密码', 'Update password')}
-                </Button>
-                {changeError ? (
-                  <Typography variant="body2" color="error">
-                    {changeError}
-                  </Typography>
-                ) : null}
-                {changeOk ? (
-                  <Typography variant="body2" color="success.main">
-                    {changeOk}
-                  </Typography>
-                ) : null}
+                <Box>
+                  <Button
+                    variant="contained"
+                    onClick={handleChangePassword}
+                    disabled={changing || !oldPassword || newPassword.length < 8}
+                  >
+                    {tr('更新密码', 'Update password')}
+                  </Button>
+                </Box>
               </Stack>
             </Box>
           </Stack>

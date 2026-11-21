@@ -40,7 +40,15 @@ const AssetRepairsTab: React.FC<AssetRepairsTabProps> = ({ loading, canManage, t
               {tickets.slice(0, 12).map((t) => (
                 <Box
                   key={t.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => navigate(`/repairs/${encodeURIComponent(t.id)}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      navigate(`/repairs/${encodeURIComponent(t.id)}`)
+                    }
+                  }}
                   sx={{
                     border: '1px solid',
                     borderColor: 'divider',
@@ -57,10 +65,14 @@ const AssetRepairsTab: React.FC<AssetRepairsTabProps> = ({ loading, canManage, t
                       backgroundColor: (theme) => alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.45 : 0.75),
                       borderColor: (theme) => alpha(theme.palette.primary.main, 0.25),
                     },
+                    '&:focus-visible': {
+                      outline: (theme) => `2px solid ${theme.palette.primary.main}`,
+                      outlineOffset: 2,
+                    },
                   }}
                 >
                   <Box sx={{ minWidth: 0 }}>
-                    <Typography sx={{ fontWeight: 850 }} noWrap>
+                    <Typography sx={{ fontWeight: 700 }} noWrap>
                       {t.problemDesc || tr('维修工单', 'Repair ticket')}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" noWrap>

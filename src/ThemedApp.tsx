@@ -3,6 +3,7 @@ import { ThemeProvider } from '@mui/material/styles'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import App from './App'
+import ToastProvider from './components/ToastProvider'
 import { createAppTheme } from './theme'
 import { useAppSelector } from './store/hooks'
 import { getDateFnsLocale } from './i18n'
@@ -22,7 +23,9 @@ const ThemedApp: React.FC = () => {
   return (
     <ThemeProvider theme={theme}>
       <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={dateFnsLocale}>
-        <App />
+        <ToastProvider>
+          <App />
+        </ToastProvider>
       </LocalizationProvider>
     </ThemeProvider>
   )

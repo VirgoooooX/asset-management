@@ -46,7 +46,15 @@ const AssetUsageTab: React.FC<AssetUsageTabProps> = ({
                 return (
                   <Box
                     key={log.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onSelectLog(log.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        onSelectLog(log.id)
+                      }
+                    }}
                     sx={{
                       border: '1px solid',
                       borderColor: 'divider',
@@ -61,10 +69,14 @@ const AssetUsageTab: React.FC<AssetUsageTabProps> = ({
                         backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.10 : 0.06),
                         borderColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.32 : 0.22),
                       },
+                      '&:focus-visible': {
+                        outline: `2px solid ${theme.palette.primary.main}`,
+                        outlineOffset: 2,
+                      },
                     }}
                   >
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 850 }} noWrap>
+                      <Typography sx={{ fontWeight: 700 }} noWrap>
                         {projectName ?? testProjectName ?? tr('未关联项目', 'Unlinked')}
                       </Typography>
                       <Typography variant="body2" color="text.secondary" noWrap>

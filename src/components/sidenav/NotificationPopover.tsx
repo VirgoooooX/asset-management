@@ -16,6 +16,7 @@ export interface NotificationPopoverProps {
   onMarkAllRead: () => void
   onOpenAlert: (alert: DerivedAlert) => void
   anchorOrigin: PopoverOrigin
+  transformOrigin?: PopoverOrigin
 }
 
 const NotificationPopover: React.FC<NotificationPopoverProps> = ({
@@ -29,6 +30,7 @@ const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   onMarkAllRead,
   onOpenAlert,
   anchorOrigin,
+  transformOrigin = { vertical: 'top', horizontal: 'left' },
 }) => {
   const theme = useTheme()
   const { tr } = useI18n()
@@ -39,12 +41,12 @@ const NotificationPopover: React.FC<NotificationPopoverProps> = ({
       anchorEl={anchorEl}
       onClose={onClose}
       anchorOrigin={anchorOrigin}
-      transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-      PaperProps={{ sx: { width: 360, maxWidth: '90vw', p: 1 } }}
+      transformOrigin={transformOrigin}
+      PaperProps={{ sx: { width: 360, maxWidth: '90vw', maxHeight: '70vh', overflowY: 'auto', p: 1 } }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, px: 0.5, pb: 1 }}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontWeight: 900 }} noWrap>
+          <Typography sx={{ fontWeight: 700 }} noWrap>
             {tr('通知', 'Notifications')}
           </Typography>
           <Typography variant="caption" color="text.secondary" noWrap>
@@ -88,7 +90,7 @@ const NotificationPopover: React.FC<NotificationPopoverProps> = ({
               >
                 <Chip size="small" label={a.severity} color={a.severity === 'P1' ? 'error' : 'warning'} />
                 <Box sx={{ minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: isUnread ? 900 : 700 }} noWrap>
+                  <Typography sx={{ fontWeight: isUnread ? 700 : 500 }} noWrap>
                     {title}
                   </Typography>
                   <Typography variant="body2" color="text.secondary" noWrap>

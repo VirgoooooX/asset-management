@@ -20,7 +20,7 @@ const PageShell: React.FC<PageShellProps> = ({ title, actions, maxWidth = APP_PA
           spacing={2}
           sx={{ mb: 3 }}
         >
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 850, lineHeight: 1.15 }}>
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 700, lineHeight: 1.15 }}>
             {title}
           </Typography>
           {actions ? (

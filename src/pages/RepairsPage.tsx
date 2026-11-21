@@ -28,8 +28,10 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import PageShell from '../components/PageShell'
 import AppCard from '../components/AppCard'
+import EmptyState from '../components/EmptyState'
 import TitleWithIcon from '../components/TitleWithIcon'
 import StatusChip from '../components/StatusChip'
+import { useToast } from '../components/ToastProvider'
 import { alpha } from '@mui/material/styles'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchAssetsByType } from '../store/assetsSlice'
@@ -49,6 +51,7 @@ const RepairsPage: React.FC = () => {
   const ticketsState = useAppSelector((s) => s.repairTickets)
   const role = useAppSelector((s) => s.auth.user?.role)
   const { tr, language } = useI18n()
+  const toast = useToast()
   const canManage = role === 'admin' || role === 'manager'
   const isRefreshing = ticketsState.refreshing || assetsState.refreshing
 
@@ -122,7 +125,10 @@ const RepairsPage: React.FC = () => {
     )
     setCreateOpen(false)
     if (addRepairTicket.fulfilled.match(action)) {
+      toast.success(tr('维修工单已创建', 'Repair ticket created.'))
       navigate(`/repairs/${encodeURIComponent(action.payload.id)}`)
+    } else {
+      toast.error(tr('创建工单失败', 'Failed to create repair ticket'))
     }
   }
 
@@ -137,11 +143,11 @@ const RepairsPage: React.FC = () => {
           <Chip
             label={`Open: ${counts.open}`}
             color={counts.open > 0 ? 'warning' : 'default'}
-            sx={{ fontWeight: 650 }}
+            sx={{ fontWeight: 600 }}
           />
-          <Chip label={language === 'en' ? `Quote pending: ${counts.quotePending}` : `未询价: ${counts.quotePending}`} variant="outlined" sx={{ fontWeight: 650 }} />
-          <Chip label={language === 'en' ? `Repair pending: ${counts.repairPending}` : `待维修: ${counts.repairPending}`} variant="outlined" sx={{ fontWeight: 650 }} />
-          <Chip label={language === 'en' ? `Completed: ${counts.completed}` : `已完成: ${counts.completed}`} variant="outlined" sx={{ fontWeight: 650 }} />
+          <Chip label={language === 'en' ? `Quote pending: ${counts.quotePending}` : `未询价: ${counts.quotePending}`} variant="outlined" sx={{ fontWeight: 600 }} />
+          <Chip label={language === 'en' ? `Repair pending: ${counts.repairPending}` : `待维修: ${counts.repairPending}`} variant="outlined" sx={{ fontWeight: 600 }} />
+          <Chip label={language === 'en' ? `Completed: ${counts.completed}` : `已完成: ${counts.completed}`} variant="outlined" sx={{ fontWeight: 600 }} />
           <Tooltip title={tr('刷新', 'Refresh')}>
             <IconButton onClick={handleRefresh} size="small" color="primary" disabled={isRefreshing}>
               {isRefreshing ? <CircularProgress size={16} /> : <RefreshIcon fontSize="small" />}
@@ -187,10 +193,10 @@ const RepairsPage: React.FC = () => {
 
         <Box sx={{ mb: 2 }}>
           <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
               {tr('Open 占比', 'Open ratio')}
             </Typography>
-            <Typography variant="body2" sx={{ fontWeight: 800 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>
               {openProgress}%
             </Typography>
           </Stack>
@@ -199,14 +205,25 @@ const RepairsPage: React.FC = () => {
 
         <Stack spacing={1}>
           {filteredTickets.length === 0 ? (
-            <Typography color="text.secondary">{tr('暂无工单', 'No tickets')}</Typography>
+            <EmptyState
+              title={tr('暂无维修工单', 'No repair tickets')}
+              description={tr('当前筛选条件下没有维修工单。', 'No repair tickets match the current filter.')}
+              action={
+                <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+                  {tr('新建工单', 'New ticket')}
+                </Button>
+              }
+            />
           ) : (
             filteredTickets.map((t) => {
               const asset = assetById.get(t.assetId)
               const days = calcDaysFrom(t.startedAt ?? t.createdAt)
+              const openTicket = () => navigate(`/repairs/${encodeURIComponent(t.id)}`)
               return (
                 <Box
                   key={t.id}
+                  role="button"
+                  tabIndex={0}
                   sx={{
                     border: '1px solid',
                     borderColor: 'divider',
@@ -218,19 +235,29 @@ const RepairsPage: React.FC = () => {
                     alignItems: 'center',
                     backgroundColor: (theme) =>
                       alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.35 : 0.6),
-                  cursor: 'pointer',
+                    cursor: 'pointer',
                     transition: 'background-color 150ms ease, border-color 150ms ease',
                     '&:hover': {
                       backgroundColor: (theme) =>
                         alpha(theme.palette.background.paper, theme.palette.mode === 'dark' ? 0.45 : 0.75),
                       borderColor: (theme) => alpha(theme.palette.primary.main, 0.25),
                     },
+                    '&:focus-visible': {
+                      outline: (theme) => `2px solid ${theme.palette.primary.main}`,
+                      outlineOffset: 2,
+                    },
                   }}
-                  onClick={() => navigate(`/repairs/${encodeURIComponent(t.id)}`)}
+                  onClick={openTicket}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      openTicket()
+                    }
+                  }}
                 >
                   <Box sx={{ minWidth: 0 }}>
                     <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                      <Typography sx={{ fontWeight: 850 }} noWrap>
+                      <Typography sx={{ fontWeight: 700 }} noWrap>
                         {asset?.name || tr(`设备 ${t.assetId.slice(0, 8)}`, `Asset ${t.assetId.slice(0, 8)}`)}
                       </Typography>
                       <StatusChip kind="repair" status={t.status} />
@@ -248,16 +275,19 @@ const RepairsPage: React.FC = () => {
                   </Box>
                   <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end" flexWrap="wrap">
                     <Chip size="small" variant="outlined" label={tr(`停机: ${formatDays(days, language)}`, `Downtime: ${formatDays(days, language)}`)} />
-                    <IconButton
-                      size="small"
-                      color="primary"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        navigate(`/repairs/${encodeURIComponent(t.id)}`)
-                      }}
-                    >
-                      <OpenInNewIcon fontSize="small" />
-                    </IconButton>
+                    <Tooltip title={tr('查看详情', 'View details')}>
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        aria-label={tr('查看详情', 'View details')}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          openTicket()
+                        }}
+                      >
+                        <OpenInNewIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                   </Stack>
                 </Box>
               )

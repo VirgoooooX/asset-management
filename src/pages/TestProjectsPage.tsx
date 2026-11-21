@@ -1,10 +1,6 @@
 // src/pages/TestProjectsPage.tsx
 import React, { useState, useCallback } from 'react';
-import {
-  Button,
-  Snackbar,
-  Alert
-} from '@mui/material';
+import { Button } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import ScienceIcon from '@mui/icons-material/Science'
 import TestProjectList from '../components/TestProjectList';
@@ -12,6 +8,7 @@ import TestProjectForm from '../components/TestProjectForm';
 import PageShell from '../components/PageShell';
 import ConfirmDialog from '../components/ConfirmDialog';
 import TitleWithIcon from '../components/TitleWithIcon'
+import { useToast } from '../components/ToastProvider'
 import { useAppDispatch } from '../store/hooks';
 import { TestProject } from '../types';
 import { deleteTestProject } from '../store/testProjectsSlice';
@@ -20,17 +17,13 @@ import { useI18n } from '../i18n'
 const TestProjectsPage: React.FC = () => {
   const dispatch = useAppDispatch();
   const { tr } = useI18n()
+  const toast = useToast()
 
-  // --- State Management ---
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTestProject, setEditingTestProject] = useState<TestProject | null>(null);
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [deletingTestProjectId, setDeletingTestProjectId] = useState<string | null>(null);
-  const [snackbarOpen, setSnackbarOpen] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
 
-  // --- Handlers ---
   const handleOpenForm = useCallback((testProject?: TestProject) => {
     setEditingTestProject(testProject || null);
     setIsFormOpen(true);
@@ -39,11 +32,7 @@ const TestProjectsPage: React.FC = () => {
   const handleCloseForm = useCallback(() => {
     setIsFormOpen(false);
     setEditingTestProject(null);
-    // 可选：在添加或编辑成功后，如果列表组件本身不因 Redux state 变化而自动更新，
-    // 或者希望确保获取最新数据，可以在这里 dispatch fetchTestProjects。
-    // 通常，如果 thunk 的 fulfilled reducer 正确更新了列表，则可能不需要手动刷新。
-    // dispatch(fetchTestProjects()); 
-  }, [/* dispatch */]); // 如果上面的 dispatch 被取消注释，则添加 dispatch 到依赖数组
+  }, []);
 
   const handleDeleteClick = useCallback((id: string) => {
     setDeletingTestProjectId(id);
@@ -59,33 +48,14 @@ const TestProjectsPage: React.FC = () => {
     if (deletingTestProjectId) {
       try {
         await dispatch(deleteTestProject(deletingTestProjectId)).unwrap();
-        setSnackbarMessage(tr('测试项目删除成功', 'Test project deleted.'));
-        setSnackbarSeverity('success');
-        setSnackbarOpen(true);
-        // 删除成功后，列表应该会自动更新 (因为 Redux state 变化)
-        // 如果 TestProjectList 组件依赖于父组件触发刷新，可以在此 dispatch(fetchTestProjects());
+        toast.success(tr('测试项目删除成功', 'Test project deleted.'));
       } catch (error: any) {
-        setSnackbarMessage(tr(`删除失败: ${error.message || '未知错误'}`, `Delete failed: ${error.message || 'Unknown error'}`));
-        setSnackbarSeverity('error');
-        setSnackbarOpen(true);
+        toast.error(tr(`删除失败: ${error.message || '未知错误'}`, `Delete failed: ${error.message || 'Unknown error'}`));
       } finally {
         handleCloseConfirmDelete();
       }
     }
-  }, [dispatch, deletingTestProjectId, handleCloseConfirmDelete, tr]);
-
-  const handleCloseSnackbar = (event?: React.SyntheticEvent | Event, reason?: string) => {
-    if (reason === 'clickaway') {
-      return;
-    }
-    setSnackbarOpen(false);
-  };
-
-  // 如果希望页面级别也确保数据已加载，可以添加 useEffect，
-  // 但 TestProjectList 内部也做了这个。避免重复。
-  // useEffect(() => {
-  //   dispatch(fetchTestProjects()); // 假设在列表组件中没有这个逻辑时使用
-  // }, [dispatch]);
+  }, [dispatch, deletingTestProjectId, handleCloseConfirmDelete, toast, tr]);
 
   return (
     <PageShell
@@ -101,8 +71,6 @@ const TestProjectsPage: React.FC = () => {
           onDelete={handleDeleteClick}
         />
 
-        {/* TestProjectForm 对话框 */}
-        {/* 使用条件渲染确保表单在关闭时其内部状态（包括useEffect）不会意外触发 */}
         {isFormOpen && ( 
           <TestProjectForm
             open={isFormOpen}
@@ -118,18 +86,6 @@ const TestProjectsPage: React.FC = () => {
           onClose={handleCloseConfirmDelete}
           onConfirm={handleConfirmDelete}
         />
-
-        {/* 操作结果提示 */}
-        <Snackbar 
-          open={snackbarOpen} 
-          autoHideDuration={4000} // 缩短一点持续时间
-          onClose={handleCloseSnackbar}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        >
-          <Alert onClose={handleCloseSnackbar} severity={snackbarSeverity} sx={{ width: '100%' }} variant="filled">
-            {snackbarMessage}
-          </Alert>
-        </Snackbar>
     </PageShell>
   );
 };

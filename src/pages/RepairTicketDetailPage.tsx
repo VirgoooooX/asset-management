@@ -26,6 +26,7 @@ import TitleWithIcon from '../components/TitleWithIcon'
 import ConfirmDialog from '../components/ConfirmDialog'
 import StatusChip from '../components/StatusChip'
 import AttachmentManagerCard from '../components/AttachmentManagerCard'
+import { useToast } from '../components/ToastProvider'
 import ImageLightboxDialog, { type LightboxImageState } from '../components/ImageLightboxDialog'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { useI18n } from '../i18n'
@@ -46,6 +47,7 @@ import { uploadAssetAttachments } from '../utils/fileUpload'
 
 const RepairTicketDetailPage: React.FC = () => {
   const { tr, language } = useI18n()
+  const toast = useToast()
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const params = useParams()
@@ -129,12 +131,15 @@ const RepairTicketDetailPage: React.FC = () => {
         })
       ).unwrap()
       setTicket(updated)
+      toast.success(tr('工单信息已保存', 'Ticket saved.'))
     } catch (e: any) {
-      setSaveError(e?.message || tr('保存失败', 'Failed to save'))
+      const msg = e?.message || tr('保存失败', 'Failed to save')
+      setSaveError(msg)
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
-  }, [canManage, dispatch, editExpectedReturnAt, editProblemDesc, editQuoteAmount, editVendorName, ticket, tr])
+  }, [canManage, dispatch, editExpectedReturnAt, editProblemDesc, editQuoteAmount, editVendorName, ticket, toast, tr])
 
   const handleMarkQuoted = useCallback(async () => {
     if (!ticket) return
@@ -154,12 +159,15 @@ const RepairTicketDetailPage: React.FC = () => {
         })
       ).unwrap()
       setTicket(updated)
+      toast.success(tr('已标记为待维修', 'Marked as quoted.'))
     } catch (e: any) {
-      setSaveError(e?.message || tr('更新状态失败', 'Failed to update status'))
+      const msg = e?.message || tr('更新状态失败', 'Failed to update status')
+      setSaveError(msg)
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
-  }, [canManage, dispatch, editQuoteAmount, editVendorName, ticket, tr])
+  }, [canManage, dispatch, editQuoteAmount, editVendorName, ticket, toast, tr])
 
   const handleMarkCompleted = useCallback(async () => {
     if (!ticket) return
@@ -169,12 +177,15 @@ const RepairTicketDetailPage: React.FC = () => {
     try {
       const updated = await dispatch(transitionRepairTicketStatus({ id: ticket.id, to: 'completed' })).unwrap()
       setTicket(updated)
+      toast.success(tr('工单已完成', 'Ticket marked completed.'))
     } catch (e: any) {
-      setSaveError(e?.message || tr('更新状态失败', 'Failed to update status'))
+      const msg = e?.message || tr('更新状态失败', 'Failed to update status')
+      setSaveError(msg)
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
-  }, [canManage, dispatch, ticket, tr])
+  }, [canManage, dispatch, ticket, toast, tr])
 
   const handleDeleteTicket = useCallback(async () => {
     if (!ticket) return
@@ -183,13 +194,16 @@ const RepairTicketDetailPage: React.FC = () => {
     setSaveError(null)
     try {
       await dispatch(deleteRepairTicket(ticket.id)).unwrap()
+      toast.success(tr('维修工单已删除', 'Repair ticket deleted.'))
       navigate('/repairs', { replace: true })
     } catch (e: any) {
-      setSaveError(e?.message || tr('删除失败', 'Delete failed'))
+      const msg = e?.message || tr('删除失败', 'Delete failed')
+      setSaveError(msg)
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
-  }, [canManage, dispatch, navigate, ticket, tr])
+  }, [canManage, dispatch, navigate, ticket, toast, tr])
 
   const handleUploadAttachments = useCallback(
     async (files: File[]) => {
@@ -203,13 +217,16 @@ const RepairTicketDetailPage: React.FC = () => {
           updateRepairTicket({ id: ticket.id, changes: { attachments: existing.concat(newItems) } })
         ).unwrap()
         setTicket(updated)
+        toast.success(tr('附件已上传', 'Attachment uploaded.'))
       } catch (e: any) {
-        setAttachmentsError(e?.message || tr('上传失败', 'Upload failed'))
+        const msg = e?.message || tr('上传失败', 'Upload failed')
+        setAttachmentsError(msg)
+        toast.error(msg)
       } finally {
         setAttachmentsUploading(false)
       }
     },
-    [canManage, dispatch, ticket, tr]
+    [canManage, dispatch, ticket, toast, tr]
   )
 
   const handleConfirmRemoveAttachment = useCallback(async () => {
@@ -228,12 +245,15 @@ const RepairTicketDetailPage: React.FC = () => {
       const updated = await dispatch(updateRepairTicket({ id: ticket.id, changes: { attachments: next } })).unwrap()
       setTicket(updated)
       setPendingRemoveAttachment(null)
+      toast.success(tr('附件已删除', 'Attachment deleted.'))
     } catch (e: any) {
-      setAttachmentsError(e?.message || tr('删除失败', 'Delete failed'))
+      const msg = e?.message || tr('删除失败', 'Delete failed')
+      setAttachmentsError(msg)
+      toast.error(msg)
     } finally {
       setAttachmentsUploading(false)
     }
-  }, [canManage, dispatch, pendingRemoveAttachment, ticket, tr])
+  }, [canManage, dispatch, pendingRemoveAttachment, ticket, toast, tr])
 
   const downtimeLabel = ticket?.createdAt ? formatDays(calcDaysFrom(ticket.startedAt ?? ticket.createdAt), language) : '-'
 
@@ -305,7 +325,7 @@ const RepairTicketDetailPage: React.FC = () => {
                 <Typography variant="body2" color="text.secondary">
                   {tr('设备', 'Asset')}
                 </Typography>
-                <Typography sx={{ fontWeight: 850 }}>
+                <Typography sx={{ fontWeight: 700 }}>
                   {asset?.name || tr(`设备 ${ticket.assetId.slice(0, 8)}`, `Asset ${ticket.assetId.slice(0, 8)}`)}
                 </Typography>
               </Stack>

@@ -28,7 +28,10 @@ import LockResetIcon from '@mui/icons-material/LockReset'
 import SaveIcon from '@mui/icons-material/Save'
 import PageShell from '../components/PageShell'
 import AppCard from '../components/AppCard'
+import ConfirmDialog from '../components/ConfirmDialog'
+import EmptyState from '../components/EmptyState'
 import TitleWithIcon from '../components/TitleWithIcon'
+import { useToast } from '../components/ToastProvider'
 import { apiFetch } from '../services/apiClient'
 import { useI18n } from '../i18n'
 
@@ -60,6 +63,7 @@ const roleLabel: Record<'manager' | 'user', { zh: string; en: string }> = {
 
 const AdminUsersPage: React.FC = () => {
   const { tr } = useI18n()
+  const toast = useToast()
 
   const [tab, setTab] = useState<UserStatus>('pending')
   const [items, setItems] = useState<AdminUserRow[]>([])
@@ -73,6 +77,8 @@ const AdminUsersPage: React.FC = () => {
 
   const [approveRoleById, setApproveRoleById] = useState<Record<string, 'manager' | 'user'>>({})
   const [editRoleById, setEditRoleById] = useState<Record<string, 'manager' | 'user'>>({})
+
+  const [pendingDisableUser, setPendingDisableUser] = useState<AdminUserRow | null>(null)
 
   const [resetOpen, setResetOpen] = useState(false)
   const [resetUserId, setResetUserId] = useState<string | null>(null)
@@ -125,11 +131,15 @@ const AdminUsersPage: React.FC = () => {
         body: JSON.stringify({ username: createUsername.trim(), password: createPassword, role: createRole }),
       })
       setCreateOpen(false)
+      toast.success(tr('用户已创建', 'User created.'))
       await fetchUsers()
     } catch (e: any) {
       const text = e?.bodyText ? String(e.bodyText) : ''
-      if (text.includes('username_taken')) setError(tr('账号已存在', 'Username already exists'))
-      else setError(e?.message || tr('开户失败', 'Failed to create user'))
+      const msg = text.includes('username_taken')
+        ? tr('账号已存在', 'Username already exists')
+        : e?.message || tr('开户失败', 'Failed to create user')
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
@@ -145,9 +155,12 @@ const AdminUsersPage: React.FC = () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ role }),
       })
+      toast.success(tr('已批准该账号', 'User approved.'))
       await fetchUsers()
     } catch (e: any) {
-      setError(e?.message || tr('审批失败', 'Failed to approve user'))
+      const msg = e?.message || tr('审批失败', 'Failed to approve user')
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
@@ -158,9 +171,12 @@ const AdminUsersPage: React.FC = () => {
     setError(null)
     try {
       await apiFetch(`/api/admin/users/${encodeURIComponent(id)}/disable`, { method: 'POST' })
+      toast.success(tr('账号已禁用', 'User disabled.'))
       await fetchUsers()
     } catch (e: any) {
-      setError(e?.message || tr('禁用失败', 'Failed to disable user'))
+      const msg = e?.message || tr('禁用失败', 'Failed to disable user')
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
@@ -175,11 +191,15 @@ const AdminUsersPage: React.FC = () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ role }),
       })
+      toast.success(tr('权限已更新', 'Role updated.'))
       await fetchUsers()
     } catch (e: any) {
       const text = e?.bodyText ? String(e.bodyText) : ''
-      if (text.includes('cannot_change_admin_role')) setError(tr('不能修改 admin 的角色', 'Cannot change admin role'))
-      else setError(e?.message || tr('更新角色失败', 'Failed to update role'))
+      const msg = text.includes('cannot_change_admin_role')
+        ? tr('不能修改 admin 的角色', 'Cannot change admin role')
+        : e?.message || tr('更新角色失败', 'Failed to update role')
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
@@ -204,8 +224,11 @@ const AdminUsersPage: React.FC = () => {
       setResetOpen(false)
       setResetUserId(null)
       setResetPassword('')
+      toast.success(tr('密码已重置', 'Password reset.'))
     } catch (e: any) {
-      setError(e?.message || tr('重置密码失败', 'Failed to reset password'))
+      const msg = e?.message || tr('重置密码失败', 'Failed to reset password')
+      setError(msg)
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
@@ -236,9 +259,17 @@ const AdminUsersPage: React.FC = () => {
           <Divider />
 
           {filteredItems.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">
-              {tr('暂无数据', 'No data')}
-            </Typography>
+            <EmptyState
+              compact
+              title={tr('暂无该状态用户', 'No users in this status')}
+              action={
+                tab === 'active' ? (
+                  <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={openCreate}>
+                    {tr('开户', 'Create user')}
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <Stack spacing={1}>
               {filteredItems.map((u) => (
@@ -258,7 +289,7 @@ const AdminUsersPage: React.FC = () => {
                 >
                   <Box sx={{ minWidth: 0 }}>
                     <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 800, minWidth: 0 }} noWrap>
+                      <Typography sx={{ fontWeight: 700, minWidth: 0 }} noWrap>
                         {u.username}
                       </Typography>
                       <Chip size="small" label={u.role} variant="outlined" color={u.role === 'admin' ? 'primary' : 'default'} />
@@ -348,7 +379,7 @@ const AdminUsersPage: React.FC = () => {
                           color="error"
                           variant="outlined"
                           startIcon={<BlockIcon />}
-                          onClick={() => disableUser(u.id)}
+                          onClick={() => setPendingDisableUser(u)}
                           disabled={loading}
                         >
                           {tr('禁用', 'Disable')}
@@ -374,6 +405,23 @@ const AdminUsersPage: React.FC = () => {
         </Stack>
       </AppCard>
 
+      <ConfirmDialog
+        open={Boolean(pendingDisableUser)}
+        title={tr('确认禁用账号', 'Confirm disable user')}
+        description={tr(
+          `确定要禁用账号「${pendingDisableUser?.username || ''}」吗？禁用后该用户将无法登录系统。`,
+          `Disable user "${pendingDisableUser?.username || ''}"? They will no longer be able to sign in.`
+        )}
+        confirmText={tr('禁用', 'Disable')}
+        confirmColor="error"
+        onClose={() => setPendingDisableUser(null)}
+        onConfirm={() => {
+          const target = pendingDisableUser
+          setPendingDisableUser(null)
+          if (target) void disableUser(target.id)
+        }}
+      />
+
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>{tr('后台开户', 'Create user')}</DialogTitle>
         <DialogContent dividers>
@@ -384,6 +432,7 @@ const AdminUsersPage: React.FC = () => {
               onChange={(e) => setCreateUsername(e.target.value)}
               fullWidth
               size="small"
+              margin="none"
             />
             <TextField
               label={tr('初始密码（至少8位）', 'Initial password (min 8 chars)')}
@@ -391,6 +440,7 @@ const AdminUsersPage: React.FC = () => {
               onChange={(e) => setCreatePassword(e.target.value)}
               fullWidth
               size="small"
+              margin="none"
               type="password"
             />
             <FormControl fullWidth size="small">
@@ -425,6 +475,7 @@ const AdminUsersPage: React.FC = () => {
               onChange={(e) => setResetPassword(e.target.value)}
               fullWidth
               size="small"
+              margin="none"
               type="password"
             />
           </Stack>

@@ -13,12 +13,32 @@ export const EChart: React.FC<{
   const chartRef = useRef<ReturnType<typeof echarts.init> | null>(null)
 
   const mergedOption = useMemo(() => {
+    const baseTooltip = {
+      backgroundColor: theme.palette.background.paper,
+      borderColor: theme.palette.divider,
+      borderWidth: 1,
+      textStyle: { color: theme.palette.text.primary, fontSize: 12 },
+    }
+    const resolvedTooltip = Array.isArray(option.tooltip)
+      ? option.tooltip
+      : option.tooltip && typeof option.tooltip === 'object'
+        ? {
+            ...baseTooltip,
+            ...option.tooltip,
+            textStyle: {
+              ...baseTooltip.textStyle,
+              ...(option.tooltip.textStyle ?? {}),
+            },
+          }
+        : baseTooltip
+
     return {
       backgroundColor: 'transparent',
       textStyle: { color: theme.palette.text.primary, fontFamily: theme.typography.fontFamily },
       ...option,
+      tooltip: resolvedTooltip,
     } as EChartsOption
-  }, [option, theme.palette.text.primary, theme.typography.fontFamily])
+  }, [option, theme.palette.background.paper, theme.palette.divider, theme.palette.text.primary, theme.typography.fontFamily])
 
   useEffect(() => {
     if (!divRef.current) return

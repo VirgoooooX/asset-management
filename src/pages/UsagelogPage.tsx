@@ -3,8 +3,6 @@ import React, { useState, useCallback } from 'react';
 import {
   Box,
   Button,
-  Snackbar, // 用于显示操作结果
-  Alert,
   Chip,
   Dialog,
   DialogActions,
@@ -29,14 +27,15 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import ListAltIcon from '@mui/icons-material/ListAlt'
 import UsageLogForm from '../components/UsageLogForm';
 import UsageLogDetails from '../components/UsageLogDetails';
-import UsageLogList from '../components/UsageLogList'; // 1. 导入 UsageLogList
-import { UsageLog } from '../types'; // 导入 UsageLog 类型
-import { deleteUsageLog } from '../store/usageLogsSlice'; // 导入 deleteUsageLog
+import UsageLogList from '../components/UsageLogList';
+import { UsageLog } from '../types';
+import { deleteUsageLog } from '../store/usageLogsSlice';
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { exportUsageLogsToXlsx } from '../utils/exportUsageLogsToXlsx'
 import PageShell from '../components/PageShell'
 import ConfirmDialog from '../components/ConfirmDialog'
 import TitleWithIcon from '../components/TitleWithIcon'
+import { useToast } from '../components/ToastProvider'
 import { useI18n } from '../i18n'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 
@@ -47,20 +46,16 @@ const UsageLogPage: React.FC = () => {
   const { projects, loading: loadingProjects } = useAppSelector((state) => state.projects)
   const { testProjects, loading: loadingTestProjects } = useAppSelector((state) => state.testProjects)
   const { tr, language } = useI18n()
+  const toast = useToast()
 
-  // --- State Management ---
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingLog, setEditingLog] = useState<UsageLog | null>(null); // 用于编辑
+  const [editingLog, setEditingLog] = useState<UsageLog | null>(null);
 
   const [selectedLogIdForDetails, setSelectedLogIdForDetails] = useState<string | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
   const [isConfirmDeleteDialogOpen, setIsConfirmDeleteDialogOpen] = useState(false);
   const [deletingLogId, setDeletingLogId] = useState<string | null>(null);
-
-  const [snackbarOpen, setSnackbarOpen] = useState(false);
-  const [snackbarMessage, setSnackbarMessage] = useState('');
-  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
 
   const [exportDialogOpen, setExportDialogOpen] = useState(false)
   const [exportMode, setExportMode] = useState<'year' | 'month' | 'custom'>('month')
@@ -73,9 +68,8 @@ const UsageLogPage: React.FC = () => {
   const [exportAssetIds, setExportAssetIds] = useState<string[]>([])
   const [exportIncludeInProgress, setExportIncludeInProgress] = useState(true)
 
-  // --- Handlers ---
   const handleOpenForm = useCallback((logToEdit?: UsageLog) => {
-    setEditingLog(logToEdit || null); // 如果传入 logToEdit，则为编辑模式
+    setEditingLog(logToEdit || null);
     setIsFormOpen(true);
   }, []);
 
@@ -83,14 +77,11 @@ const UsageLogPage: React.FC = () => {
     setIsFormOpen(false);
     setEditingLog(null);
     if (success) {
-      setSnackbarMessage(
+      toast.success(
         editingLog ? tr('使用记录更新成功！', 'Usage log updated.') : tr('新的使用记录已登记！', 'Usage log created.')
       );
-      setSnackbarSeverity('success');
-      setSnackbarOpen(true);
-      // 列表会自动因 Redux state 更新而刷新，通常不需要手动 dispatch fetchUsageLogs
     }
-  }, [editingLog, tr /*, dispatch */]);
+  }, [editingLog, toast, tr]);
 
   const handleViewDetails = useCallback((logId: string) => {
     setSelectedLogIdForDetails(logId);
@@ -116,44 +107,29 @@ const UsageLogPage: React.FC = () => {
     if (deletingLogId) {
       try {
         await dispatch(deleteUsageLog(deletingLogId)).unwrap();
-        setSnackbarMessage(tr('使用记录删除成功', 'Usage log deleted.'));
-        setSnackbarSeverity('success');
-        setSnackbarOpen(true);
+        toast.success(tr('使用记录删除成功', 'Usage log deleted.'));
       } catch (error: any) {
-        setSnackbarMessage(
+        toast.error(
           tr(`删除失败: ${error.message || '未知错误'}`, `Delete failed: ${error.message || 'Unknown error'}`)
         );
-        setSnackbarSeverity('error');
-        setSnackbarOpen(true);
       } finally {
         handleCloseConfirmDelete();
       }
     }
-  }, [dispatch, deletingLogId, handleCloseConfirmDelete, tr]);
-
-  const handleCloseSnackbar = (event?: React.SyntheticEvent | Event, reason?: string) => {
-    if (reason === 'clickaway') {
-      return;
-    }
-    setSnackbarOpen(false);
-  };
+  }, [dispatch, deletingLogId, handleCloseConfirmDelete, toast, tr]);
 
   const handleOpenExport = useCallback(() => {
     const anyLoading = loadingUsageLogs || loadingChambers || loadingProjects || loadingTestProjects
     if (anyLoading) {
-      setSnackbarMessage(tr('数据加载中，稍后再试', 'Data is loading. Please try again later.'))
-      setSnackbarSeverity('error')
-      setSnackbarOpen(true)
+      toast.error(tr('数据加载中，稍后再试', 'Data is loading. Please try again later.'))
       return
     }
     if (usageLogs.length === 0) {
-      setSnackbarMessage(tr('暂无使用记录可导出', 'No usage logs to export.'))
-      setSnackbarSeverity('error')
-      setSnackbarOpen(true)
+      toast.error(tr('暂无使用记录可导出', 'No usage logs to export.'))
       return
     }
     setExportDialogOpen(true)
-  }, [loadingChambers, loadingProjects, loadingTestProjects, loadingUsageLogs, tr, usageLogs.length])
+  }, [loadingChambers, loadingProjects, loadingTestProjects, loadingUsageLogs, toast, tr, usageLogs.length])
 
   const parseMs = (value: string | undefined) => {
     if (!value) return Number.NaN
@@ -185,17 +161,13 @@ const UsageLogPage: React.FC = () => {
     if (anyLoading) return
     const range = computeRange()
     if (!range) {
-      setSnackbarMessage(tr('请填写正确的导出时间范围', 'Please provide a valid time range.'))
-      setSnackbarSeverity('error')
-      setSnackbarOpen(true)
+      toast.error(tr('请填写正确的导出时间范围', 'Please provide a valid time range.'))
       return
     }
     const startMs = range.start.getTime()
     const endMs = range.end.getTime()
     if (!(endMs > startMs)) {
-      setSnackbarMessage(tr('结束时间必须晚于开始时间', 'End time must be after start time.'))
-      setSnackbarSeverity('error')
-      setSnackbarOpen(true)
+      toast.error(tr('结束时间必须晚于开始时间', 'End time must be after start time.'))
       return
     }
 
@@ -212,9 +184,7 @@ const UsageLogPage: React.FC = () => {
     })
 
     if (filtered.length === 0) {
-      setSnackbarMessage(tr('该筛选条件下没有可导出的使用记录', 'No usage logs match the filters.'))
-      setSnackbarSeverity('error')
-      setSnackbarOpen(true)
+      toast.error(tr('该筛选条件下没有可导出的使用记录', 'No usage logs match the filters.'))
       return
     }
 
@@ -236,13 +206,9 @@ const UsageLogPage: React.FC = () => {
         includeInProgress: exportIncludeInProgress,
       })
       setExportDialogOpen(false)
-      setSnackbarMessage(tr('已开始导出 Excel', 'Export started.'))
-      setSnackbarSeverity('success')
-      setSnackbarOpen(true)
+      toast.success(tr('已开始导出 Excel', 'Export started.'))
     } catch (error: any) {
-      setSnackbarMessage(tr(`导出失败: ${error?.message || '未知错误'}`, `Export failed: ${error?.message || 'Unknown error'}`))
-      setSnackbarSeverity('error')
-      setSnackbarOpen(true)
+      toast.error(tr(`导出失败: ${error?.message || '未知错误'}`, `Export failed: ${error?.message || 'Unknown error'}`))
     }
   }, [
     chambers,
@@ -259,6 +225,7 @@ const UsageLogPage: React.FC = () => {
     loadingUsageLogs,
     projects,
     testProjects,
+    toast,
     tr,
     usageLogs,
   ])
@@ -277,23 +244,20 @@ const UsageLogPage: React.FC = () => {
         </Box>
       }
     >
-        {/* 2. 渲染 UsageLogList 组件并传递 props */}
         <UsageLogList
           onViewDetails={handleViewDetails}
-          onEdit={handleOpenForm} // 编辑操作也打开同一个表单，但会传入 log 对象
+          onEdit={handleOpenForm}
           onDelete={handleDeleteClick}
         />
 
-        {/* 表单对话框 */}
         {isFormOpen && (
           <UsageLogForm
             open={isFormOpen}
             onClose={handleCloseForm}
-            log={editingLog || undefined} // 传递正在编辑的 log 或 undefined (新建)
+            log={editingLog || undefined}
           />
         )}
 
-        {/* 详情对话框 */}
         {isDetailsOpen && selectedLogIdForDetails && (
           <UsageLogDetails
             open={isDetailsOpen}
@@ -405,18 +369,6 @@ const UsageLogPage: React.FC = () => {
               </Button>
             </DialogActions>
           </Dialog>
-
-        {/* 操作结果提示 */}
-        <Snackbar
-          open={snackbarOpen}
-          autoHideDuration={4000}
-          onClose={handleCloseSnackbar}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        >
-          <Alert onClose={handleCloseSnackbar} severity={snackbarSeverity} sx={{ width: '100%' }} variant="filled">
-            {snackbarMessage}
-          </Alert>
-        </Snackbar>
     </PageShell>
   );
 };

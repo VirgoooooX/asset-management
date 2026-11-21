@@ -4,7 +4,7 @@ import type { SettingsState } from './store/settingsSlice'
 
 export const APP_PAGE_FRAME: { maxWidth: ContainerProps['maxWidth'] | false; px: { xs: number; sm: number } } = {
   maxWidth: 'xl',
-  px: { xs: 1, sm: 0 },
+  px: { xs: 2, sm: 3 },
 }
 
 export const createAppTheme = (settings: Pick<SettingsState, 'themeMode' | 'density' | 'primaryColor'>) => {
@@ -84,6 +84,16 @@ export const createAppTheme = (settings: Pick<SettingsState, 'themeMode' | 'dens
         root: ({ theme }) => ({
           borderRadius: theme.shape.borderRadius,
           backgroundImage: 'none',
+        }),
+      },
+    },
+    MuiButtonBase: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          '&:focus-visible': {
+            outline: `2px solid ${theme.palette.primary.main}`,
+            outlineOffset: 2,
+          },
         }),
       },
     },
@@ -263,12 +273,23 @@ export const createAppTheme = (settings: Pick<SettingsState, 'themeMode' | 'dens
       styleOverrides: {
         root: ({ theme }) => ({
           borderRadius: theme.shape.borderRadius,
-          height: controlHeight,
-          paddingInline: theme.spacing(0.25),
+          fontWeight: 600,
+        }),
+        sizeSmall: ({ theme }) => ({
+          height: 24,
           '& .MuiChip-label': {
-            paddingInline: theme.spacing(1),
-            fontWeight: 650,
-            lineHeight: 1,
+            paddingInline: theme.spacing(0.85),
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            lineHeight: 1.2,
+          },
+        }),
+        sizeMedium: ({ theme }) => ({
+          height: isCompact ? 30 : 32,
+          '& .MuiChip-label': {
+            paddingInline: theme.spacing(1.25),
+            fontWeight: 600,
+            lineHeight: 1.2,
           },
         }),
       },
@@ -304,7 +325,7 @@ export const createAppTheme = (settings: Pick<SettingsState, 'themeMode' | 'dens
           minHeight: controlHeight,
           borderRadius: 0,
           paddingInline: theme.spacing(1.25),
-          fontWeight: 650,
+          fontWeight: 600,
           textTransform: 'none',
           '&.Mui-selected': {
             backgroundColor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.20 : 0.12),

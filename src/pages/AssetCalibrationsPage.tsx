@@ -4,7 +4,6 @@ import {
   Box,
   Button,
   Chip,
-  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -30,8 +29,11 @@ import RefreshIcon from '@mui/icons-material/Refresh'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import PageShell from '../components/PageShell'
 import AppCard from '../components/AppCard'
+import EmptyState from '../components/EmptyState'
+import TableSkeleton from '../components/TableSkeleton'
 import TitleWithIcon from '../components/TitleWithIcon'
 import StatusChip from '../components/StatusChip'
+import { useToast } from '../components/ToastProvider'
 import type { Asset } from '../types'
 import * as assetService from '../services/assetService'
 import { updateAsset } from '../store/assetsSlice'
@@ -59,6 +61,7 @@ const AssetCalibrationsPage: React.FC = () => {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const { tr, language } = useI18n()
+  const toast = useToast()
   const role = useAppSelector((s) => s.auth.user?.role)
   const canManage = role === 'admin' || role === 'manager'
   const daysThreshold = useAppSelector((s) => s.settings.alerts.calibrationDaysThreshold) ?? 30
@@ -176,12 +179,15 @@ const AssetCalibrationsPage: React.FC = () => {
       setEditOpen(false)
       setEditing(null)
       setEditValue(null)
+      toast.success(tr('校验日期已更新', 'Calibration date updated.'))
     } catch (e: any) {
-      setSaveError(e?.message || tr('保存失败', 'Failed to save'))
+      const msg = e?.message || tr('保存失败', 'Failed to save')
+      setSaveError(msg)
+      toast.error(msg)
     } finally {
       setSaving(false)
     }
-  }, [dispatch, editValue, editing, tr])
+  }, [dispatch, editValue, editing, toast, tr])
 
   if (!canManage) {
     return (
@@ -230,6 +236,7 @@ const AssetCalibrationsPage: React.FC = () => {
                 </ToggleButtonGroup>
                 <TextField
                   size="small"
+                  margin="none"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={tr('搜索名称/资产号', 'Search name/code')}
@@ -238,31 +245,44 @@ const AssetCalibrationsPage: React.FC = () => {
             }
             contentSx={{ mx: -2.5, mb: -2.5 }}
           >
-            {loading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3 }}>
-                <CircularProgress size={22} />
-                <Typography sx={{ ml: 2 }}>{tr('正在加载...', 'Loading...')}</Typography>
-              </Box>
-            ) : (
               <TableContainer component={Box} sx={{ border: 'none', boxShadow: 'none', borderRadius: 0 }}>
                 <Table size="small">
                   <TableHead sx={{ backgroundColor: 'action.hover' }}>
                     <TableRow>
-                      <TableCell sx={{ fontWeight: 650 }}>{tr('资产号', 'Asset code')}</TableCell>
-                      <TableCell sx={{ fontWeight: 650 }}>{tr('名称', 'Name')}</TableCell>
-                      <TableCell sx={{ fontWeight: 650 }}>{tr('状态', 'Status')}</TableCell>
-                      <TableCell sx={{ fontWeight: 650 }}>{tr('校验日期', 'Calibration date')}</TableCell>
-                      <TableCell sx={{ fontWeight: 650 }}>{tr(`到期状态（≤${daysThreshold}天为即将到期）`, `Due status (≤${daysThreshold}d)` )}</TableCell>
-                      <TableCell sx={{ fontWeight: 650 }} align="center">
+                      <TableCell sx={{ fontWeight: 600 }}>{tr('资产号', 'Asset code')}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{tr('名称', 'Name')}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{tr('状态', 'Status')}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{tr('校验日期', 'Calibration date')}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{tr(`到期状态（≤${daysThreshold}天为即将到期）`, `Due status (≤${daysThreshold}d)` )}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }} align="center">
                         {tr('操作', 'Actions')}
                       </TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {derived.list.length === 0 ? (
+                    {loading ? (
+                      <TableSkeleton rows={6} columns={6} />
+                    ) : derived.list.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} align="center">
-                          {tr('暂无数据', 'No data')}
+                        <TableCell colSpan={6}>
+                          <EmptyState
+                            compact
+                            title={tr('暂无校验记录', 'No calibration items')}
+                            action={
+                              query || filter !== 'all' ? (
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => {
+                                    setQuery('')
+                                    setFilter('all')
+                                  }}
+                                >
+                                  {tr('查看全部设备', 'Show all assets')}
+                                </Button>
+                              ) : undefined
+                            }
+                          />
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -312,10 +332,10 @@ const AssetCalibrationsPage: React.FC = () => {
                             onClick={() => navigate(`/assets/${encodeURIComponent(asset.id)}`)}
                             sx={{ cursor: 'pointer' }}
                           >
-                            <TableCell sx={{ fontWeight: 650 }}>{asset.assetCode || '-'}</TableCell>
+                            <TableCell sx={{ fontWeight: 600 }}>{asset.assetCode || '-'}</TableCell>
                             <TableCell>
                               <Stack direction="row" spacing={1} alignItems="center">
-                                <Typography sx={{ fontWeight: 650 }} noWrap>
+                                <Typography sx={{ fontWeight: 600 }} noWrap>
                                   {asset.name}
                                 </Typography>
                                 <OpenInNewIcon fontSize="inherit" style={{ opacity: 0.55 }} />
@@ -332,6 +352,7 @@ const AssetCalibrationsPage: React.FC = () => {
                                   <IconButton
                                     size="small"
                                     color="primary"
+                                    aria-label={tr('修改校验日期', 'Edit calibration date')}
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       openEdit(asset)
@@ -349,7 +370,6 @@ const AssetCalibrationsPage: React.FC = () => {
                   </TableBody>
                 </Table>
               </TableContainer>
-            )}
           </AppCard>
         </Stack>
 

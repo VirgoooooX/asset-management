@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useTransition } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { addDays, addMonths, differenceInCalendarDays, getYear, isEqual } from 'date-fns'
-import { Alert, Box, CircularProgress, Menu, MenuItem, Typography } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, Menu, MenuItem, Tooltip, Typography } from '@mui/material'
 import { alpha, useTheme, type Theme } from '@mui/material/styles'
-import type { UsageLog } from '../types'
+import type { AssetStatus, UsageLog } from '../types'
+import { useMinuteClock } from '../hooks/useMinuteClock'
+import { getAssetStatusMeta } from '../utils/statusMeta'
+import EmptyState from './EmptyState'
 import { fetchAssetsByType } from '../store/assetsSlice'
 import { fetchProjects } from '../store/projectsSlice'
 import { fetchTestProjects } from '../store/testProjectsSlice'
@@ -44,7 +47,8 @@ const buildTimelineCssVars = (theme: Theme) => {
     ['--timeline-holiday-bg']: alpha(theme.palette.error.main, 0.08),
     ['--timeline-workday-override-bg']: alpha(theme.palette.text.primary, 0.02),
     ['--timeline-today-bg']: alpha(theme.palette.info.main, 0.1),
-    ['--timeline-today-text']: theme.palette.info.main,
+    ['--timeline-today-text']: theme.palette.mode === 'dark' ? theme.palette.info.light : theme.palette.info.main,
+    ['--timeline-now-line']: theme.palette.error.main,
     ['--timeline-bar-shadow']: `0 1px 2px ${alpha(theme.palette.text.primary, 0.18)}`,
     ['--timeline-bar-shadow-hover']: `0 6px 14px ${alpha(theme.palette.text.primary, 0.22)}`,
     ['--timeline-scrollbar-thumb']: alpha(theme.palette.text.primary, 0.32),
@@ -66,6 +70,9 @@ interface ScrollingTimelineProps {
   itemBarGapPx?: number
   getMinRowHeightPx?: (chamberId: string) => number
   showConfigCountBadge?: boolean
+  searchQuery?: string
+  statusFilter?: 'all' | AssetStatus
+  onResetFilters?: () => void
 }
 
 const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
@@ -80,11 +87,15 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   itemBarGapPx: propsItemBarGapPx,
   getMinRowHeightPx,
   showConfigCountBadge: propsShowConfigCountBadge,
+  searchQuery,
+  statusFilter = 'all',
+  onResetFilters,
 }) => {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const theme = useTheme()
   const { tr } = useI18n()
+  const nowMs = useMinuteClock(true)
 
   const timelineCssVars = useMemo(() => buildTimelineCssVars(theme), [theme])
   const dayWidthPx = propsDayWidthPx ?? DAY_WIDTH_PX
@@ -320,10 +331,22 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
     return map
   }, [timelineDisplayItems])
 
+  const filteredChambers = useMemo(() => {
+    const q = (searchQuery ?? '').trim().toLowerCase()
+    return (chambers ?? []).filter((chamber) => {
+      if (statusFilter !== 'all' && chamber.status !== statusFilter) return false
+      if (!q) return true
+      const haystack = [chamber.name, chamber.assetCode ?? '', chamber.category ?? '', chamber.location ?? '']
+        .join(' ')
+        .toLowerCase()
+      return haystack.includes(q)
+    })
+  }, [chambers, searchQuery, statusFilter])
+
   const chamberLayouts = useMemo(() => {
     const layouts = new Map<string, { logsWithTracks: (TimelineUsageLogDisplayData & { trackIndex: number })[]; maxTracks: number }>()
-    if (chambers && chambers.length > 0) {
-      chambers.forEach((chamber) => {
+    if (filteredChambers.length > 0) {
+      filteredChambers.forEach((chamber) => {
         const chamberLogs = timelineItemsByChamberId.get(chamber.id) || []
         const logsWithTracksData = assignTracksToLogs(chamberLogs)
         const maxTracks = logsWithTracksData.reduce((maxVal, log) => Math.max(maxVal, log.trackIndex + 1), 0)
@@ -331,7 +354,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
       })
     }
     return layouts
-  }, [chambers, timelineItemsByChamberId])
+  }, [filteredChambers, timelineItemsByChamberId])
 
   const getChamberRowHeight = useCallback(
     (chamberId: string): number => {
@@ -346,20 +369,27 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   )
 
   const totalTimelineGridHeight = useMemo(() => {
-    if (!chambers || chambers.length === 0) return minRowHeightPx * 3
-    return chambers.reduce((sum, chamber) => sum + getChamberRowHeight(chamber.id), 0)
-  }, [chambers, getChamberRowHeight, minRowHeightPx])
+    if (filteredChambers.length === 0) return minRowHeightPx * 3
+    return filteredChambers.reduce((sum, chamber) => sum + getChamberRowHeight(chamber.id), 0)
+  }, [filteredChambers, getChamberRowHeight, minRowHeightPx])
 
   const chamberRowTopById = useMemo(() => {
     const map = new Map<string, number>()
-    if (!chambers || chambers.length === 0) return map
+    if (filteredChambers.length === 0) return map
     let topOffset = 0
-    chambers.forEach((chamber) => {
+    filteredChambers.forEach((chamber) => {
       map.set(chamber.id, topOffset)
       topOffset += getChamberRowHeight(chamber.id)
     })
     return map
-  }, [chambers, getChamberRowHeight])
+  }, [filteredChambers, getChamberRowHeight])
+
+  const nowLeftPx = useMemo(() => {
+    const startMs = timelineViewActualStart.getTime()
+    const endMs = timelineViewActualEnd.getTime()
+    if (nowMs < startMs || nowMs > endMs) return null
+    return ((nowMs - startMs) / (24 * 60 * 60 * 1000)) * dayWidthPx
+  }, [dayWidthPx, nowMs, timelineViewActualEnd, timelineViewActualStart])
 
   useEffect(() => {
     const container = timelineContainerRef.current
@@ -436,6 +466,24 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
   const visibleLeftPx = visibleDayIndexRange.startIndex * dayWidthPx
   const visibleRightPx = visibleDayIndexRange.endIndexExclusive * dayWidthPx
 
+  if (chambers.length > 0 && filteredChambers.length === 0) {
+    return (
+      <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+        <EmptyState
+          title={tr('没有匹配的设备', 'No matching assets')}
+          description={tr('请尝试调整搜索关键词或设备状态筛选条件。', 'Try adjusting your search query or status filter.')}
+          action={
+            onResetFilters ? (
+              <Button size="small" variant="outlined" onClick={onResetFilters}>
+                {tr('重置筛选', 'Reset filters')}
+              </Button>
+            ) : undefined
+          }
+        />
+      </Box>
+    )
+  }
+
   return (
     <div className={styles.timelinePageContainer} style={timelineCssVars}>
       <div ref={timelineContainerRef} className={styles.timelineScrollContainer} onScroll={handleTimelineScroll}>
@@ -450,21 +498,55 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
 
         <div className={styles.timelineBodyRow} style={{ width: `${CHAMBER_NAME_WIDTH_PX + totalTimelineWidth}px` }}>
           <div className={styles.timelineChamberColumn} style={{ width: `${CHAMBER_NAME_WIDTH_PX}px` }}>
-            {chambers.map((chamber) => (
-              <div
-                key={chamber.id}
-                className={styles.chamberRowName}
-                style={{ height: `${getChamberRowHeight(chamber.id)}px`, cursor: 'pointer' }}
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(`/assets/${chamber.id}`)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') navigate(`/assets/${chamber.id}`)
-                }}
-              >
-                {chamber.name}
-              </div>
-            ))}
+            {filteredChambers.map((chamber) => {
+              const statusMeta = getAssetStatusMeta(chamber.status, tr)
+              const dotColor =
+                chamber.status === 'available'
+                  ? theme.palette.success.main
+                  : chamber.status === 'in-use'
+                    ? theme.palette.warning.main
+                    : theme.palette.error.main
+              const tooltipTitle = [
+                chamber.name,
+                chamber.assetCode ? `(${chamber.assetCode})` : '',
+                statusMeta.label,
+                chamber.location || '',
+              ]
+                .filter(Boolean)
+                .join(' · ')
+
+              return (
+                <Tooltip key={chamber.id} title={tooltipTitle} placement="right" arrow>
+                  <div
+                    className={styles.chamberRowName}
+                    style={{ height: `${getChamberRowHeight(chamber.id)}px`, cursor: 'pointer' }}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/assets/${chamber.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        navigate(`/assets/${chamber.id}`)
+                      }
+                    }}
+                  >
+                    <Box
+                      component="span"
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        bgcolor: dotColor,
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {chamber.name}
+                    </Box>
+                  </div>
+                </Tooltip>
+              )
+            })}
             {chambers.length === 0 && !chambersLoading && (
               <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 1, textAlign: 'center' }}>
                 <Typography variant="caption" color="textSecondary">
@@ -496,7 +578,7 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
               )
             })}
 
-            {chambers.map((chamber) => (
+            {filteredChambers.map((chamber) => (
               <div
                 key={`row-bg-${chamber.id}`}
                 className={styles.timelineRowBackground}
@@ -508,7 +590,15 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
               />
             ))}
 
-            {chambers.map((chamber) => {
+            {nowLeftPx !== null ? (
+              <div
+                className={styles.timelineNowLine}
+                style={{ left: `${nowLeftPx}px`, height: `${totalTimelineGridHeight}px` }}
+                aria-hidden="true"
+              />
+            ) : null}
+
+            {filteredChambers.map((chamber) => {
               const layoutInfo = chamberLayouts.get(chamber.id)
               const logsToRender = layoutInfo ? layoutInfo.logsWithTracks : []
               const rowTopOffset = chamberRowTopById.get(chamber.id) || 0
@@ -532,7 +622,8 @@ const ScrollingTimeline: React.FC<ScrollingTimelineProps> = ({
                       timelineViewActualStart,
                       timelineViewActualEnd,
                       logDisplayItem.effectiveStatus,
-                      dayWidthPx
+                      dayWidthPx,
+                      new Date(nowMs)
                     )
                     if (!display || width <= 0) return null
                     if (left + width < visibleLeftPx || left > visibleRightPx) return null

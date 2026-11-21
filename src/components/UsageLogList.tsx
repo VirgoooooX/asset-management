@@ -1,26 +1,29 @@
 // src/components/UsageLogList.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Box, Typography, TableContainer, Table, TableHead, TableBody, TableRow, TableCell,
-  IconButton, Tooltip, CircularProgress, Alert, Button, Chip, TextField, MenuItem,
+  Box, TableContainer, Table, TableHead, TableBody, TableRow, TableCell,
+  IconButton, Tooltip, Alert, Button, Chip, TextField, MenuItem,
   Stack, TablePagination,
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'; // 新增图标
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 
 import { UsageLog, Project, Config as ConfigType } from '../types';
-import { fetchUsageLogs, markLogAsCompleted } from '../store/usageLogsSlice'; // 导入 markLogAsCompleted
+import { fetchUsageLogs, markLogAsCompleted } from '../store/usageLogsSlice';
 import { fetchAssetsByType } from '../store/assetsSlice'
 import { fetchProjects } from '../store/projectsSlice';
 import { fetchTestProjects } from '../store/testProjectsSlice';
-import { getEffectiveUsageLogStatus } from '../utils/statusHelpers'; // 导入辅助函数
+import { getEffectiveUsageLogStatus } from '../utils/statusHelpers';
 import { formatDateTimeShort } from '../utils/formatters';
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import ConfirmDialog from './ConfirmDialog';
 import AppCard from './AppCard';
+import EmptyState from './EmptyState';
 import StatusChip from './StatusChip';
+import TableSkeleton from './TableSkeleton';
+import { useToast } from './ToastProvider';
 import { useI18n } from '../i18n'
 
 interface UsageLogListProps {
@@ -31,6 +34,7 @@ interface UsageLogListProps {
 
 const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDelete }) => {
   const dispatch = useAppDispatch()
+  const toast = useToast()
   const [pendingCompleteLogId, setPendingCompleteLogId] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | UsageLog['status']>('all');
@@ -129,17 +133,8 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
   );
 
   const isLoading = loadingUsageLogs || loadingChambers || loadingProjects || loadingTestProjects;
-
-  if (isLoading && usageLogs.length === 0) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3 }}>
-        <CircularProgress />
-        <Typography sx={{ ml: 2 }}>{tr('正在加载使用记录列表...', 'Loading usage logs...')}</Typography>
-      </Box>
-    );
-  }
-
   const combinedError = usageLogsError || chambersError || projectsError || testProjectsError;
+
   if (combinedError && !isLoading) {
     return (
       <Alert severity="error" sx={{ m: 2 }}>
@@ -173,6 +168,7 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ flex: 1 }}>
             <TextField
               size="small"
+              margin="none"
               value={searchText}
               onChange={(e) => {
                 setSearchText(e.target.value);
@@ -184,6 +180,7 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
             <TextField
               select
               size="small"
+              margin="none"
               label={tr('状态', 'Status')}
               value={statusFilter}
               onChange={(e) => {
@@ -199,7 +196,7 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
               <MenuItem value="overdue">{tr('已逾期', 'Overdue')}</MenuItem>
             </TextField>
           </Stack>
-          <Chip size="small" label={tr(`共 ${filteredLogs.length} 条`, `${filteredLogs.length} logs`)} sx={{ fontWeight: 650, alignSelf: { xs: 'flex-start', sm: 'center' } }} />
+          <Chip size="small" label={tr(`共 ${filteredLogs.length} 条`, `${filteredLogs.length} logs`)} sx={{ fontWeight: 600, alignSelf: { xs: 'flex-start', sm: 'center' } }} />
         </Stack>
         <TableContainer component={Box} sx={{ border: 'none', boxShadow: 'none', borderRadius: 0 }}>
           <Table aria-label={tr('使用记录列表', 'Usage log list')} size="small">
@@ -220,10 +217,30 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredLogs.length === 0 && !isLoading ? (
+              {isLoading && usageLogs.length === 0 ? (
+                <TableSkeleton rows={6} columns={10} />
+              ) : filteredLogs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} align="center">
-                    {tr('没有找到使用记录数据。', 'No usage logs found.')}
+                  <TableCell colSpan={10}>
+                    <EmptyState
+                      compact
+                      title={tr('没有找到使用记录', 'No usage logs found')}
+                      action={
+                        searchText || statusFilter !== 'all' ? (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => {
+                              setSearchText('');
+                              setStatusFilter('all');
+                              setPage(0);
+                            }}
+                          >
+                            {tr('重置筛选', 'Reset filters')}
+                          </Button>
+                        ) : undefined
+                      }
+                    />
                   </TableCell>
                 </TableRow>
               ) : (
@@ -288,24 +305,24 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
                       <TableCell>{getTestProjectName(log.testProjectId)}</TableCell>
                       <TableCell align="center">
                         <Tooltip title={tr('查看详情', 'View details')}>
-                          <IconButton onClick={() => onViewDetails(log.id)} size="small" color="info" sx={{ p: 0.5 }}>
+                          <IconButton aria-label={tr('查看详情', 'View details')} onClick={() => onViewDetails(log.id)} size="small" color="info" sx={{ p: 0.5 }}>
                             <VisibilityIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title={tr('编辑', 'Edit')}>
-                          <IconButton onClick={() => onEdit(log)} size="small" color="primary" sx={{ p: 0.5 }}>
+                          <IconButton aria-label={tr('编辑', 'Edit')} onClick={() => onEdit(log)} size="small" color="primary" sx={{ p: 0.5 }}>
                             <EditIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         {(effectiveStatus === 'in-progress' || effectiveStatus === 'overdue') && (
                           <Tooltip title={tr('标记为已完成', 'Mark as completed')}>
-                            <IconButton onClick={() => setPendingCompleteLogId(log.id)} size="small" color="success" sx={{ p: 0.5 }}>
+                            <IconButton aria-label={tr('标记为已完成', 'Mark as completed')} onClick={() => setPendingCompleteLogId(log.id)} size="small" color="success" sx={{ p: 0.5 }}>
                               <CheckCircleOutlineIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
                         )}
                         <Tooltip title={tr('删除', 'Delete')}>
-                          <IconButton onClick={() => onDelete(log.id)} size="small" color="error" sx={{ p: 0.5 }}>
+                          <IconButton aria-label={tr('删除', 'Delete')} onClick={() => onDelete(log.id)} size="small" color="error" sx={{ p: 0.5 }}>
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -338,10 +355,16 @@ const UsageLogList: React.FC<UsageLogListProps> = ({ onViewDetails, onEdit, onDe
         confirmText={tr('标记完成', 'Mark completed')}
         confirmColor="success"
         onClose={() => setPendingCompleteLogId(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (!pendingCompleteLogId) return;
-          dispatch(markLogAsCompleted(pendingCompleteLogId));
-          setPendingCompleteLogId(null);
+          try {
+            await dispatch(markLogAsCompleted(pendingCompleteLogId)).unwrap();
+            toast.success(tr('已标记为已完成', 'Marked as completed.'));
+          } catch (e: any) {
+            toast.error(e?.message || tr('标记完成失败', 'Failed to mark completed'));
+          } finally {
+            setPendingCompleteLogId(null);
+          }
         }}
       />
     </>

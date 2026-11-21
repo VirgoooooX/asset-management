@@ -1,21 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Avatar,
   Badge,
   Box,
+  Button,
   Divider,
   Drawer,
   IconButton,
   List,
   ListItemButton,
   Paper,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from '@mui/material'
 import { alpha, useTheme } from '@mui/material/styles'
+import DarkModeIcon from '@mui/icons-material/DarkMode'
 import LogoutIcon from '@mui/icons-material/ExitToApp'
+import LightModeIcon from '@mui/icons-material/LightMode'
 import MenuIcon from '@mui/icons-material/Menu'
 import MenuOpenIcon from '@mui/icons-material/MenuOpen'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
+import TranslateIcon from '@mui/icons-material/Translate'
 import { useLocation } from 'react-router-dom'
 import { useMinuteClock } from '../hooks/useMinuteClock'
 import { useI18n } from '../i18n'
@@ -23,7 +29,7 @@ import type { NavItem, NavRole, NavSection } from '../nav/navConfig'
 import { selectDerivedAlerts, type DerivedAlert } from '../store/alertsSelectors'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { markAllRead, markRead } from '../store/notificationsSlice'
-import { setSidebarMode } from '../store/settingsSlice'
+import { setLanguage, setSidebarMode, toggleThemeMode } from '../store/settingsSlice'
 import JustifiedNavLabel from './sidenav/JustifiedNavLabel'
 import NotificationPopover from './sidenav/NotificationPopover'
 
@@ -37,11 +43,11 @@ type Props = {
 }
 
 const COLLAPSED_WIDTH = 72
-const EXPANDED_WIDTH = 180
+const EXPANDED_WIDTH = 216
 const ICON_COLUMN_WIDTH = COLLAPSED_WIDTH
 const NAV_LABEL_JUSTIFY_CHARS = 2
-const HOVER_OPEN_DELAY_MS = 650
-const ICON_SIZE = 25
+const HOVER_OPEN_DELAY_MS = 300
+const ICON_SIZE = 24
 const ROW_INSET = 8
 
 const getNormalizedPathForSelection = (pathname: string) => {
@@ -51,11 +57,13 @@ const getNormalizedPathForSelection = (pathname: string) => {
 
 const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNavigate, onLogout }) => {
   const theme = useTheme()
-  const { tr } = useI18n()
+  const { tr, language } = useI18n()
   const location = useLocation()
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'))
   const dispatch = useAppDispatch()
   const sidebarMode = useAppSelector((s) => s.settings.nav?.sidebarMode) ?? 'auto'
+  const themeMode = useAppSelector((s) => s.settings.themeMode) ?? 'light'
+  const user = useAppSelector((s) => s.auth.user)
   const readIds = useAppSelector((s) => s.notifications.readIds)
 
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -110,6 +118,11 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
       return normalizedPathname.startsWith(path + '/')
     },
     [normalizedPathname]
+  )
+
+  const activeNavItem = useMemo(
+    () => visibleItems.find((item) => isSelected(item.path)),
+    [isSelected, visibleItems]
   )
 
   const clearTimers = useCallback(() => {
@@ -192,8 +205,8 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
     []
   )
 
-  const brandLogoContainerSize = 48
-  const brandLogoSize = 40
+  const brandLogoContainerSize = 44
+  const brandLogoSize = 36
 
   const brand = (
     <Box
@@ -235,7 +248,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
       <Box
         sx={{
           minWidth: 0,
-          pr: 2,
+          pr: 1.5,
           opacity: effectiveExpanded ? 1 : 0,
           maxWidth: effectiveExpanded ? EXPANDED_WIDTH - ICON_COLUMN_WIDTH : 0,
           transform: effectiveExpanded ? 'translateX(0)' : 'translateX(-6px)',
@@ -246,8 +259,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'center',
-          alignItems: 'center',
-          textAlign: 'center',
+          alignItems: 'flex-start',
           overflow: 'hidden',
           pointerEvents: effectiveExpanded ? 'auto' : 'none',
         }}
@@ -255,12 +267,11 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
         <Typography
           variant="h6"
           sx={{
-            fontWeight: 950,
-            lineHeight: 1.05,
+            fontWeight: 700,
+            lineHeight: 1.15,
             letterSpacing: -0.2,
-            fontSize: { xs: '1.3rem', sm: '1.3rem' },
+            fontSize: language === 'en' ? '0.92rem' : '1.12rem',
           }}
-          noWrap
         >
           {tr('设备管理', 'Lab Asset Management')}
         </Typography>
@@ -270,13 +281,13 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
 
   const baseToolRowSx = {
     borderRadius: 0,
-    minHeight: 48,
+    minHeight: 42,
     px: 0,
     display: 'grid',
     gridTemplateColumns: `${ICON_COLUMN_WIDTH}px 1fr`,
     alignItems: 'center',
     mx: 0,
-    my: 0.5,
+    my: 0.25,
     position: 'relative',
     '& > *': { position: 'relative', zIndex: 1 },
     '&::after': {
@@ -314,6 +325,18 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
     pointerEvents: effectiveExpanded ? 'auto' : 'none',
   } as const
 
+  const userInitial = (user?.username || 'U').slice(0, 1).toUpperCase()
+  const nextThemeLabel = themeMode === 'dark' ? tr('浅色模式', 'Light mode') : tr('深色模式', 'Dark mode')
+  const nextLangLabel = language === 'zh' ? 'English' : '中文'
+  const tooltipDisabled = effectiveExpanded || isMobile
+
+  const handleNavigateAndClose = (path: string) => {
+    clearTimers()
+    if (!isMobile && sidebarMode === 'auto') setExpanded(false)
+    onNavigate(path)
+    if (isMobile) setMobileOpen(false)
+  }
+
   const navList = (
     <Box
       onMouseEnter={
@@ -349,103 +372,105 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
                 {list.map((item) => {
                   const selected = isSelected(item.path)
                   return (
-                    <ListItemButton
+                    <Tooltip
                       key={item.id}
-                      aria-label={item.label}
-                      selected={selected}
-                      onClick={() => {
-                        clearTimers()
-                        if (!isMobile && sidebarMode === 'auto') setExpanded(false)
-                        onNavigate(item.path)
-                        if (isMobile) setMobileOpen(false)
-                      }}
-                      sx={{
-                        mx: 0,
-                        my: 0.5,
-                        borderRadius: 0,
-                        px: 0,
-                        minHeight: 48,
-                        display: 'grid',
-                        gridTemplateColumns: `${ICON_COLUMN_WIDTH}px 1fr`,
-                        alignItems: 'center',
-                        position: 'relative',
-                        '& > *': { position: 'relative', zIndex: 1 },
-                        '&::after': {
-                          content: '""',
-                          position: 'absolute',
-                          left: 0,
-                          right: 0,
-                          top: 0,
-                          bottom: 0,
+                      title={item.label}
+                      placement="right"
+                      arrow
+                      disableHoverListener={tooltipDisabled}
+                    >
+                      <ListItemButton
+                        aria-label={item.label}
+                        selected={selected}
+                        onClick={() => handleNavigateAndClose(item.path)}
+                        sx={{
+                          mx: 0,
+                          my: 0.35,
                           borderRadius: 0,
-                          transition: theme.transitions.create(['background-color'], {
-                            easing: theme.transitions.easing.sharp,
-                            duration: 200,
-                          }),
-                        },
-                        '&:hover::after': {
-                          bgcolor: alpha(theme.palette.action.hover, 0.35),
-                        },
-                        '&.Mui-selected': {
-                          bgcolor: 'transparent',
+                          px: 0,
+                          minHeight: 46,
+                          display: 'grid',
+                          gridTemplateColumns: `${ICON_COLUMN_WIDTH}px 1fr`,
+                          alignItems: 'center',
+                          position: 'relative',
+                          '& > *': { position: 'relative', zIndex: 1 },
                           '&::after': {
-                            bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.10),
-                          },
-                          '&:hover::after': {
-                            bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.28 : 0.14),
-                          },
-                          '&::before': {
                             content: '""',
                             position: 'absolute',
                             left: 0,
-                            top: 10,
-                            bottom: 10,
-                            width: 3,
-                            borderRadius: 2,
-                            backgroundColor: theme.palette.primary.main,
+                            right: 0,
+                            top: 0,
+                            bottom: 0,
+                            borderRadius: 0,
+                            transition: theme.transitions.create(['background-color'], {
+                              easing: theme.transitions.easing.sharp,
+                              duration: 200,
+                            }),
                           },
-                        },
-                      }}
-                    >
-                      <Box sx={iconWrapperSx}>
-                        <Box
-                          sx={{
-                            color: selected ? 'primary.main' : 'text.secondary',
-                            display: 'flex',
-                            alignItems: 'center',
-                          }}
-                        >
-                          {item.icon}
-                        </Box>
-                      </Box>
-
-                      <Box
-                        sx={{
-                          minWidth: 0,
-                          pr: 1.5,
-                          opacity: effectiveExpanded ? 1 : 0,
-                          maxWidth: effectiveExpanded ? EXPANDED_WIDTH - ICON_COLUMN_WIDTH : 0,
-                          transform: effectiveExpanded ? 'translateX(0)' : 'translateX(-6px)',
-                          transition: theme.transitions.create(['opacity', 'transform', 'max-width'], {
-                            easing: theme.transitions.easing.sharp,
-                            duration: 200,
-                          }),
-                          overflow: 'hidden',
-                          pointerEvents: effectiveExpanded ? 'auto' : 'none',
-                          whiteSpace: 'nowrap',
-                          textOverflow: 'ellipsis',
+                          '&:hover::after': {
+                            bgcolor: alpha(theme.palette.action.hover, 0.35),
+                          },
+                          '&.Mui-selected': {
+                            bgcolor: 'transparent',
+                            '&::after': {
+                              bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.24 : 0.10),
+                            },
+                            '&:hover::after': {
+                              bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.28 : 0.14),
+                            },
+                            '&::before': {
+                              content: '""',
+                              position: 'absolute',
+                              left: 0,
+                              top: 10,
+                              bottom: 10,
+                              width: 3,
+                              borderRadius: 2,
+                              backgroundColor: theme.palette.primary.main,
+                            },
+                          },
                         }}
                       >
-                        <Typography variant="body2" sx={{ fontWeight: 650, fontSize: '0.95rem' }} noWrap>
-                          <JustifiedNavLabel label={item.label} maxJustifyChars={NAV_LABEL_JUSTIFY_CHARS} />
-                        </Typography>
-                      </Box>
-                    </ListItemButton>
+                        <Box sx={iconWrapperSx}>
+                          <Box
+                            sx={{
+                              color: selected ? 'primary.main' : 'text.secondary',
+                              display: 'flex',
+                              alignItems: 'center',
+                            }}
+                          >
+                            {item.icon}
+                          </Box>
+                        </Box>
+
+                        <Box
+                          sx={{
+                            minWidth: 0,
+                            pr: 1.5,
+                            opacity: effectiveExpanded ? 1 : 0,
+                            maxWidth: effectiveExpanded ? EXPANDED_WIDTH - ICON_COLUMN_WIDTH : 0,
+                            transform: effectiveExpanded ? 'translateX(0)' : 'translateX(-6px)',
+                            transition: theme.transitions.create(['opacity', 'transform', 'max-width'], {
+                              easing: theme.transitions.easing.sharp,
+                              duration: 200,
+                            }),
+                            overflow: 'hidden',
+                            pointerEvents: effectiveExpanded ? 'auto' : 'none',
+                            whiteSpace: 'nowrap',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.92rem' }} noWrap>
+                            <JustifiedNavLabel label={item.label} maxJustifyChars={NAV_LABEL_JUSTIFY_CHARS} />
+                          </Typography>
+                        </Box>
+                      </ListItemButton>
+                    </Tooltip>
                   )
                 })}
 
                 {nextSection ? (
-                  <Box sx={{ position: 'relative', my: 1.75, mx: effectiveExpanded ? 1.25 : 0.75 }}>
+                  <Box sx={{ position: 'relative', my: 1.5, mx: effectiveExpanded ? 1.25 : 0.75 }}>
                     <Divider />
                     <Typography
                       variant="caption"
@@ -458,7 +483,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
                         bgcolor: 'background.paper',
                         color: 'text.secondary',
                         letterSpacing: 0.4,
-                        fontWeight: 800,
+                        fontWeight: 700,
                         opacity: effectiveExpanded ? 1 : 0,
                         transition: theme.transitions.create(['opacity', 'transform'], {
                           easing: theme.transitions.easing.sharp,
@@ -477,29 +502,49 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
         </List>
       </Box>
 
-      <Box sx={{ borderTop: '1px solid', borderTopColor: 'divider' }}>
-        <ListItemButton aria-label={tr('切换侧边栏模式', 'Toggle sidebar mode')} onClick={toggleSidebarMode} sx={baseToolRowSx}>
-          <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
-            {effectiveExpanded ? <MenuOpenIcon /> : <MenuIcon />}
-          </Box>
-          <Box sx={textColSx}>
-            <Typography variant="body2" sx={{ fontWeight: 750, lineHeight: 1.1 }} noWrap>
-              {tr('侧边栏', 'Sidebar')}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }} noWrap>
-              {sidebarMode === 'auto'
-                ? tr('自动（悬停展开）', 'Auto (hover)')
-                : sidebarMode === 'lockedOpen'
-                  ? tr('固定展开', 'Locked open')
-                  : tr('固定收起', 'Locked collapsed')}
-            </Typography>
-          </Box>
-        </ListItemButton>
+      <Box sx={{ borderTop: '1px solid', borderTopColor: 'divider', py: 0.5 }}>
+        {user ? (
+          <Tooltip
+            title={`${user.username} (${user.role})`}
+            placement="right"
+            arrow
+            disableHoverListener={tooltipDisabled}
+          >
+            <ListItemButton
+              aria-label={tr('个人中心', 'Profile')}
+              onClick={() => handleNavigateAndClose('/me')}
+              sx={baseToolRowSx}
+            >
+              <Box sx={{ display: 'grid', placeItems: 'center' }}>
+                <Avatar
+                  sx={{
+                    width: 28,
+                    height: 28,
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    bgcolor: alpha(theme.palette.primary.main, theme.palette.mode === 'dark' ? 0.28 : 0.14),
+                    color: 'primary.main',
+                  }}
+                >
+                  {userInitial}
+                </Avatar>
+              </Box>
+              <Box sx={textColSx}>
+                <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.2 }} noWrap>
+                  {user.username}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2, display: 'block' }} noWrap>
+                  {user.role}
+                </Typography>
+              </Box>
+            </ListItemButton>
+          </Tooltip>
+        ) : null}
 
         <Box
           sx={{
             mx: 0,
-            my: 0.75,
+            my: 0.5,
             opacity: effectiveExpanded ? 1 : 0,
             transition: theme.transitions.create(['opacity'], { easing: theme.transitions.easing.sharp, duration: 200 }),
             px: effectiveExpanded ? `${ROW_INSET}px` : 0,
@@ -508,36 +553,101 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
           <Divider />
         </Box>
 
-        <ListItemButton
-          aria-label={tr('通知', 'Notifications')}
-          onClick={(e) => setNotifAnchorEl(e.currentTarget)}
-          sx={baseToolRowSx}
-        >
-          <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
-            <Badge color="error" badgeContent={unreadCount} max={99} invisible={unreadCount === 0}>
-              <NotificationsActiveIcon />
-            </Badge>
-          </Box>
-          <Box sx={textColSx}>
-            <Typography variant="body2" sx={{ fontWeight: 650 }} noWrap>
-              {tr('通知', 'Notifications')}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }} noWrap>
-              {unreadCount > 0 ? tr(`未读 ${unreadCount} 条`, `${unreadCount} unread`) : tr('暂无未读', 'No unread')}
-            </Typography>
-          </Box>
-        </ListItemButton>
+        <Tooltip title={nextThemeLabel} placement="right" arrow disableHoverListener={tooltipDisabled}>
+          <ListItemButton
+            aria-label={nextThemeLabel}
+            onClick={() => dispatch(toggleThemeMode())}
+            sx={baseToolRowSx}
+          >
+            <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
+              {themeMode === 'dark' ? <LightModeIcon /> : <DarkModeIcon />}
+            </Box>
+            <Box sx={textColSx}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                {nextThemeLabel}
+              </Typography>
+            </Box>
+          </ListItemButton>
+        </Tooltip>
 
-        <ListItemButton aria-label={tr('登出', 'Sign out')} onClick={onLogout} sx={baseToolRowSx}>
-          <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
-            <LogoutIcon />
-          </Box>
-          <Box sx={textColSx}>
-            <Typography variant="body2" sx={{ fontWeight: 650 }} noWrap>
-              {tr('登出', 'Sign out')}
-            </Typography>
-          </Box>
-        </ListItemButton>
+        <Tooltip
+          title={tr(`切换语言：${nextLangLabel}`, `Switch language: ${nextLangLabel}`)}
+          placement="right"
+          arrow
+          disableHoverListener={tooltipDisabled}
+        >
+          <ListItemButton
+            aria-label={tr('切换语言', 'Switch language')}
+            onClick={() => dispatch(setLanguage(language === 'zh' ? 'en' : 'zh'))}
+            sx={baseToolRowSx}
+          >
+            <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
+              <TranslateIcon />
+            </Box>
+            <Box sx={textColSx}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                {language === 'zh' ? '切换为 English' : 'Switch to 中文'}
+              </Typography>
+            </Box>
+          </ListItemButton>
+        </Tooltip>
+
+        {!isMobile ? (
+          <Tooltip title={tr('切换侧边栏模式', 'Toggle sidebar mode')} placement="right" arrow disableHoverListener={tooltipDisabled}>
+            <ListItemButton aria-label={tr('切换侧边栏模式', 'Toggle sidebar mode')} onClick={toggleSidebarMode} sx={baseToolRowSx}>
+              <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
+                {effectiveExpanded ? <MenuOpenIcon /> : <MenuIcon />}
+              </Box>
+              <Box sx={textColSx}>
+                <Typography variant="body2" sx={{ fontWeight: 700, lineHeight: 1.1 }} noWrap>
+                  {tr('侧边栏', 'Sidebar')}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }} noWrap>
+                  {sidebarMode === 'auto'
+                    ? tr('自动（悬停展开）', 'Auto (hover)')
+                    : sidebarMode === 'lockedOpen'
+                      ? tr('固定展开', 'Locked open')
+                      : tr('固定收起', 'Locked collapsed')}
+                </Typography>
+              </Box>
+            </ListItemButton>
+          </Tooltip>
+        ) : null}
+
+        <Tooltip title={tr('通知', 'Notifications')} placement="right" arrow disableHoverListener={tooltipDisabled}>
+          <ListItemButton
+            aria-label={tr('通知', 'Notifications')}
+            onClick={(e) => setNotifAnchorEl(e.currentTarget)}
+            sx={baseToolRowSx}
+          >
+            <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
+              <Badge color="error" badgeContent={unreadCount} max={99} invisible={unreadCount === 0}>
+                <NotificationsActiveIcon />
+              </Badge>
+            </Box>
+            <Box sx={textColSx}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                {tr('通知', 'Notifications')}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.2 }} noWrap>
+                {unreadCount > 0 ? tr(`未读 ${unreadCount} 条`, `${unreadCount} unread`) : tr('暂无未读', 'No unread')}
+              </Typography>
+            </Box>
+          </ListItemButton>
+        </Tooltip>
+
+        <Tooltip title={tr('登出', 'Sign out')} placement="right" arrow disableHoverListener={tooltipDisabled}>
+          <ListItemButton aria-label={tr('登出', 'Sign out')} onClick={onLogout} sx={baseToolRowSx}>
+            <Box sx={{ ...iconWrapperSx, color: 'text.secondary' }}>
+              <LogoutIcon />
+            </Box>
+            <Box sx={textColSx}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>
+                {tr('登出', 'Sign out')}
+              </Typography>
+            </Box>
+          </ListItemButton>
+        </Tooltip>
       </Box>
     </Box>
   )
@@ -561,26 +671,71 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
   if (isMobile) {
     return (
       <>
-        <IconButton
-          onClick={() => setMobileOpen(true)}
+        <Paper
+          component="header"
+          elevation={0}
           sx={{
-            position: 'fixed',
-            left: 12,
-            top: 12,
-            zIndex: theme.zIndex.drawer + 2,
-            bgcolor: alpha(theme.palette.background.paper, 0.9),
-            border: '1px solid',
+            height: 52,
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            px: 1.25,
+            borderBottom: '1px solid',
             borderColor: 'divider',
-            backdropFilter: 'blur(14px) saturate(1.25)',
-            '&:hover': {
-              bgcolor: alpha(theme.palette.background.paper, 0.98),
-            },
+            borderRadius: 0,
+            bgcolor: alpha(theme.palette.background.paper, 0.92),
+            backdropFilter: 'blur(12px)',
           }}
-          size="small"
-          aria-label={tr('打开导航', 'Open navigation')}
         >
-          <MenuIcon fontSize="small" />
-        </IconButton>
+          <IconButton
+            onClick={() => setMobileOpen(true)}
+            size="small"
+            aria-label={tr('打开导航', 'Open navigation')}
+          >
+            <MenuIcon fontSize="small" />
+          </IconButton>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
+            <Box
+              component="img"
+              src="/favicon.svg"
+              alt="Logo"
+              sx={{ width: 24, height: 24, flexShrink: 0, display: 'block' }}
+            />
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }} noWrap>
+              {activeNavItem?.label ?? tr('设备管理', 'Lab Asset Management')}
+            </Typography>
+          </Box>
+
+          <IconButton
+            size="small"
+            onClick={() => dispatch(toggleThemeMode())}
+            aria-label={nextThemeLabel}
+          >
+            {themeMode === 'dark' ? <LightModeIcon fontSize="small" /> : <DarkModeIcon fontSize="small" />}
+          </IconButton>
+
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => dispatch(setLanguage(language === 'zh' ? 'en' : 'zh'))}
+            sx={{ minWidth: 'auto', px: 1, fontWeight: 600 }}
+            aria-label={tr('切换语言', 'Switch language')}
+          >
+            {language === 'zh' ? 'EN' : '中'}
+          </Button>
+
+          <IconButton
+            size="small"
+            onClick={(e) => setNotifAnchorEl(e.currentTarget)}
+            aria-label={tr('通知', 'Notifications')}
+          >
+            <Badge color="error" badgeContent={unreadCount} max={99} invisible={unreadCount === 0}>
+              <NotificationsActiveIcon fontSize="small" />
+            </Badge>
+          </IconButton>
+        </Paper>
 
         <Drawer
           variant="temporary"
@@ -610,6 +765,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
           onMarkAllRead={handleMarkAllRead}
           onOpenAlert={handleOpenAlert}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         />
       </>
     )
@@ -644,6 +800,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
         onMarkAllRead={handleMarkAllRead}
         onOpenAlert={handleOpenAlert}
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
       />
     </Paper>
   )

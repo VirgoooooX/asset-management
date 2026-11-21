@@ -30,6 +30,9 @@ import CostTrendChart from '../components/CostTrendChart'
 import { CustomDateRangePickers, DateRangePresetBar } from '../components/DateRangePresetBar'
 import PageShell from '../components/PageShell'
 import TitleWithIcon from '../components/TitleWithIcon'
+import EmptyState from '../components/EmptyState'
+import TableSkeleton from '../components/TableSkeleton'
+import { useToast } from '../components/ToastProvider'
 import { useAppDispatch, useAppSelector } from '../store/hooks'
 import { fetchProjects } from '../store/projectsSlice'
 import { useI18n } from '../i18n'
@@ -50,6 +53,7 @@ import { formatDateTime, formatMoneyYuan } from '../utils/formatters'
 const ProjectCostReportPage: React.FC = () => {
   const dispatch = useAppDispatch()
   const { tr, language } = useI18n()
+  const toast = useToast()
 
   const projectsLoading = useAppSelector((s) => s.projects.loading)
   const projects = useAppSelector((s) => s.projects.projects)
@@ -157,43 +161,48 @@ const ProjectCostReportPage: React.FC = () => {
   }, [groupBy, includeInProgress, includeUnlinked, projectId, rangeEndMs, rangeStartMs])
 
   const handleExport = async () => {
-    const lines = await fetchProjectCostLines({
-      rangeStartMs,
-      rangeEndMs,
-      projectId,
-      groupBy,
-      includeUnlinked,
-      includeInProgress,
-    }).catch(() => [])
+    try {
+      const lines = await fetchProjectCostLines({
+        rangeStartMs,
+        rangeEndMs,
+        projectId,
+        groupBy,
+        includeUnlinked,
+        includeInProgress,
+      })
 
-    const exportLines: ProjectCostLine[] = lines.map((l) => ({
-      logId: l.logId,
-      projectName: l.projectName,
-      assetName: l.assetName,
-      startTime: l.startTime,
-      endTime: l.endTime,
-      billableHours: l.billableHours,
-      hourlyRateYuan: Math.round(l.hourlyRateCents) / 100,
-      costYuan: Math.round(l.costCents) / 100,
-      rateSource: l.rateSource,
-      estimated: l.estimated,
-      user: l.user,
-      notes: l.notes ?? undefined,
-    }))
+      const exportLines: ProjectCostLine[] = lines.map((l) => ({
+        logId: l.logId,
+        projectName: l.projectName,
+        assetName: l.assetName,
+        startTime: l.startTime,
+        endTime: l.endTime,
+        billableHours: l.billableHours,
+        hourlyRateYuan: Math.round(l.hourlyRateCents) / 100,
+        costYuan: Math.round(l.costCents) / 100,
+        rateSource: l.rateSource,
+        estimated: l.estimated,
+        user: l.user,
+        notes: l.notes ?? undefined,
+      }))
 
-    await exportProjectCostToXlsx({
-      summary: {
-        projectName: summary.projectName,
-        range: summary.range,
-        totalCostYuan: Math.round(summary.totalCostCents) / 100,
-        totalBillableHours: summary.totalBillableHours,
-        assetCount: summary.assetCount,
-        logCount: summary.logCount,
-      },
-      lines: exportLines,
-      language,
-      fileNamePrefix: projectId === 'all' ? 'project-cost' : `project-cost_${projectId.slice(0, 8)}`,
-    })
+      await exportProjectCostToXlsx({
+        summary: {
+          projectName: summary.projectName,
+          range: summary.range,
+          totalCostYuan: Math.round(summary.totalCostCents) / 100,
+          totalBillableHours: summary.totalBillableHours,
+          assetCount: summary.assetCount,
+          logCount: summary.logCount,
+        },
+        lines: exportLines,
+        language,
+        fileNamePrefix: projectId === 'all' ? 'project-cost' : `project-cost_${projectId.slice(0, 8)}`,
+      })
+      toast.success(tr('已开始导出 Excel', 'Export started.'))
+    } catch (e: any) {
+      toast.error(e?.message || tr('导出失败', 'Export failed'))
+    }
   }
 
   const groupLabel =
@@ -221,7 +230,7 @@ const ProjectCostReportPage: React.FC = () => {
           <Chip
             label={tr(`口径：按小时计费（向上取整）`, 'Rule: hourly billing (ceil)')}
             size="small"
-            sx={{ fontWeight: 650 }}
+            sx={{ fontWeight: 600 }}
           />
           <Button
             size="small"
@@ -331,22 +340,22 @@ const ProjectCostReportPage: React.FC = () => {
         }}
       >
         <AppCard title={tr('总费用', 'Total cost')}>
-          <Typography variant="h5" sx={{ fontWeight: 950 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800 }}>
             ¥ {formatMoneyYuan(summary.totalCostCents)}
           </Typography>
         </AppCard>
         <AppCard title={tr('计费小时', 'Billable hours')}>
-          <Typography variant="h5" sx={{ fontWeight: 950 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800 }}>
             {summary.totalBillableHours}
           </Typography>
         </AppCard>
         <AppCard title={groupCountLabel}>
-          <Typography variant="h5" sx={{ fontWeight: 950 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800 }}>
             {summary.assetCount}
           </Typography>
         </AppCard>
         <AppCard title={tr('涉及记录', 'Logs')}>
-          <Typography variant="h5" sx={{ fontWeight: 950 }}>
+          <Typography variant="h5" sx={{ fontWeight: 800 }}>
             {summary.logCount}
           </Typography>
         </AppCard>
@@ -384,10 +393,12 @@ const ProjectCostReportPage: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {groups.length === 0 ? (
+              {reportLoading && groups.length === 0 ? (
+                <TableSkeleton rows={5} columns={groupBy === 'asset' ? 6 : 5} />
+              ) : groups.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={groupBy === 'asset' ? 6 : 5} align="center">
-                    <Typography color="text.secondary">{tr('暂无数据', 'No data')}</Typography>
+                  <TableCell colSpan={groupBy === 'asset' ? 6 : 5}>
+                    <EmptyState compact title={tr('暂无汇总数据', 'No summary data')} />
                   </TableCell>
                 </TableRow>
               ) : (
@@ -432,7 +443,7 @@ const ProjectCostReportPage: React.FC = () => {
                         </TableCell>
                         <TableCell sx={{ fontWeight: 700 }}>
                           <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" flexWrap="wrap">
-                            <Typography sx={{ fontWeight: 850 }}>{r.label}</Typography>
+                            <Typography sx={{ fontWeight: 700 }}>{r.label}</Typography>
                             {groupBy !== 'asset' ? (
                               r.hasSnapshot && r.hasFallback ? (
                                 <Chip size="small" label={tr('混合来源', 'Mixed source')} variant="outlined" />
@@ -449,7 +460,7 @@ const ProjectCostReportPage: React.FC = () => {
                         {groupBy === 'asset' ? (
                           <TableCell align="right">
                             <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end" flexWrap="nowrap" sx={{ whiteSpace: 'nowrap' }}>
-                              <Typography sx={{ fontWeight: 750 }} noWrap>
+                              <Typography sx={{ fontWeight: 700 }} noWrap>
                                 {r.hourlyRateCents === null
                                   ? tr('混合', 'Mixed')
                                   : `¥ ${formatMoneyYuan(r.hourlyRateCents)}/${tr('小时', 'h')}`}
@@ -474,7 +485,7 @@ const ProjectCostReportPage: React.FC = () => {
                         <TableCell colSpan={groupBy === 'asset' ? 6 : 5} sx={{ p: 0, border: 'none' }}>
                           <Collapse in={isOpen} timeout="auto" unmountOnExit>
                             <Box sx={{ p: 1.5, pt: 0.5 }}>
-                              <Typography variant="subtitle2" sx={{ fontWeight: 850, mb: 1 }}>
+                              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
                                 {tr('使用记录明细', 'Log details')}
                               </Typography>
                               <Table size="small">

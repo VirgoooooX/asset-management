@@ -12,6 +12,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import ChamberForm from '../components/ChamberForm'
 import UsageLogDetails from '../components/UsageLogDetails'
 import StatusChip from '../components/StatusChip'
+import { useToast } from '../components/ToastProvider'
 import ImageLightboxDialog, { type LightboxImageState } from '../components/ImageLightboxDialog'
 import AssetInfoTab from './assetDetail/AssetInfoTab'
 import AssetPerformanceTab from './assetDetail/AssetPerformanceTab'
@@ -42,6 +43,7 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
   const { assetId } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const { tr } = useI18n()
+  const toast = useToast()
 
   const role = useAppSelector((s) => s.auth.user?.role)
   const isAdmin = role === 'admin'
@@ -137,8 +139,11 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
           changes: kind === 'photo' ? { photoUrls: merged } : { nameplateUrls: merged },
         })
       ).unwrap()
+      toast.success(tr('图片已上传', 'Image uploaded.'))
     } catch (e: any) {
-      setUploadError(e?.message || tr('上传失败', 'Upload failed'))
+      const msg = e?.message || tr('上传失败', 'Upload failed')
+      setUploadError(msg)
+      toast.error(msg)
     } finally {
       if (kind === 'photo') setPhotoUploading(false)
       if (kind === 'nameplate') setNameplateUploading(false)
@@ -158,8 +163,11 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
           changes: kind === 'photo' ? { photoUrls: next } : { nameplateUrls: next },
         })
       ).unwrap()
+      toast.success(tr('图片已删除', 'Image deleted.'))
     } catch (e: any) {
-      setUploadError(e?.message || tr('删除失败', 'Delete failed'))
+      const msg = e?.message || tr('删除失败', 'Delete failed')
+      setUploadError(msg)
+      toast.error(msg)
     }
   }
 
@@ -172,8 +180,11 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
       const existing = asset?.attachments ?? []
       const merged = existing.concat(newItems)
       await dispatch(updateAsset({ id: assetId, changes: { attachments: merged } })).unwrap()
+      toast.success(tr('附件已上传', 'Attachment uploaded.'))
     } catch (e: any) {
-      setUploadError(e?.message || tr('上传失败', 'Upload failed'))
+      const msg = e?.message || tr('上传失败', 'Upload failed')
+      setUploadError(msg)
+      toast.error(msg)
     } finally {
       setAttachmentsUploading(false)
     }
@@ -189,8 +200,11 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
       await deleteFile(target.path || target.url)
       const next = existing.filter((a) => a.id !== attachmentId)
       await dispatch(updateAsset({ id: assetId, changes: { attachments: next } })).unwrap()
+      toast.success(tr('附件已删除', 'Attachment deleted.'))
     } catch (e: any) {
-      setUploadError(e?.message || tr('删除失败', 'Delete failed'))
+      const msg = e?.message || tr('删除失败', 'Delete failed')
+      setUploadError(msg)
+      toast.error(msg)
     }
   }
 
@@ -205,17 +219,24 @@ const AssetDetailPage: React.FC<Props> = ({ mode }) => {
 
   const handleSaved = (savedId: string) => {
     if (mode === 'create') {
+      toast.success(tr('设备已创建', 'Asset created.'))
       navigate(`/assets/${savedId}`, { replace: true })
       setEditOpen(false)
       return
     }
+    toast.success(tr('设备信息已更新', 'Asset updated.'))
     handleCloseEdit()
   }
 
   const handleDelete = async () => {
     if (!assetId) return
-    await dispatch(deleteAsset(assetId))
-    navigate('/chambers')
+    try {
+      await dispatch(deleteAsset(assetId)).unwrap()
+      toast.success(tr('设备已删除', 'Asset deleted.'))
+      navigate('/chambers')
+    } catch (e: any) {
+      toast.error(e?.message || tr('删除失败', 'Delete failed'))
+    }
   }
 
   const titleText =

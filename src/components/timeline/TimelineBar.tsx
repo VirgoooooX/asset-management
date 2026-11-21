@@ -29,6 +29,7 @@ const DeleteIconSvg: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 )
 
 const getBarStylingByEffectiveStatus = (theme: Theme, status: UsageLog['status']) => {
+  const isDark = theme.palette.mode === 'dark'
   const main =
     status === 'completed'
       ? theme.palette.success.main
@@ -40,21 +41,29 @@ const getBarStylingByEffectiveStatus = (theme: Theme, status: UsageLog['status']
             ? theme.palette.error.main
             : alpha(theme.palette.text.primary, 0.32)
 
-  const dark =
+  const contrast =
     status === 'completed'
-      ? theme.palette.success.dark
+      ? isDark
+        ? theme.palette.success.light
+        : theme.palette.success.dark
       : status === 'in-progress'
-        ? theme.palette.warning.dark
+        ? isDark
+          ? theme.palette.warning.light
+          : theme.palette.warning.dark
         : status === 'not-started'
-          ? theme.palette.info.dark
+          ? isDark
+            ? theme.palette.info.light
+            : theme.palette.info.dark
           : status === 'overdue'
-            ? theme.palette.error.dark
-            : main
+            ? isDark
+              ? theme.palette.error.light
+              : theme.palette.error.dark
+            : theme.palette.text.primary
 
   return {
-    backgroundColor: alpha(main, 0.16),
-    borderColor: alpha(main, 0.32),
-    textColor: dark,
+    backgroundColor: alpha(main, isDark ? 0.24 : 0.14),
+    borderColor: alpha(main, isDark ? 0.48 : 0.34),
+    textColor: contrast,
   }
 }
 
