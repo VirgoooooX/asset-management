@@ -32,6 +32,7 @@ import { markAllRead, markRead } from '../store/notificationsSlice'
 import { setLanguage, setSidebarMode, toggleThemeMode } from '../store/settingsSlice'
 import JustifiedNavLabel from './sidenav/JustifiedNavLabel'
 import NotificationPopover from './sidenav/NotificationPopover'
+import SideNavOverlayRail from './sidenav/SideNavOverlayRail'
 
 type Props = {
   isAuthenticated: boolean
@@ -81,6 +82,7 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
   const isPointerInsideRef = useRef(false)
   const enterTimerRef = useRef<number | null>(null)
   const leaveTimerRef = useRef<number | null>(null)
+  const navScrollRef = useRef<HTMLDivElement>(null)
 
   const normalizedPathname = useMemo(() => getNormalizedPathForSelection(location.pathname), [location.pathname])
 
@@ -366,8 +368,24 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
     >
       {brand}
 
-      <Box sx={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
-        <List sx={{ py: 1.5 }}>
+      <Box sx={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <Box
+          ref={navScrollRef}
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            scrollbarWidth: 'none',
+            msOverflowStyle: 'none',
+            '&::-webkit-scrollbar': {
+              width: 0,
+              height: 0,
+              display: 'none',
+            },
+          }}
+        >
+          <List sx={{ py: 1.5 }}>
           {visibleSections.map((section, sectionIndex) => {
             const list = itemsBySection.get(section.id) ?? []
             if (list.length === 0) return null
@@ -505,6 +523,8 @@ const SideNav: React.FC<Props> = ({ isAuthenticated, role, sections, items, onNa
             )
           })}
         </List>
+        </Box>
+        <SideNavOverlayRail viewportRef={navScrollRef} />
       </Box>
 
       <Box sx={{ borderTop: '1px solid', borderTopColor: 'divider', py: 0.5 }}>
